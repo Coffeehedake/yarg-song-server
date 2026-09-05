@@ -87,12 +87,31 @@ Build order (each step is independently testable):
    reaches the same result only because it decrypts whole 1 MB buffers and 1 MB is a multiple of
    the 256-byte table; tracking the real offset is equivalent and survives arbitrary read sizes.
    Malformed input is rejected with an error rather than a panic, which is tested.
-3. **Scanner** — walks a folder or `.sng`, applies YARG's chart-file priority order
-   (`notes.mid` → `notes.midi` → `notes.chart` → `notes.txt`), discovers stems/art/background,
-   and emits the v1 catalog schema.
-4. **Identity** — `SHA1(chart file bytes)`, matching YARG's `HashWrapper` exactly, so client and
-   server agree on "do I already have this". Plus a `package_hash` of our own for
-   same-chart-different-audio cases. Model hash → *many* entries; duplicates are normal.
+3. **Scanner** — ✅ done (`internal/scan`, `internal/catalog`). Walks a folder or a `.sng` through
+   the same `fs.FS`, applies the chart-file priority order, classifies stems (all 14 standard, 5
+   clean and 4 explicit variants), resolves album art with the `cover` key overriding
+   `album.<ext>`, finds background/video/preview, and emits the v1 catalog schema. Unrecognised
+   files are carried in `assets.other` and every `song.ini` key is preserved in `raw_metadata`,
+   so parse-tuning keys we do not model still survive a repack — losing those would change how a
+   chart plays.
+
+   A test packs the same content both ways and asserts the folder and the `.sng` produce the same
+   chart hash, metadata and parts. That is the ADR-001 "one code path" claim being enforced rather
+   than merely intended.
+
+   Unknown intensity is `-1`, never `0`, for both an explicit `-1` and an absent key — "the
+   charter rated this trivially easy" and "the chart did not say" must not collapse into the same
+   value. Two `diff_*` keys (`diff_drums_real_ps`, `diff_keys_real_ps`) are deliberately left
+   unmapped rather than guessed; the source says why.
+
+   `yarg-song-server scan <path>` walks a library and prints the catalog as JSON, so the parsers
+   can be pointed at a real collection before anything sits behind an HTTP API.
+4. **Identity** — ✅ done. `SHA1(chart file bytes)`, matching YARG's `HashWrapper`, plus a
+   `package_hash` of our own (SHA-256 over the sorted `name:sha256` pairs) for
+   same-chart-different-audio cases. Note the folder and `.sng` forms of one song have the same
+   chart hash but *different* package hashes, because the folder carries `song.ini` as a file and
+   the `.sng` carries it in the header — that is correct, and the test asserts it rather than
+   papering over it.
 5. **`.sng` writer** — validated two ways: round-trip through the reference `SngCli`, and by
    confirming a real YARG install scans the output and shows correct metadata.
 6. **MIDI preparsers** — derive which instruments and difficulties actually exist. Only note-range

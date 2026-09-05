@@ -16,6 +16,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/coffeehedake/yarg-song-server/internal/scan"
 )
 
 // version is set at build time via -ldflags.
@@ -40,12 +42,49 @@ func main() {
 		return
 	}
 
+	// `yarg-song-server scan <path>` walks a library and prints the catalog as
+	// JSON. It exists so the scanner can be pointed at a real song collection
+	// before any of it is behind an HTTP API - the parsers are only as good as
+	// the charts they have actually been run against.
+	if args := flag.Args(); len(args) >= 1 && args[0] == "scan" {
+		root := "."
+		if len(args) >= 2 {
+			root = args[1]
+		}
+		if err := runScan(root); err != nil {
+			fmt.Fprintln(os.Stderr, "scan:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	if err := run(opt, log); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
+}
+
+func runScan(root string) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+
+	var found, failed int
+	err := scan.WalkLibrary(root, func(r scan.Result) {
+		if r.Err != nil {
+			failed++
+			fmt.Fprintf(os.Stderr, "  ! %s: %v\n", r.Path, r.Err)
+			return
+		}
+		found++
+		r.Song.SourcePath = r.Path
+		if err := enc.Encode(r.Song); err != nil {
+			fmt.Fprintf(os.Stderr, "  ! encode %s: %v\n", r.Path, err)
+		}
+	})
+	fmt.Fprintf(os.Stderr, "\n%d song(s), %d failure(s)\n", found, failed)
+	return err
 }
 
 func run(opt options, log *slog.Logger) error {

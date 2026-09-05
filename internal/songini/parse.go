@@ -224,3 +224,43 @@ func decodeUTF16(b []byte, bigEndian bool) string {
 	}
 	return string(utf16.Decode(u))
 }
+
+// FromMap builds a File from an already-parsed key/value set - the .sng
+// metadata section, which carries the same key namespace as song.ini but is
+// encoded in the container header rather than stored as a file.
+//
+// Keys are lowercased here. Upstream lowercases filenames inside a .sng but NOT
+// metadata keys, so a .sng written with "Name" instead of "name" would miss
+// every lookup if we did not normalise. Order is preserved for re-emit.
+func FromMap(kv map[string]string, order []string) *File {
+	f := &File{Values: make(map[string]string, len(kv))}
+	seen := make(map[string]bool, len(kv))
+
+	add := func(k, v string) {
+		lk := strings.ToLower(strings.TrimSpace(k))
+		if lk == "" {
+			return
+		}
+		if !seen[lk] {
+			seen[lk] = true
+			f.Order = append(f.Order, lk)
+			if _, known := Keys[lk]; !known {
+				f.Unknown = append(f.Unknown, lk)
+			}
+		}
+		f.Values[lk] = v
+	}
+
+	for _, k := range order {
+		if v, ok := kv[k]; ok {
+			add(k, v)
+		}
+	}
+	// Anything the order slice missed still gets in.
+	for k, v := range kv {
+		if !seen[strings.ToLower(strings.TrimSpace(k))] {
+			add(k, v)
+		}
+	}
+	return f
+}

@@ -61,6 +61,19 @@ make test       # unit tests
 make docker     # multi-arch image
 ```
 
+## Trying the scanner
+
+There is no server yet, but the scanner works. Point it at a song library and it
+prints the catalog as JSON, one song per record:
+
+```sh
+./bin/yarg-song-server scan /path/to/songs
+```
+
+It recognises loose song folders and `.sng` archives, walks nested directories,
+skips folders that hold no chart, and reports an unreadable song on stderr
+rather than abandoning the scan.
+
 ## Licence
 
 LGPL-3.0-or-later, matching YARG and YARG.Core. See [`LICENSE`](LICENSE).
