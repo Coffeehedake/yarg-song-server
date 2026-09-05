@@ -63,7 +63,7 @@ GitHub after that.
 
 ---
 
-## Phase 1 — `yargsong`: the Go format library
+## Phase 1 — `yargsong`: the Go format library ✅
 
 The server is worthless until Go can read and write what YARG reads and writes. This phase is
 pure library work with no network surface, which makes it the easiest phase to test exhaustively.
@@ -78,7 +78,7 @@ Build order (each step is independently testable):
    modifiers by plain dictionary assignment), and **keys and section names are lowercased** before
    lookup. One thing is still assumed and flagged in the source: the exact whitespace and
    multiple-`=` handling inside `YARGTextReader.ExtractModifierName`, which has not been read.
-   The writer is not built yet.
+   The writer is step 5 below.
 2. **`.sng` reader** — ✅ done (`internal/sng`). Implemented as an `fs.FS`, including synthesised
    directories, so the folder scanner and the `.sng` scanner share exactly one code path;
    `fstest.TestFS` enforces that. The mask-origin question the research doc flagged as unconfirmed
@@ -195,7 +195,17 @@ Build order (each step is independently testable):
    route.
 
 **Exit criterion:** a CLI that scans a real song library, emits a catalog, repacks to `.sng`, and
-YARG scans the repacked output with identical metadata and an identical hash.
+YARG scans the repacked output with identical metadata and an identical hash. **Met 2026-09-05.**
+
+`yarg-song-server scan <path>` and `yarg-song-server pack <folder> <out.sng>` do the first two.
+For the third: `SngCli` decoded our archives with every file byte-identical to the source, and
+YARG accepted 14 of the 15 archives we wrote — the one rejection being a fixture whose chart has
+no note events, proven by a control in which SngCli's own archive of the same folder was rejected
+identically.
+
+And the parts we report now agree with the client's own verdict: on the 22-case corpus, **every
+song YARG rejects is one this scanner independently flags**, by three routes — no parts detected,
+`no_audio`, and `ultrastar_no_title`.
 
 **Explicitly out of scope, permanently:** CON/mogg decryption, `songcache.bin` generation,
 `.milo_xbox` / `.png_xbox` decoding, `.yarground` inspection, full MIDI chart semantics.
@@ -290,7 +300,11 @@ Can be picked up at any time; does not block the server.
 
 ## Blockers
 
-None. The Coffeehedake GitHub PAT was rotated on 2026-09-05 and verified (`login=Coffeehedake`,
+**None.**
+
+## Toolchain and credentials, as measured
+
+The Coffeehedake GitHub PAT was rotated on 2026-09-05 and verified (`login=Coffeehedake`,
 scopes `repo`, `workflow`, `project`, `write:packages`, `delete:packages`, `audit_log`).
 
 Go 1.27.0 was installed on ENG-1 on 2026-09-05, so the toolchain claim is now measured on the

@@ -10,9 +10,9 @@ source.
 | Source | Covers | Quality |
 |---|---|---|
 | [YARG Wiki — `song.ini`](https://wiki.yarg.in/wiki/Song.ini) | The full tag table with types, meanings, enum values, deprecated aliases, defaults, **and a compatibility column** saying whether YARG acts on a key today or merely parses it | **Better than the source.** The compatibility tiers and the documented defaults are not derivable from `SONG_INI_OUTLINES` at all |
-| [Guitar Game Chart Formats](https://thenathannator.github.io/GuitarGame_ChartFormats/) (TheNathannator) | `.chart` and `.mid` — both marked complete — plus `song.ini`. Audio conventions are a TODO | The reference for chart notation. **Read this before Phase 1 step 6**; do not reverse-engineer the MIDI preparsers |
+| [Guitar Game Chart Formats](https://thenathannator.github.io/GuitarGame_ChartFormats/) (TheNathannator) | `.chart` and `.mid` — both marked complete — plus `song.ini`. Audio conventions are a TODO | The reference for chart notation. **The preparsers in `internal/chart` were built from this**, not from source |
 | [YARG Wiki — Songs](https://wiki.yarg.in/wiki/Songs) | CON, ex-CON and ex-PKG layouts, `songs_updates` | Good for the RB side, which we deliberately do not support. `.chart` and `.mid` sections are stubs |
-| [YARG Wiki — `notes.mid`](https://wiki.yarg.in/wiki/Notes.mid), [`notes.chart`](https://wiki.yarg.in/wiki/Notes.chart) | Chart notation | Check before step 6 |
+| [YARG Wiki — `notes.mid`](https://wiki.yarg.in/wiki/Notes.mid), [`notes.chart`](https://wiki.yarg.in/wiki/Notes.chart) | Chart notation | Both are stubs; useful for YARG's recognised track list, not for note maps |
 | [mdsitton/SngFileFormat](https://github.com/mdsitton/SngFileFormat) | The `.sng` container spec and the reference `SngCli` encoder | The only spec for `.sng` |
 | [YARG `CONTRIBUTING.md`](https://github.com/YARC-Official/YARG/blob/master/CONTRIBUTING.md) | The six-tier scope framework, including what will be rejected on sight | Authoritative on what upstream will accept |
 
@@ -23,7 +23,7 @@ actually authored, and it links most of what this project still needs:
 
 | Source | Why it matters here |
 |---|---|
-| [RBN/C3 Documentation](https://wiki.yarg.in/wiki/Help:Charting) (linked from that page) | Called "the most comprehensive specification of the `notes.mid` format". **Read before Phase 1 step 6.** |
+| [RBN/C3 Documentation](https://wiki.yarg.in/wiki/Help:Charting) (linked from that page) | Called "the most comprehensive specification of the `notes.mid` format". Used to cross-check every note range the preparsers rely on. |
 | [Chart File Format Specifications](https://wiki.yarg.in/wiki/Help:Charting) by FireFox2000000 | The `.chart` spec, written by Moonscraper's author |
 | [Elite Drums MIDI/Engine Specification](https://wiki.yarg.in/wiki/Help:Charting) | A complete spec for the newest instrument, including expected game behaviour |
 | [Comprehensive song.ini Guide](https://wiki.yarg.in/wiki/Help:Charting) by grishhung | The `song.ini` reference the wiki's own table cites |

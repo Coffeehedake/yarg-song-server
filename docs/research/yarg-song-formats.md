@@ -1,5 +1,24 @@
 # YARG Song Formats — Technical Spec for a Go Song Server
 
+> **Read this as history, not as current guidance.** This was the opening study, derived from
+> YARG.Core's source before the official documentation had been found, and parts of it have since
+> been corrected or superseded:
+>
+> - **`song.ini` is documented on the wiki, better than this.** The wiki carries defaults,
+>   deprecated aliases and a compatibility column that source-reading cannot give you. Four
+>   defects came from not checking it first. See [`../SOURCES.md`](../SOURCES.md).
+> - **The `songcache.bin` verdict was overstated** and is corrected in place below: "must not",
+>   not "cannot".
+> - **The recommended v1 scope has been overtaken.** `.sng` read and write, folder and archive
+>   scanning, identity, and chart preparsing for `.mid`, `.chart` and UltraStar are all built. The
+>   `parts_derived: false` note near the end describes an interim state that no longer exists.
+> - **Chart preparsing has its own study**, built from documentation rather than source:
+>   [`chart-preparsing.md`](chart-preparsing.md).
+>
+> What remains valuable here and is unchanged: the `.sng` binary layout, the song-identity
+> finding, the stem and asset naming tables, and the reasoning about what must never be built.
+
+
 ## Executive summary
 
 YARG's on-disk song model is much simpler than YARG.Core's size suggests, and the parts a server actually needs are cleanly separable from the parts that are impractical in Go.

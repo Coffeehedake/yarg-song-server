@@ -1,12 +1,12 @@
 {
   "_comment": "sha256 of each source .md at the time its PDF was last rendered. Written by build-pdfs.py; verified by --verify. Do not hand-edit.",
   "sources": {
-    "README.md": "3e925d000926e88223b6875ed28c6d61d3ebe5b33b0f77240494dfa7cab15622",
+    "README.md": "a8b62bf1164f503b3e04cb9bb6716f67de7edeabc198212f686492163e3abdb1",
     "docs/ADR-001-server-architecture.md": "77c9fb3c76b2a3edb19a39bfecbc1b66af03227b2115fb9ca6752886a64553b7",
-    "docs/ROADMAP.md": "dd8fc9fa46ed87b20ed4cff79824a194b409621cb1aef9451632345595a3076a",
-    "docs/SOURCES.md": "cb4442978ba64cf97d870bec79cb86dc942d0c934d0b9d0ae54aa47d8962b616",
-    "docs/TEST-CORPUS.md": "8a2a5aed8d8ebc7c81bb9a1278f2c5dcdfd0bd0f9336498bbe9295f4cddbd47b",
+    "docs/ROADMAP.md": "c1573b5d1646d9855c54fee87beffb341039014ff45227571f68c1db57b5af77",
+    "docs/SOURCES.md": "d09c64c018449dc2ae70c995e3c6c671c64cbbd8ae185d6011f92f0276b4eb95",
+    "docs/TEST-CORPUS.md": "2ea2d5399179c72c2f6fbdd78387243199cd605145f0df3ccd93e845e9291601",
     "docs/research/chart-preparsing.md": "5bbb0183f6b574ed54a215e48f7b3069aeedde551d7579438c68f270f5ec6e92",
-    "docs/research/yarg-song-formats.md": "4c5d0ffb36386e910a877a1269a6443790c29f6d69034210636c5e072d506fdd"
+    "docs/research/yarg-song-formats.md": "650bf169a65356c832ed474dd7293183e0649b2a09c11340b8a0949d5bb3e900"
   }
 }

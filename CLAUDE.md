@@ -11,9 +11,15 @@ give you — and `.chart`/`.mid` are fully documented by TheNathannator. Derivin
 source when a spec exists cost this project four real defects, listed there. Check what is
 already written down before reverse-engineering anything.
 
-Then `docs/research/yarg-song-formats.md`. It is the reason the scope is what it is, and it records
-what must never be built. `docs/ADR-001-server-architecture.md` records why Go, and what that
-choice costs. `docs/ROADMAP.md` has the build order.
+Then, by subject:
+
+| Document | What it is for |
+|---|---|
+| `docs/ROADMAP.md` | The build order, with what is done and what each phase must prove |
+| `docs/ADR-001-server-architecture.md` | Why Go, why two repos, why sync-first — and what Go costs |
+| `docs/research/chart-preparsing.md` | Track names, note maps and the false-positive traps, cited per claim. **Read before touching `internal/chart`** |
+| `docs/research/yarg-song-formats.md` | The `.sng` binary layout, song identity, stem naming. Marked as history at the top: parts of it were superseded, and it says which |
+| `docs/TEST-CORPUS.md` | Where test input comes from, what we deliberately do not use, and how to run the oracle |
 
 ## Rules
 
@@ -54,6 +60,25 @@ shell predates the PATH change — open a new one.
   `.mp3` whatever the source was; a `song.wav` comes back as `song.mp3` with its RIFF header
   intact. Classify by name (as YARG does), but sniff before decoding, and do not reproduce the
   behaviour in our writer.
+
+## The oracle
+
+A real YARG install is the only thing that can say whether a package is acceptable, and it has
+found three bugs no unit test did. Use it whenever scanning or packing behaviour changes:
+
+```powershell
+go run ./cmd/mkcorpus -out $env:USERPROFILE\yarg-test\corpus
+# edit SongFolders in %USERPROFILE%\AppData\LocalLow\YARC\YARG\release\settings.json,
+# delete songcache.bin beside it, launch %LOCALAPPDATA%\Programs\YARG\YARG.exe, wait ~45s
+Get-Content "$env:USERPROFILE\AppData\LocalLow\YARC\YARG\release\badsongs.txt"
+```
+
+`badsongs.txt` is YARG's verdict on every song it refused. The standard to hold: **every song
+YARG rejects should be one this scanner independently flags.** That is true as of the 22-case
+corpus; if a change breaks it, the change is wrong or the reason is worth writing down.
+
+Launch YARG windowed (`-screen-fullscreen 0 -screen-width 1280 -screen-height 720`) — it runs on
+Jay's workstation and should not take over the screen.
 
 ## Docs
 

@@ -7,10 +7,16 @@ Point it at a folder of songs, run it on whatever is always-on in your house, an
 machine on the network plays from the same library. It is a single static binary — Docker,
 Raspberry Pi, macOS and Windows all run the same code.
 
-> **Status: early. Nothing works yet.**
-> This repository currently contains the architecture, the format research it is built on, and
-> the scaffolding. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for what is being built and in what
-> order.
+> **Status: the format library works; the server does not exist yet.**
+>
+> You can scan a song library, read and write `.sng` archives, and get an accurate instrument and
+> difficulty grid for every song. There is no HTTP API yet — that is Phase 2. See
+> [`docs/ROADMAP.md`](docs/ROADMAP.md).
+>
+> What "works" means here: archives written by this tool are decoded by the reference `SngCli` and
+> scanned by a real YARG install, and on a 22-case corpus of deliberately awkward songs, every
+> song YARG rejects is one this scanner independently flags. Details in
+> [`docs/TEST-CORPUS.md`](docs/TEST-CORPUS.md).
 
 ## Design in one paragraph
 

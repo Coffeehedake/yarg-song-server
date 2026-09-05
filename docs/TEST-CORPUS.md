@@ -87,7 +87,7 @@ reason it is not the current answer is that nobody has charted one yet.
 
 ## What the oracle actually found, 2026-09-05
 
-`cmd/mkcorpus` wrote 20 deliberately awkward song folders; YARG v0.15.0 scanned them; its
+`cmd/mkcorpus` wrote 20 deliberately awkward song folders (22 as of the UltraStar work); YARG v0.15.0 scanned them; its
 `badsongs.txt` and song cache were read back. **Our scanner had passed all 20 and was wrong about
 three of them.** These are the only findings in this repo that came from an oracle rather than
 from our own reasoning, which is precisely why they are the ones worth having.
