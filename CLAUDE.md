@@ -25,7 +25,12 @@ choice costs. `docs/ROADMAP.md` has the build order.
 Go 1.27.0 is installed on ENG-1 as a per-user toolchain at `%LOCALAPPDATA%\Programs\go`, already
 on the user `Path`. If `go` is not found, the shell predates the PATH change — open a new one.
 
-- `go vet ./...`, `gofmt -l .` and `go test ./... -race` must all be clean before a commit.
+- `gofmt -l .`, `go vet ./...` and `go test ./...` must all be clean before a commit.
+- **`-race` does not run on ENG-1.** The race detector needs cgo, and ENG-1 has no C toolchain
+  (`CGO_ENABLED=0`, no gcc), so `go test -race` fails there with "requires cgo" rather than
+  passing quietly. Run it in a Linux container or in CI, where `CGO_ENABLED=1`. Installing
+  mingw-w64 on ENG-1 would fix it locally; that has not been done, and the rule is written this
+  way rather than dropped so nobody assumes a green local run covered concurrency.
 - `make release` must succeed for every promised platform — linux/amd64, linux/arm64, linux/armv7,
   darwin/amd64, darwin/arm64, windows/amd64. The Pi target is a project promise, not a bonus.
 - Any `.sng` writer must be validated two ways: round-trip through the reference `SngCli`, **and**

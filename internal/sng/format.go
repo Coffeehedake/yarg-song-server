@@ -59,11 +59,3 @@ type Listing struct {
 	ContentsLen   int64
 	ContentsIndex int64
 }
-
-// File is a parsed .sng header: everything except the file data itself.
-type File struct {
-	Version  uint32
-	Mask     [MaskSize]byte
-	Metadata map[string]string
-	Listings map[string]Listing
-}

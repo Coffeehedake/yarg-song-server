@@ -70,12 +70,23 @@ pure library work with no network surface, which makes it the easiest phase to t
 
 Build order (each step is independently testable):
 
-1. **`song.ini` reader/writer** — ~130 recognised keys, 8 scalar types. Must be lenient the way
-   `YARGIniReader.cs` is lenient: BOM handling, non-UTF-8 charts (Latin-1 and Shift-JIS exist in
-   the wild), duplicate keys, `[song]`/`[Song]` variance, trailing comments. Do **not** use a
-   strict INI library.
-2. **`.sng` reader** — implemented as an `fs.FS` so the folder scanner and the `.sng` scanner
-   share exactly one code path. Fixed-offset header, little-endian, 256-byte XOR table.
+1. **`song.ini` reader** — ✅ done (`internal/songini`). ~130 recognised keys with their types,
+   and a deliberately lenient reader: UTF-8/UTF-16 BOMs, Latin-1 fallback so accented artist
+   names survive, `[song]`/`[Song]`/no-header variance, trailing junk after the section bracket,
+   values containing `=`, and malformed lines skipped rather than fatal. Two behaviours were
+   checked against upstream rather than guessed: **duplicate keys — last wins** (upstream stores
+   modifiers by plain dictionary assignment), and **keys and section names are lowercased** before
+   lookup. One thing is still assumed and flagged in the source: the exact whitespace and
+   multiple-`=` handling inside `YARGTextReader.ExtractModifierName`, which has not been read.
+   The writer is not built yet.
+2. **`.sng` reader** — ✅ done (`internal/sng`). Implemented as an `fs.FS`, including synthesised
+   directories, so the folder scanner and the `.sng` scanner share exactly one code path;
+   `fstest.TestFS` enforces that. The mask-origin question the research doc flagged as unconfirmed
+   is now settled from `SngFileStream.cs`: **the XOR index is the byte offset within each
+   contained file, restarting at 0 per file**, not the absolute offset in the `.sng`. Upstream
+   reaches the same result only because it decrypts whole 1 MB buffers and 1 MB is a multiple of
+   the 256-byte table; tracking the real offset is equivalent and survives arbitrary read sizes.
+   Malformed input is rejected with an error rather than a panic, which is tested.
 3. **Scanner** — walks a folder or `.sng`, applies YARG's chart-file priority order
    (`notes.mid` → `notes.midi` → `notes.chart` → `notes.txt`), discovers stems/art/background,
    and emits the v1 catalog schema.
