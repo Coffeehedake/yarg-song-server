@@ -121,10 +121,11 @@ player sees on their own screen — a bug with no error message anywhere.
    is not understood, and inventing one would be worse than a known gap. Settle it by reading
    `ScanUltraStar` before UltraStar support is claimed.
 
-2. **We do not know whether a chart is playable.** YARG rejected a header-only `.mid` with *"No
-   notes found"*; we catalogued it happily. That is expected — deriving what a chart contains is
-   Phase 1 step 6, the MIDI preparsers — but until then the catalog can offer a song the client
-   will refuse, and that limit should be stated rather than discovered by a user.
+2. ~~**We do not know whether a chart is playable.**~~ **CLOSED 2026-09-05** by the chart
+   preparsers. YARG rejected the header-only `.mid` with *"No notes found"*; our preparser now
+   reports zero parts for that same chart, reaching the same conclusion by an independent route.
+   A song with no detectable parts is still catalogued rather than dropped, but it no longer
+   claims instruments it does not have.
 
 ## The writer's gate, 2026-09-05
 

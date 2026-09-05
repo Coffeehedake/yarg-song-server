@@ -27,10 +27,23 @@ five_lane_drums = 1
 hopo_frequency = 170
 `
 
+// A chart with one real Expert guitar section, so tests can tell "this part
+// exists" from "song.ini rated a part that is not here".
+const sampleChart = `[Song]
+{
+  Resolution = 192
+}
+[ExpertSingle]
+{
+  768 = N 0 0
+  864 = N 1 0
+}
+`
+
 func sampleFolder() fstest.MapFS {
 	return fstest.MapFS{
 		"song.ini":    {Data: []byte(sampleINI)},
-		"notes.chart": {Data: []byte("[Song]\n{\n}\n")},
+		"notes.chart": {Data: []byte(sampleChart)},
 		"guitar.ogg":  {Data: bytes.Repeat([]byte("g"), 400)},
 		"drums_1.ogg": {Data: bytes.Repeat([]byte("d"), 300)},
 		"song.ogg":    {Data: bytes.Repeat([]byte("s"), 500)},
@@ -91,8 +104,18 @@ func TestUnknownIntensityIsNotZero(t *testing.T) {
 	if s.Parts.ProKeys.Intensity != catalog.UnknownIntensity {
 		t.Fatalf("absent key became %d, not unknown", s.Parts.ProKeys.Intensity)
 	}
-	if s.PartsDerived {
-		t.Fatal("PartsDerived must stay false until MIDI preparsing exists")
+	// Intensities and existence are different questions. The chart in
+	// sampleFolder has an ExpertSingle section, so the guitar exists at Expert
+	// regardless of what diff_guitar claims, and diff_drums = 2 rates a drum
+	// part the chart does not contain.
+	if !s.PartsDerived {
+		t.Fatal("PartsDerived should be true once the chart has been preparsed")
+	}
+	if s.Parts.FiveFretGuitar.Difficulties == 0 {
+		t.Fatal("the chart's guitar section was not detected")
+	}
+	if s.Parts.FourLaneDrums.Difficulties != 0 {
+		t.Fatal("a drum part was invented from diff_drums; the chart has no drum section")
 	}
 }
 

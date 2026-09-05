@@ -128,11 +128,27 @@ type Song struct {
 	Parts Parts `json:"parts"`
 
 	// PartsDerived reports whether Parts.Difficulties was established by
-	// reading the chart. In v1 it is always false: intensities come from the
-	// diff_* keys, and which difficulties actually EXIST needs MIDI
-	// preparsing, which is the last step of Phase 1. A client must not read an
-	// empty difficulty mask as "no difficulties" while this is false.
+	// reading the chart itself. When false, an empty difficulty mask means
+	// "not determined", not "no difficulties" - a client must not present the
+	// two the same way.
 	PartsDerived bool `json:"parts_derived"`
+
+	// HarmonyCount is how many harmony vocal lines the chart carries: 0, 2 or
+	// 3. A lone HARM1 track is the lead line, not a harmony arrangement, so it
+	// reports 0.
+	HarmonyCount int `json:"harmony_count,omitempty"`
+
+	// DerivedParts names parts the chart does not contain but which the client
+	// will present anyway - currently the 4-lane, Pro and 5-lane drum parts
+	// that YARG downcharts from an Elite Drums track. Reporting them without
+	// this distinction would claim they were charted; omitting them entirely
+	// would tell a player a song has no drums when the game will show drums.
+	DerivedParts []string `json:"derived_parts,omitempty"`
+
+	// PartsNotes records what the preparser noticed but could not resolve - an
+	// unrecognised track carrying notes, a truncated read, a drum track with
+	// contradictory markers. Not errors; context for a human reading an entry.
+	PartsNotes []string `json:"parts_notes,omitempty"`
 
 	// --- files ---
 

@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -94,12 +95,14 @@ func scan(fsys fs.FS, names []string, ini *songini.File) (*catalog.Song, error) 
 	}
 	chartName := findCaseInsensitive(names, chart.Filename)
 
-	chartFile, err := fsys.Open(chartName)
+	// The chart is read once and used twice: hashed for identity, and preparsed
+	// for instrument availability. Charts are small - a few hundred KB at most
+	// - and reading them twice would double the IO on every song in a library.
+	chartRaw, err := fs.ReadFile(fsys, chartName)
 	if err != nil {
-		return nil, fmt.Errorf("scan: open chart %q: %w", chartName, err)
+		return nil, fmt.Errorf("scan: read chart %q: %w", chartName, err)
 	}
-	hash, err := HashChart(chartFile)
-	_ = chartFile.Close()
+	hash, err := HashChart(bytes.NewReader(chartRaw))
 	if err != nil {
 		return nil, fmt.Errorf("scan: hash chart: %w", err)
 	}
@@ -114,6 +117,7 @@ func scan(fsys fs.FS, names []string, ini *songini.File) (*catalog.Song, error) 
 		UnknownKeys: ini.Unknown,
 	}
 	applyMetadata(s, ini)
+	applyPreparse(s, chartRaw, s.ChartFormat, ini)
 
 	if err := collectAssets(s, fsys, names, chartName, ini); err != nil {
 		return nil, err
@@ -273,10 +277,8 @@ func applyIntensities(s *catalog.Song, ini *songini.File) {
 		}
 		sel(&s.Parts).Intensity = int8(v)
 	}
-	// PartsDerived stays false: which difficulties actually exist needs MIDI
-	// preparsing (Phase 1 step 6). Setting it true here would claim the empty
-	// masks below are a measurement.
-	s.PartsDerived = false
+	// PartsDerived is set by applyPreparse when the chart itself has been read.
+	// Intensities alone are not a measurement of what exists.
 }
 
 func collectAssets(s *catalog.Song, fsys fs.FS, names []string, chartName string, ini *songini.File) error {

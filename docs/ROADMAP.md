@@ -155,24 +155,44 @@ Build order (each step is independently testable):
    matches `.sng` keys against a lowercase table without normalising them, and the header size is
    asserted against what was actually written — a mismatch there would silently corrupt every
    file offset.
-6. **MIDI preparsers** — derive which instruments and difficulties actually exist. Only note-range
-   walking is needed, not full chart semantics. This step is deliberately last; everything before
-   it works with `parts_derived: false`.
+6. **Chart preparsers** — ✅ done (`internal/chart`). Determines which parts and difficulties a
+   chart actually contains, for both `notes.mid` and `notes.chart`. No timing, no sustains, no
+   HOPO inference — the browse UI needs an instrument grid, and the client already has YARG.Core
+   for everything else.
 
-   **Read the specs before writing any of it.** The wiki's
-   [Help:Charting](https://wiki.yarg.in/wiki/Help:Charting) page links every one:
-   TheNathannator's [Guitar Game Chart Formats](https://thenathannator.github.io/GuitarGame_ChartFormats/)
-   (`.chart` and `.mid`, both marked complete), the **RBN/C3 Documentation** it calls "the most
-   comprehensive specification of the `notes.mid` format", FireFox2000000's `.chart` specification
-   from Moonscraper's own author, and a complete **Elite Drums MIDI/Engine Specification**.
+   Built from documentation this time, not from source: TheNathannator's Guitar Game Chart
+   Formats, the RBN/C3 documentation, FireFox2000000's `.chart` spec and the Elite Drums spec.
+   The study is in `docs/research/chart-preparsing.md` with a citation per claim.
 
-   Deriving `song.ini` from source when the wiki documented it better cost this project four
-   defects — see `docs/SOURCES.md`. Repeating that here, on a considerably harder format with
-   *more* documentation available, would be inexcusable.
+   **The governing rule is never to range-test a difficulty block.** Every instrument family has
+   non-playable numbers inside its own blocks, and a range test turns each into a phantom
+   difficulty. Sixteen tests exist mostly to pin the traps the documentation names:
 
-   YARN's chart requirements also give a preparser things it can actually check: a chart must be
-   tempo-mapped, carry at least 2 seconds of leading silence, use correct track names, and have an
-   Expert chart for every instrument it charts.
+   - force-strum and HOPO markers sit inside the block and are not notes;
+   - five-fret note 59 is a left-hand *animation* note unless an `ENHANCED_OPENS` event says
+     otherwise — counting it unconditionally invents an Easy difficulty on a large share of Rock
+     Band-derived charts;
+   - every Pro Keys track is *required* to carry a range-shift marker, so a test not strictly
+     inside 48–72 reports even empty tracks as present;
+   - the Pro Keys animation tracks use an identical note range and differ only by name, so track
+     names are matched whole-string, never as substrings;
+   - Elite Drums' modifier octave carries a disco-flip marker that exists for downcharting and can
+     sit on a difficulty with no gems;
+   - a lone `HARM1` is the lead line, not a harmony arrangement.
+
+   Drum type is a heuristic because it has to be — 4-lane, Pro and 5-lane share one track — with
+   `song.ini`'s `pro_drums` / `five_lane_drums` overriding, and both set at once recorded as the
+   documented invalid state rather than silently resolved. Elite Drums downcharting is honoured:
+   a song with only `PART ELITE_DRUMS` reports 4-lane, Pro and 5-lane as `derived`, because the
+   client shows them.
+
+   The SMF reader is hand-rolled rather than a library, deliberately. Charts violate the MIDI
+   spec in two documented ways — running status not reset after SysEx or meta events, and `0xFF`
+   bytes inside SysEx — and a strict parser rejects files YARG plays fine.
+
+   **Cross-checked against the oracle:** the corpus case whose `notes.mid` YARG rejected with
+   "No notes found" now reports zero parts from our preparser too. Same conclusion, independent
+   route.
 
 **Exit criterion:** a CLI that scans a real song library, emits a catalog, repacks to `.sng`, and
 YARG scans the repacked output with identical metadata and an identical hash.
