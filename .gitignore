@@ -4,6 +4,13 @@
 *.exe
 *.test
 
+# CI works inside the project directory, because the runner is a shell executor
+# and there is nowhere else that is both writable and cached: .toolchain/ holds
+# the pinned Go distribution the pipeline fetches, .cache/ holds GOPATH, GOCACHE
+# and GOMODCACHE. Neither is ever committed, and both are safe to delete.
+/.toolchain/
+/.cache/
+
 # local runtime state
 /data/
 *.db

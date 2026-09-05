@@ -61,16 +61,7 @@ dockerfile-go-version:
 lint:
   stage: check
   script:
-    # gofmt -l lists files that are NOT formatted, so the check is that its
-    # output is empty. `gofmt -l . && true` would pass on a dirty tree.
-    - |
-      unformatted="$(gofmt -l .)"
-      if [ -n "$unformatted" ]; then
-        echo "not gofmt-clean:"
-        echo "$unformatted"
-        exit 1
-      fi
-      echo "gofmt clean"
+    - ./ci/check-gofmt.sh
     - go vet ./...
 
 test:
