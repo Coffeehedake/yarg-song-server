@@ -147,7 +147,12 @@ func applyMetadata(s *catalog.Song, ini *songini.File) {
 	s.Album = str("album")
 	s.Genre = str("genre")
 	s.Subgenre = str("sub_genre")
+	// `frets` is a deprecated alias for `charter`, and the wiki is explicit
+	// that the modern key wins outright rather than only filling a gap.
 	s.Charter = str("charter")
+	if s.Charter == "" {
+		s.Charter = str("frets")
+	}
 	s.Playlist = str("playlist")
 
 	// Source comes from "source", falling back to "icon" - charts in the wild
@@ -163,11 +168,16 @@ func applyMetadata(s *catalog.Song, ini *songini.File) {
 	if y, ok := ini.YearAsNumber(); ok {
 		s.YearAsNumber = y
 	}
-	s.AlbumTrack = int(num("album_track"))
-	if s.AlbumTrack == 0 {
-		s.AlbumTrack = int(num("track")) // older charts use "track"
-	}
-	s.PlaylistTrack = int(num("playlist_track"))
+	// album_track / playlist_track default to 16000 when absent, NOT 0. The
+	// difference is visible to a user: sorting an album puts unnumbered songs
+	// at the end, where 0 would put them first. Documented on the wiki; the
+	// key table alone does not tell you this.
+	//
+	// `track` is a deprecated alias, and album_track wins when BOTH are
+	// present - including when album_track is explicitly 0, which an
+	// "if zero, fall back" reading would get wrong.
+	s.AlbumTrack = trackNumber(ini, "album_track", "track")
+	s.PlaylistTrack = trackNumber(ini, "playlist_track", "")
 
 	s.SongLengthMS = num("song_length")
 	s.DelayMS = num("delay")
@@ -180,6 +190,10 @@ func applyMetadata(s *catalog.Song, ini *songini.File) {
 
 	s.LoadingPhrase = str("loading_phrase")
 	s.Rating = num("rating")
+	// Stored RAW and not normalised: the wiki documents vocal_gender as an
+	// integer enum (0=Female .. 4=Unspecified) while YARG.Core parses the key
+	// as a String. Until that is settled, converting either way would be
+	// inventing a fact.
 	s.VocalGender = str("vocal_gender")
 	s.CleanVocals = flag("clean_vocals")
 	s.Modchart = flag("modchart")
@@ -223,6 +237,20 @@ var diffKeyToPart = map[string]func(*catalog.Parts) *catalog.PartValues{
 	"diff_keys_real":       func(p *catalog.Parts) *catalog.PartValues { return &p.ProKeys },
 	"diff_vocals":          func(p *catalog.Parts) *catalog.PartValues { return &p.LeadVocals },
 	"diff_vocals_harm":     func(p *catalog.Parts) *catalog.PartValues { return &p.HarmonyVocals },
+}
+
+// trackNumber resolves a track-order key, honouring its deprecated alias and
+// YARG's 16000 default for "unnumbered".
+func trackNumber(ini *songini.File, key, deprecated string) int {
+	if v, ok := ini.Int(key); ok {
+		return int(v)
+	}
+	if deprecated != "" {
+		if v, ok := ini.Int(deprecated); ok {
+			return int(v)
+		}
+	}
+	return songini.NoTrackNumber
 }
 
 func applyIntensities(s *catalog.Song, ini *songini.File) {

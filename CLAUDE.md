@@ -5,7 +5,13 @@ up in the project folder's `CLAUDE.md`; this file covers only this repo.
 
 ## Read before writing parser code
 
-`docs/research/yarg-song-formats.md`. It is the reason the scope is what it is, and it records
+**`docs/SOURCES.md` FIRST.** The official wiki documents `song.ini` better than reading YARG.Core
+does — it carries defaults, deprecated aliases and a compatibility column that the source cannot
+give you — and `.chart`/`.mid` are fully documented by TheNathannator. Deriving a format from
+source when a spec exists cost this project four real defects, listed there. Check what is
+already written down before reverse-engineering anything.
+
+Then `docs/research/yarg-song-formats.md`. It is the reason the scope is what it is, and it records
 what must never be built. `docs/ADR-001-server-architecture.md` records why Go, and what that
 choice costs. `docs/ROADMAP.md` has the build order.
 

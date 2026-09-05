@@ -3,7 +3,8 @@
   "sources": {
     "README.md": "3e925d000926e88223b6875ed28c6d61d3ebe5b33b0f77240494dfa7cab15622",
     "docs/ADR-001-server-architecture.md": "77c9fb3c76b2a3edb19a39bfecbc1b66af03227b2115fb9ca6752886a64553b7",
-    "docs/ROADMAP.md": "415eda8578a9cb102e62eae5db1ad3484c2f32697098cf89b365319a78ca350b",
+    "docs/ROADMAP.md": "ab6205ec688e52221a532ba206a1f84260fd0b0e043a112f9badadde08dcef13",
+    "docs/SOURCES.md": "323c555e96bc7faccbb9c3f739a6435cea94da31541edf51853c1ec40d304d18",
     "docs/TEST-CORPUS.md": "8e538c93926f48696b9475424a7a6b8ad7eec095da754ca573243014cdb1da3c",
     "docs/research/yarg-song-formats.md": "4c5d0ffb36386e910a877a1269a6443790c29f6d69034210636c5e072d506fdd"
   }

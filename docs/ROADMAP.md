@@ -159,6 +159,12 @@ Build order (each step is independently testable):
    walking is needed, not full chart semantics. This step is deliberately last; everything before
    it works with `parts_derived: false`.
 
+   **Read [Guitar Game Chart Formats](https://thenathannator.github.io/GuitarGame_ChartFormats/)
+   before writing any of it.** `.chart` and `.mid` are both documented there as complete, and the
+   YARG wiki has `notes.mid` and `notes.chart` pages besides. Deriving `song.ini` from source when
+   the wiki documented it better cost this project four defects — see `docs/SOURCES.md`. Do not
+   repeat that here, where the format is considerably harder.
+
 **Exit criterion:** a CLI that scans a real song library, emits a catalog, repacks to `.sng`, and
 YARG scans the repacked output with identical metadata and an identical hash.
 

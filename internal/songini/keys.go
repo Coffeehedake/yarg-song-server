@@ -8,6 +8,24 @@
 // YARG.Core/IO/Ini/IniModifierCollection.cs (storage semantics).
 package songini
 
+// Tier records whether YARG actually ACTS on a key today.
+//
+// This comes from the official wiki's compatibility column, which the source
+// alone does not give you: a key can be in SONG_INI_OUTLINES - and so parsed -
+// while the game does nothing with it yet. A server that presents a
+// TierFuture key as meaningful is promising behaviour the client does not have.
+type Tier uint8
+
+const (
+	// TierYARG: YARG uses this today.
+	TierYARG Tier = iota
+	// TierFuture: recognised, but not yet acted on by the game.
+	TierFuture
+	// TierDeprecated: an old name kept for compatibility. See the Aliases map -
+	// the modern key wins when both are present.
+	TierDeprecated
+)
+
 // Kind is the value type YARG parses a given key as. It matters because a
 // server that re-emits song.ini must not silently change a value's shape, and
 // because "1"/"true"/"True" are all the same boolean to YARG.
@@ -112,6 +130,17 @@ var Keys = map[string]Kind{
 	"real_guitar_tuning": KindUint32, "real_guitar_22_tuning": KindUint32,
 	"real_keys_lane_count_left": KindUint32, "real_keys_lane_count_right": KindUint32,
 
+	// documented on the wiki, missed when this table was built from source alone
+	"year_recorded": KindString, "year_released": KindString,
+	"parts_vocals_harm":        KindInt32,
+	"diff_guitar_coop_real":    KindInt32,
+	"diff_guitar_coop_real_22": KindInt32,
+	"diff_rhythm_real":         KindInt32,
+	"diff_rhythm_real_22":      KindInt32,
+	"link_newgrounds":          KindString,
+	"link_soundcloud":          KindString,
+	"link_tiktok":              KindString,
+
 	// misc
 	"rating": KindUint32, "count": KindUint32, "version": KindUint32,
 	"unlock_completed": KindUint32, "unlock_id": KindString,
@@ -121,3 +150,53 @@ var Keys = map[string]Kind{
 // Section is the section header YARG reads modifiers from. Comparison is
 // lowercased, so [Song], [song] and [SONG] are the same section.
 const Section = "song"
+
+// Aliases maps a deprecated key to the modern one it stands in for.
+//
+// The wiki is explicit that the modern key WINS: "track is an old name for the
+// album_track tag. This tag should be ignored by the game if album_track is
+// present", and likewise frets for charter. That is stricter than "use the old
+// one if the new one is missing or zero" - an explicit album_track of 0 must
+// still beat a track of 5.
+var Aliases = map[string]string{
+	"track": "album_track",
+	"frets": "charter",
+}
+
+// NoTrackNumber is the value YARG substitutes when album_track or
+// playlist_track is absent.
+//
+// It is 16000, not 0, and the difference is visible: sorting an album puts
+// unnumbered songs at the END, where 0 would put them first. Documented on the
+// wiki; not discoverable from the key table.
+const NoTrackNumber = 16000
+
+// Rating values for the `rating` key, per the wiki. Stored as a number by the
+// scanner; this is what the numbers mean.
+const (
+	RatingFamilyFriendly       = 1
+	RatingSupervisionRecommend = 2
+	RatingMatureContent        = 3
+	RatingNotRated             = 4
+	RatingSensitiveContent     = 5
+)
+
+// VocalGender values, per the wiki, which documents `vocal_gender` as an
+// INTEGER enum.
+//
+// UNRESOLVED: YARG.Core's SONG_INI_OUTLINES parses this key as a String, and
+// SongMetadata carries a VocalGender enum backed by a byte. The wiki and the
+// source disagree about the on-disk shape, so the scanner stores the RAW value
+// and does not normalise it. Settle this by reading the modifier's conversion
+// before anything relies on the value.
+const (
+	VocalGenderFemale      = 0
+	VocalGenderMale        = 1
+	VocalGenderNonBinary   = 2
+	VocalGenderOther       = 3
+	VocalGenderUnspecified = 4
+)
+
+// TagCover is the value of the `tags` key that makes YARG show "As made famous
+// by" beside the artist, marking an in-house cover rather than the original.
+const TagCover = "cover"

@@ -8,6 +8,7 @@ import (
 
 	"github.com/coffeehedake/yarg-song-server/internal/catalog"
 	"github.com/coffeehedake/yarg-song-server/internal/sng"
+	"github.com/coffeehedake/yarg-song-server/internal/songini"
 )
 
 const sampleINI = `[Song]
@@ -336,4 +337,70 @@ func hasIssue(issues []catalog.Issue, code string) bool {
 		}
 	}
 	return false
+}
+
+// The three cases below come from the official wiki, which documents song.ini
+// better than reading YARG.Core does. Each was WRONG in this scanner until the
+// wiki was read - a reminder to check the documentation before reverse
+// engineering, not after.
+
+func TestUnnumberedTracksDefaultTo16000(t *testing.T) {
+	s, err := ScanDir(sampleFolder()) // sampleINI sets neither track key
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.AlbumTrack != songini.NoTrackNumber || s.PlaylistTrack != songini.NoTrackNumber {
+		t.Fatalf("album_track=%d playlist_track=%d; absent means %d, not 0 - "+
+			"0 sorts unnumbered songs to the FRONT of an album",
+			s.AlbumTrack, s.PlaylistTrack, songini.NoTrackNumber)
+	}
+}
+
+// "track is an old name for the album_track tag. This tag should be ignored by
+// the game if album_track is present." An explicit album_track of 0 must
+// therefore beat a track of 5 - which an "if zero, fall back" reading gets
+// exactly backwards.
+func TestAlbumTrackBeatsDeprecatedTrackEvenWhenZero(t *testing.T) {
+	f := sampleFolder()
+	f["song.ini"] = &fstest.MapFile{Data: []byte(sampleINI + "album_track = 0\ntrack = 5\n")}
+	s, err := ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.AlbumTrack != 0 {
+		t.Fatalf("album_track = %d, want 0; the deprecated `track` key won", s.AlbumTrack)
+	}
+
+	// With album_track absent, the deprecated key is used.
+	f["song.ini"] = &fstest.MapFile{Data: []byte(sampleINI + "track = 5\n")}
+	s, err = ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.AlbumTrack != 5 {
+		t.Fatalf("album_track = %d, want 5 from the deprecated key", s.AlbumTrack)
+	}
+}
+
+// `frets` is a deprecated alias for `charter`, and was simply not mapped here.
+func TestFretsIsADeprecatedCharterAlias(t *testing.T) {
+	f := sampleFolder()
+	f["song.ini"] = &fstest.MapFile{Data: []byte("[Song]\nname = X\nfrets = Old Charter Key\nsong.ogg = x\n")}
+	s, err := ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Charter != "Old Charter Key" {
+		t.Fatalf("charter = %q; `frets` is the deprecated name for it", s.Charter)
+	}
+
+	// charter wins when both are present.
+	f["song.ini"] = &fstest.MapFile{Data: []byte("[Song]\nname = X\ncharter = Modern\nfrets = Old\n")}
+	s, err = ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Charter != "Modern" {
+		t.Fatalf("charter = %q, want the modern key to win", s.Charter)
+	}
 }

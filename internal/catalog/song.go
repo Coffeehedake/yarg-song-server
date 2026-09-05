@@ -75,16 +75,19 @@ type Song struct {
 
 	// --- indexed: the twelve attributes YARG sorts by, plus year ---
 
-	Name          string `json:"name"`
-	Artist        string `json:"artist"`
-	Album         string `json:"album"`
-	Genre         string `json:"genre"`
-	Subgenre      string `json:"subgenre,omitempty"`
-	Charter       string `json:"charter,omitempty"`
-	Source        string `json:"source,omitempty"`
-	Playlist      string `json:"playlist,omitempty"`
-	AlbumTrack    int    `json:"album_track,omitempty"`
-	PlaylistTrack int    `json:"playlist_track,omitempty"`
+	Name     string `json:"name"`
+	Artist   string `json:"artist"`
+	Album    string `json:"album"`
+	Genre    string `json:"genre"`
+	Subgenre string `json:"subgenre,omitempty"`
+	Charter  string `json:"charter,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Playlist string `json:"playlist,omitempty"`
+	// 16000 means "unnumbered" - YARG's own default, which sorts such songs to
+	// the end of an album rather than the front. Not omitempty: a client must
+	// be able to tell 16000 from a missing field.
+	AlbumTrack    int `json:"album_track"`
+	PlaylistTrack int `json:"playlist_track"`
 
 	// Year is free text on purpose: charts carry "1994", ", 1994" and "1994?".
 	// YearAsNumber is a derived view and is 0 when no year could be read.
