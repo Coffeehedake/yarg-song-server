@@ -70,6 +70,16 @@ Derived from source and from measurement, because nothing else covers it:
 - **Scanner behaviour** — that a headerless `song.ini` yields no metadata, that a chart with no
   audio is rejected, and that a folder with no `song.ini` is silently skipped were all established
   by scanning a corpus with the game and reading its own report. See `TEST-CORPUS.md`.
+- **Sorting.** How the client normalises a value before ordering by it is described nowhere.
+  Reproduced in `internal/sortkey` from `YARG.Core/Song/Entries/Types/SortString.cs`,
+  `YARG.Core/Utility/StringTransformations.cs` (the three transforms, the six-article list and
+  the character grouping), `YARG.Core/Utility/RichTextUtils.cs` (the 36 recognised tag names)
+  and `YARG.Core/Song/Entries/SongEntry.Sorting.cs` (the twelve `SongAttribute` values and the
+  comparer chains). Five of the twelve - Genre, Subgenre, Source, Artist_Album and DateAdded -
+  have **no comparer upstream at all**; the chains used for those are ours, and ADR-002 says so
+  rather than implying parity.
+- **Searching.** Upstream's own search logic has not been read. The folding is shared with
+  sorting and is therefore the client's; the matching is ours and is documented as ours.
 
 ## What reading the wiki late cost
 

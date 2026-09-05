@@ -1,7 +1,8 @@
 // Command yarg-song-server serves a shared YARG song library over HTTP.
 //
-// Nothing is implemented yet beyond process lifecycle and health. See
-// docs/ROADMAP.md for the build order.
+// It scans the library once at start, holds the index in memory, and serves
+// every song as a .sng - the one format an unmodified YARG reads natively. See
+// docs/ROADMAP.md for the build order and docs/API.md for the endpoints.
 package main
 
 import (
@@ -14,9 +15,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/coffeehedake/yarg-song-server/internal/httpapi"
+	"github.com/coffeehedake/yarg-song-server/internal/library"
+	"github.com/coffeehedake/yarg-song-server/internal/packcache"
 	"github.com/coffeehedake/yarg-song-server/internal/scan"
 )
 
@@ -120,21 +125,45 @@ func runScan(root string) error {
 }
 
 func run(opt options, log *slog.Logger) error {
-	mux := http.NewServeMux()
+	// A missing library is refused at start rather than served as an empty one.
+	// "The server is up and has no songs" and "the path is wrong" look
+	// identical from a client, and only one of them is the operator's fault.
+	if st, err := os.Stat(opt.songs); err != nil || !st.IsDir() {
+		return fmt.Errorf("song library %q is not a readable directory: %w", opt.songs, err)
+	}
 
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write([]byte("ok\n"))
-	})
+	started := time.Now()
+	ix, err := library.Build(opt.songs)
+	if err != nil {
+		return fmt.Errorf("index %q: %w", opt.songs, err)
+	}
+	log.Info("library indexed",
+		"songs", ix.Len(),
+		"distinct_charts", ix.DistinctCharts(),
+		"duplicate_packages", ix.DuplicatePackages,
+		"problems", len(ix.Problems),
+		"took", time.Since(started).Round(time.Millisecond))
+	// Every unreadable folder is named once at start. Reporting only the count
+	// would leave an operator with "17 problems" and nothing to act on.
+	for _, p := range ix.Problems {
+		log.Warn("could not index", "path", p.Path, "err", p.Err)
+	}
 
-	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"version": version})
-	})
+	packs, err := packcache.New(filepath.Join(opt.data, "packs"))
+	if err != nil {
+		return err
+	}
+
+	api := &httpapi.Server{
+		Store:   library.NewStore(ix),
+		Packs:   packs,
+		Version: version,
+		Log:     log,
+	}
 
 	srv := &http.Server{
 		Addr:              opt.listen,
-		Handler:           mux,
+		Handler:           api.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

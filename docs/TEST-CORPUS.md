@@ -181,3 +181,58 @@ available, revisit this.
 
 That said, the first run of this method found three real bugs, two of which had been written into
 the code as confident comments. The oracle is doing work.
+
+## Second oracle run — 2026-09-05, against what the SERVER produced
+
+The first run scanned loose folders. This one scanned the archives the running server handed a
+client, which is the thing Phase 2 actually promises: *an unmodified YARG reads what the server
+serves.* The two runs answer different questions and both are worth keeping.
+
+Procedure, end to end and all of it measured:
+
+```powershell
+go run ./cmd/mkcorpus -out $env:USERPROFILE\yarg-test\corpus     # 22 cases
+go build -o yss.exe ./cmd/yarg-song-server
+.\yss.exe -listen 127.0.0.1:8099 -songs $env:USERPROFILE\yarg-test\corpus -data .\data
+# POST /api/v1/have with an empty list -> 22 missing
+# GET /song/{hash}.sng for each -> 22 files
+# point YARG's SongFolders at the downloaded folder, delete songcache.bin, launch, wait
+```
+
+Results:
+
+| Step | Outcome |
+|---|---|
+| Index the corpus | 22 songs, 22 distinct charts, 0 problems, 15 ms |
+| `POST /have` from an empty client | `library_total=22 missing_count=22` |
+| Download every missing song | 22 downloaded, 0 ambiguous, 0 failed |
+| Re-scan the downloads with our own scanner | 22 songs, 0 failures |
+| **YARG scans the 22 served archives** | **20 accepted, 2 refused** |
+
+The two refusals, and our own independent verdict on the same archive:
+
+| Archive | YARG said | Our scanner said |
+|---|---|---|
+| `30334065…` "Mid Beats Chart" | `No notes found` | `parts_derived: true`, no part carries any difficulty |
+| `4ec68053…` "No Audio" | `No audio accompanying the chart file` | issue `no_audio`, no stems |
+
+So the standard holds on the served archives as it does on the folders: **every song YARG
+rejects is one this scanner independently flags.**
+
+### What this run turned up: packing gives an untitled UltraStar chart a title
+
+Corpus case `21-ultrastar-no-title` has a `notes.txt` with no `#TITLE` and a `song.ini` that does
+carry a name. As a **loose folder** YARG refuses it — UltraStar is the one format that takes its
+title from the chart rather than from `song.ini`, and a missing `#TITLE` is fatal ("Name metadata
+not provided"). Our scanner flags it `ultrastar_no_title`.
+
+As a **`.sng` produced by this server**, YARG accepted it. That is not a packing bug: in a `.sng`
+the metadata lives in the archive's header section, and `PackDir` fills that section from
+`song.ini`, so the song genuinely has a title. Our scanner reports no issue for the archive,
+which agrees with the client in both forms.
+
+It is worth writing down anyway, because it means one sentence people will reasonably assume is
+not quite true: **the server does not always serve exactly what the folder was.** For this one
+format, repacking makes a song playable that was not. Nothing to fix; something to know before
+the Phase 2b sync client starts writing archives into a player's songs folder and a song appears
+that the player could not previously play.

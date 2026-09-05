@@ -3,9 +3,11 @@
   "sources": {
     "README.md": "a8b62bf1164f503b3e04cb9bb6716f67de7edeabc198212f686492163e3abdb1",
     "docs/ADR-001-server-architecture.md": "77c9fb3c76b2a3edb19a39bfecbc1b66af03227b2115fb9ca6752886a64553b7",
-    "docs/ROADMAP.md": "c1573b5d1646d9855c54fee87beffb341039014ff45227571f68c1db57b5af77",
-    "docs/SOURCES.md": "d09c64c018449dc2ae70c995e3c6c671c64cbbd8ae185d6011f92f0276b4eb95",
-    "docs/TEST-CORPUS.md": "2ea2d5399179c72c2f6fbdd78387243199cd605145f0df3ccd93e845e9291601",
+    "docs/ADR-002-v1-store.md": "fce41c56b8395c7cc91419aa20b074a1fc183609b34cb8d59ebdfb561841fbd4",
+    "docs/API.md": "01b23f19a562107026cd290be3ab117852e186145e4428114583b6ce37700df7",
+    "docs/ROADMAP.md": "450faf09b95c7d2fdea2477c02593e6155232cc4ef8d21f328ef21dec3f977e6",
+    "docs/SOURCES.md": "ae8f29dc86ef0df75a7dbca575ef59a4c9c73f8cfa4c44b5a003facaf1627ad5",
+    "docs/TEST-CORPUS.md": "057317abd0759cc622276f167eba86a46982d843576d33e8285d4ba9b68f868c",
     "docs/research/chart-preparsing.md": "5bbb0183f6b574ed54a215e48f7b3069aeedde551d7579438c68f270f5ec6e92",
     "docs/research/yarg-song-formats.md": "650bf169a65356c832ed474dd7293183e0649b2a09c11340b8a0949d5bb3e900"
   }

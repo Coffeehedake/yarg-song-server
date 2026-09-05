@@ -17,6 +17,8 @@ Then, by subject:
 |---|---|
 | `docs/ROADMAP.md` | The build order, with what is done and what each phase must prove |
 | `docs/ADR-001-server-architecture.md` | Why Go, why two repos, why sync-first — and what Go costs |
+| `docs/ADR-002-v1-store.md` | Why the catalog is in memory, why packed archives are cached to disk, and the two places the server deliberately sorts differently from the client |
+| `docs/API.md` | The HTTP surface: every endpoint, what it promises, and what it does not claim |
 | `docs/research/chart-preparsing.md` | Track names, note maps and the false-positive traps, cited per claim. **Read before touching `internal/chart`** |
 | `docs/research/yarg-song-formats.md` | The `.sng` binary layout, song identity, stem naming. Marked as history at the top: parts of it were superseded, and it says which |
 | `docs/TEST-CORPUS.md` | Where test input comes from, what we deliberately do not use, and how to run the oracle |
@@ -29,6 +31,11 @@ Then, by subject:
   non-goals, not "not yet" items. See the research doc for why.
 - **Song identity is `SHA1(chart file bytes)`** and nothing else. If you find yourself hashing a
   folder, the audio, or `song.ini`, stop — the client will never agree with you.
+- **Do not "improve" `internal/sortkey`.** It reproduces YARG.Core's `SortString`, including
+  three things that look like defects: only uppercase `Æ` expands to `AE`, comparison is by
+  UTF-16 code unit rather than code point, and the article list has no `a` or `an`. Each one is
+  deliberate and tested, because a browse list that disagrees with the game is wrong even when
+  it is more sensible.
 - Chart-file priority order (`notes.mid` → `notes.midi` → `notes.chart` → `notes.txt`) is
   load-bearing. Hashing the wrong file in a folder that has two produces a wrong identity silently.
 

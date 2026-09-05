@@ -219,13 +219,43 @@ exists, and it is the proof that the server is correct.
 
 **2a — `yarg-song-server`**
 
-- HTTP API: browse/search over the 12 attributes YARG itself sorts by, `GET /song/{hash}.sng`,
-  and a bulk `POST /have` that takes a list of hashes and answers what the client is missing.
-- Ingest: loose folders, `.sng`, and `.zip`/`.7z` of a loose folder. Refuse RB packages with a
-  clear message.
-- Config file + sane defaults; no database server required for v1 (embedded store).
-- Docker image, multi-arch `linux/amd64` + `linux/arm64` (Pi), plus native macOS and Windows
-  binaries from the same source. CI builds all of them.
+- [x] **HTTP API** — `internal/httpapi`, documented in `docs/API.md`. Browse and search over
+      the 12 attributes YARG itself sorts by, `GET /song/{chart_hash}.sng`, and a bulk
+      `POST /api/v1/have` that takes the hashes a client holds and answers what it is missing.
+- [x] **The index and the store** — `internal/library`, in memory and rebuilt at start;
+      `internal/packcache` packs a loose folder to `.sng` on demand and caches it by package
+      hash. Both decisions and their costs are in `docs/ADR-002-v1-store.md`.
+- [x] **Sort parity with the client** — `internal/sortkey` reproduces YARG.Core's `SortString`
+      (rich-text stripping, diacritic folding, whitespace collapse, article removal, character
+      grouping, UTF-16 ordinal comparison) and `internal/library` orders by upstream's own
+      comparer chains. Without this a browse list is internally consistent and unlike anything
+      the player sees in the game.
+- [ ] Ingest: loose folders, `.sng`, and `.zip`/`.7z` of a loose folder. Refuse RB packages with
+      a clear message.
+- [ ] Config file + sane defaults. Flags exist (`-listen`, `-songs`, `-data`); a file does not.
+- [ ] A bound or an eviction policy for the pack cache. It is content-keyed and therefore always
+      safe to delete, which is why this is a finishing task and not a design question.
+- [ ] Docker image, multi-arch `linux/amd64` + `linux/arm64` (Pi), plus native macOS and Windows
+      binaries from the same source. CI builds all of them.
+
+**Measured end to end on 2026-09-05**, against the 22-case corpus: the server indexed all 22 in
+15 ms, `POST /have` from an empty client reported 22 missing, all 22 downloaded through
+`GET /song/{hash}.sng`, and re-scanning the downloaded archives gave 22 songs and 0 failures.
+
+Then the oracle, which is the only test that means anything here: **YARG v0.15.0 scanned the 22
+archives the server produced and accepted 20.** The two it refused were the two corpus cases
+built to be refused, and our own scanner flags both independently — `No notes found` against a
+preparser reporting no parts at all, and `No audio accompanying the chart file` against our
+`no_audio` issue. The standard holds on the served archives as well as on the folders.
+
+**One thing that run turned up, worth knowing before Phase 2b.** Repacking a loose UltraStar
+folder whose `notes.txt` has no `#TITLE` makes YARG *accept* a song it refuses as a folder. As a
+folder the title has to come from the chart, and a missing `#TITLE` is fatal — "Name metadata not
+provided". Packed, the name lives in the `.sng` metadata section, which the packer fills from
+`song.ini`, so the song has a title and plays. Our scanner agrees with the client in both forms
+(`ultrastar_no_title` on the folder, no issue on the archive), so nothing here is broken — but it
+means "the server serves exactly what the folder was" is not quite true for this one format, and
+a sync client will show a song the player could not previously play.
 
 **2b — sync client**
 
