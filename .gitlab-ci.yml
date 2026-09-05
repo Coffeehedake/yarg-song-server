@@ -139,7 +139,15 @@ container-image:
     # docker-container builder is required. This is the step that is easy to
     # miss, because buildx then fails with a message about the docker driver
     # rather than anything that mentions multi-arch.
-    - docker buildx inspect "$BUILDX_BUILDER" >/dev/null 2>&1 || docker buildx create --name "$BUILDX_BUILDER" --driver docker-container --bootstrap
+    # `--driver-opt network=host` is not incidental. The buildkit container has
+    # its own network namespace and resolves through the Docker daemon's DNS
+    # (192.168.2.1 here), which does not know `registry.badassium.com` - so the
+    # first run of this job built BOTH platforms perfectly and then died on
+    # `dial tcp: lookup registry.badassium.com ... no such host` while pushing.
+    # The shell had resolved the same name moments earlier for `docker login`,
+    # because that runs in the daemon's context rather than a container's. Host
+    # networking gives buildkit the same view the daemon has.
+    - docker buildx inspect "$BUILDX_BUILDER" >/dev/null 2>&1 || docker buildx create --name "$BUILDX_BUILDER" --driver docker-container --driver-opt network=host --bootstrap
     - docker buildx use "$BUILDX_BUILDER"
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
     - |
