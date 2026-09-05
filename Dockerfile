@@ -1,6 +1,11 @@
 # syntax=docker/dockerfile:1
 
-FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS build
+# This tag must not be older than go.mod's `go` directive. CI enforces it
+# (ci/check-dockerfile-go-version.sh) because it has already drifted once:
+# `go get golang.org/x/text` raised the directive from 1.24 to 1.25 as a side
+# effect and nothing local noticed, since a workstation builds with its own
+# newer toolchain and never reads this line.
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev

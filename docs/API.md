@@ -124,6 +124,9 @@ unchanged by it.
 
 ## What is not here yet
 
-Ingest (`POST` of a folder, `.sng` or `.zip`), a config file, and authentication. See
-`docs/ROADMAP.md`. The server is currently read-only and unauthenticated: run it on a LAN,
-not on the internet.
+Ingest (`POST` of a folder, `.sng` or `.zip`) and authentication. See `docs/ROADMAP.md`. The
+server is currently read-only and unauthenticated: run it on a LAN, not on the internet.
+
+Settings are a flag or a `key = value` line in `./yarg-song-server.conf`, same name for both, flag
+wins; `--write-config` prints a commented example. An unknown setting in that file is an error
+rather than a warning, on the same reasoning as the unknown-field rule on `POST /api/v1/have`.

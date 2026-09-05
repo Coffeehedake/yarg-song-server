@@ -232,11 +232,28 @@ exists, and it is the proof that the server is correct.
       the player sees in the game.
 - [ ] Ingest: loose folders, `.sng`, and `.zip`/`.7z` of a loose folder. Refuse RB packages with
       a clear message.
-- [ ] Config file + sane defaults. Flags exist (`-listen`, `-songs`, `-data`); a file does not.
+- [x] **Config file + sane defaults** — `internal/config`. `key = value` with `#` comments, the
+      same names as the flags, precedence defaults < file < flags actually typed, and
+      `--write-config` to print a commented example. An unknown setting is an error, not a
+      warning. A file NAMED on the command line and missing is fatal; the conventional
+      `./yarg-song-server.conf` simply not existing is the normal first run and is silent.
+- [x] **CI** — `.gitlab-ci.yml`. `gofmt`, `go vet`, the suite, the suite again with `-race`, all
+      six release targets, and an assertion that the Dockerfile's Go is not older than `go.mod`
+      requires. See below for what this replaced.
 - [ ] A bound or an eviction policy for the pack cache. It is content-keyed and therefore always
       safe to delete, which is why this is a finishing task and not a design question.
-- [ ] Docker image, multi-arch `linux/amd64` + `linux/arm64` (Pi), plus native macOS and Windows
-      binaries from the same source. CI builds all of them.
+- [ ] The multi-arch Docker image itself. The `Dockerfile` and `make docker` exist and the Go
+      version mismatch in them is fixed, but **no image has been built** — neither ENG-1 nor the
+      Vault2 runner has a usable Docker daemon reachable from a session, so this is stated as
+      unmeasured rather than assumed to work.
+
+**What CI replaced.** This project had no `.gitlab-ci.yml`, so GitLab fell through to Auto DevOps.
+Pipeline #2216 — the only pipeline this project has ever run — failed three jobs with exit 127
+trying to execute `/build/build.sh`, `/bin/herokuish` and `lsif-go`. Those are container-executor
+assumptions, and the runner is a **shell** executor on Vault2, which has none of them. A red
+pipeline nobody believes is worse than no pipeline, so the CI here brings its own pinned Go
+toolchain (SHA-256 verified before use, cached between runs) rather than depending on whatever
+happens to be installed on the host.
 
 **Measured end to end on 2026-09-05**, against the 22-case corpus: the server indexed all 22 in
 15 ms, `POST /have` from an empty client reported 22 missing, all 22 downloaded through

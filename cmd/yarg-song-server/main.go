@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/coffeehedake/yarg-song-server/internal/config"
 	"github.com/coffeehedake/yarg-song-server/internal/httpapi"
 	"github.com/coffeehedake/yarg-song-server/internal/library"
 	"github.com/coffeehedake/yarg-song-server/internal/packcache"
@@ -28,22 +30,28 @@ import (
 // version is set at build time via -ldflags.
 var version = "dev"
 
-type options struct {
-	listen string
-	songs  string
-	data   string
-}
-
 func main() {
-	var opt options
-	flag.StringVar(&opt.listen, "listen", ":8080", "address to listen on")
-	flag.StringVar(&opt.songs, "songs", "./songs", "path to the song library")
-	flag.StringVar(&opt.data, "data", "./data", "path for catalog and server state")
-	showVersion := flag.Bool("version", false, "print version and exit")
+	def := config.Defaults()
+
+	var (
+		flagged     config.Config
+		configPath  string
+		showVersion = flag.Bool("version", false, "print version and exit")
+		writeConfig = flag.Bool("write-config", false, "print a commented example config file and exit")
+	)
+	flag.StringVar(&configPath, "config", "",
+		"path to a config file (default: ./"+config.DefaultPath+" if it exists)")
+	flag.StringVar(&flagged.Listen, "listen", def.Listen, "address to listen on")
+	flag.StringVar(&flagged.Songs, "songs", def.Songs, "path to the song library")
+	flag.StringVar(&flagged.Data, "data", def.Data, "path for catalog and server state")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println(version)
+		return
+	}
+	if *writeConfig {
+		fmt.Print(config.Example)
 		return
 	}
 
@@ -76,10 +84,54 @@ func main() {
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
+	// flag.Visit reports only the flags actually given, which is the whole
+	// mechanism: a flag left alone must not overwrite the config file with its
+	// own default value. It is lifted out of resolve so precedence is testable
+	// without the global flag set.
+	given := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { given[f.Name] = true })
+
+	opt, err := resolve(configPath, flagged, given)
+	if err != nil {
+		log.Error("configuration", "err", err)
+		os.Exit(1)
+	}
+
 	if err := run(opt, log); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
+}
+
+// resolve applies the three sources in order of authority: defaults, then the
+// config file, then any flag the operator actually typed.
+//
+// Two cases that look alike and are not: a config file NAMED on the command
+// line and missing is a mistake and stops the server, while the conventional
+// file simply not being there is the normal first run and is silent. A
+// malformed file is fatal either way - a settings file the server could not
+// read is not a settings file it should guess around.
+func resolve(configPath string, flagged config.Config, given map[string]bool) (config.Config, error) {
+	cfg := config.Defaults()
+
+	if configPath != "" {
+		if err := config.LoadFile(&cfg, configPath); err != nil {
+			return cfg, err
+		}
+	} else if err := config.LoadFile(&cfg, config.DefaultPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return cfg, err
+	}
+
+	if given["listen"] {
+		cfg.Listen = flagged.Listen
+	}
+	if given["songs"] {
+		cfg.Songs = flagged.Songs
+	}
+	if given["data"] {
+		cfg.Data = flagged.Data
+	}
+	return cfg, nil
 }
 
 func runPack(src, dst string) error {
@@ -124,18 +176,18 @@ func runScan(root string) error {
 	return err
 }
 
-func run(opt options, log *slog.Logger) error {
+func run(opt config.Config, log *slog.Logger) error {
 	// A missing library is refused at start rather than served as an empty one.
 	// "The server is up and has no songs" and "the path is wrong" look
 	// identical from a client, and only one of them is the operator's fault.
-	if st, err := os.Stat(opt.songs); err != nil || !st.IsDir() {
-		return fmt.Errorf("song library %q is not a readable directory: %w", opt.songs, err)
+	if st, err := os.Stat(opt.Songs); err != nil || !st.IsDir() {
+		return fmt.Errorf("song library %q is not a readable directory: %w", opt.Songs, err)
 	}
 
 	started := time.Now()
-	ix, err := library.Build(opt.songs)
+	ix, err := library.Build(opt.Songs)
 	if err != nil {
-		return fmt.Errorf("index %q: %w", opt.songs, err)
+		return fmt.Errorf("index %q: %w", opt.Songs, err)
 	}
 	log.Info("library indexed",
 		"songs", ix.Len(),
@@ -149,7 +201,7 @@ func run(opt options, log *slog.Logger) error {
 		log.Warn("could not index", "path", p.Path, "err", p.Err)
 	}
 
-	packs, err := packcache.New(filepath.Join(opt.data, "packs"))
+	packs, err := packcache.New(filepath.Join(opt.Data, "packs"))
 	if err != nil {
 		return err
 	}
@@ -162,7 +214,7 @@ func run(opt options, log *slog.Logger) error {
 	}
 
 	srv := &http.Server{
-		Addr:              opt.listen,
+		Addr:              opt.Listen,
 		Handler:           api.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -172,7 +224,7 @@ func run(opt options, log *slog.Logger) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", opt.listen, "songs", opt.songs, "data", opt.data, "version", version)
+		log.Info("listening", "addr", opt.Listen, "songs", opt.Songs, "data", opt.Data, "version", version)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}

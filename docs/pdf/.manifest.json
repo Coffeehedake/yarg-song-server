@@ -1,11 +1,11 @@
 {
   "_comment": "sha256 of each source .md at the time its PDF was last rendered. Written by build-pdfs.py; verified by --verify. Do not hand-edit.",
   "sources": {
-    "README.md": "a8b62bf1164f503b3e04cb9bb6716f67de7edeabc198212f686492163e3abdb1",
+    "README.md": "f746f358d4ea2179415aa2330aae6cead3c0eb30ae0427a667e3f2766abe7d96",
     "docs/ADR-001-server-architecture.md": "77c9fb3c76b2a3edb19a39bfecbc1b66af03227b2115fb9ca6752886a64553b7",
     "docs/ADR-002-v1-store.md": "fce41c56b8395c7cc91419aa20b074a1fc183609b34cb8d59ebdfb561841fbd4",
-    "docs/API.md": "01b23f19a562107026cd290be3ab117852e186145e4428114583b6ce37700df7",
-    "docs/ROADMAP.md": "450faf09b95c7d2fdea2477c02593e6155232cc4ef8d21f328ef21dec3f977e6",
+    "docs/API.md": "86d435d31dd2f06a6991ef34ff2639e9fcd81baaeb0918b23188c66a5b0fb5c3",
+    "docs/ROADMAP.md": "e877fea4f196a93ea9e935d7833f2378bdce9eec9af281c885cc851f358a700c",
     "docs/SOURCES.md": "ae8f29dc86ef0df75a7dbca575ef59a4c9c73f8cfa4c44b5a003facaf1627ad5",
     "docs/TEST-CORPUS.md": "057317abd0759cc622276f167eba86a46982d843576d33e8285d4ba9b68f868c",
     "docs/research/chart-preparsing.md": "5bbb0183f6b574ed54a215e48f7b3069aeedde551d7579438c68f270f5ec6e92",

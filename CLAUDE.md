@@ -45,7 +45,12 @@ Go 1.27.0 and mingw-w64 GCC 16.2.0 are installed on ENG-1 as per-user toolchains
 `%LOCALAPPDATA%\Programs\`, both already on the user `Path`. If `go` or `gcc` is not found, the
 shell predates the PATH change — open a new one.
 
-- `gofmt -l .`, `go vet ./...` and `go test ./...` must all be clean before a commit.
+- `gofmt -l .`, `go vet ./...` and `go test ./...` must all be clean before a commit. CI runs
+  the same things on every push (`.gitlab-ci.yml`), on a **shell** executor that brings its own
+  pinned Go toolchain — do not add an `image:` and expect it to be honoured.
+- **If `test:race` in CI dies with "-race requires cgo", that means the Vault2 runner has no C
+  toolchain.** Do not drop `-race` to make the pipeline green; that is manufacturing a green
+  by removing the instrument. Ask for gcc on the runner instead.
 - **`-race` works on ENG-1 now**, so run it: `go test ./... -count=1 -race`. It needs cgo, which
   needed a C toolchain; mingw-w64 (WinLibs GCC 16.2.0, UCRT/POSIX/SEH) is installed per-user at
   `%LOCALAPPDATA%\Programs\mingw64` and `go env CGO_ENABLED` now reports 1. First run takes about

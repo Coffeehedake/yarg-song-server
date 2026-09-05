@@ -7,16 +7,18 @@ Point it at a folder of songs, run it on whatever is always-on in your house, an
 machine on the network plays from the same library. It is a single static binary — Docker,
 Raspberry Pi, macOS and Windows all run the same code.
 
-> **Status: the format library works; the server does not exist yet.**
+> **Status: the server runs and serves songs. There is no sync client yet.**
 >
-> You can scan a song library, read and write `.sng` archives, and get an accurate instrument and
-> difficulty grid for every song. There is no HTTP API yet — that is Phase 2. See
-> [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> It scans a library, serves a browsable and searchable catalog over HTTP, answers "which of these
+> hashes am I missing?" in bulk, and hands out any song as a `.sng` — packing a loose folder on
+> demand. What is still missing is the small companion that pulls a library into a local songs
+> folder, which is what makes it useful without touching the client. See
+> [`docs/ROADMAP.md`](docs/ROADMAP.md) and [`docs/API.md`](docs/API.md).
 >
-> What "works" means here: archives written by this tool are decoded by the reference `SngCli` and
-> scanned by a real YARG install, and on a 22-case corpus of deliberately awkward songs, every
-> song YARG rejects is one this scanner independently flags. Details in
-> [`docs/TEST-CORPUS.md`](docs/TEST-CORPUS.md).
+> What "works" means here is measured, not asserted. Archives this tool writes are decoded by the
+> reference `SngCli`; **a real YARG install scanned 22 archives served by the running server and
+> accepted 20**, the two refusals being corpus cases built to be refused and both independently
+> flagged by our own scanner. Details in [`docs/TEST-CORPUS.md`](docs/TEST-CORPUS.md).
 
 ## Design in one paragraph
 
@@ -57,24 +59,61 @@ heuristics and no fuzzy matching.
 | Document | What it covers |
 |---|---|
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Phases, build order, exit criteria, blockers |
+| [`docs/API.md`](docs/API.md) | Every HTTP endpoint, what it promises, and what it explicitly does not claim |
 | [`docs/ADR-001-server-architecture.md`](docs/ADR-001-server-architecture.md) | Why Go, why two repos, why sync-first, why LGPL |
+| [`docs/ADR-002-v1-store.md`](docs/ADR-002-v1-store.md) | Why the catalog lives in memory, why packed archives are cached, and the two places this server deliberately sorts differently from the client |
+| [`docs/SOURCES.md`](docs/SOURCES.md) | What is already documented and where — **read this before reverse-engineering anything** |
+| [`docs/TEST-CORPUS.md`](docs/TEST-CORPUS.md) | Where test input comes from, and what a real YARG install said about it |
 | [`docs/research/yarg-song-formats.md`](docs/research/yarg-song-formats.md) | The `.sng` binary layout, `song.ini` keys, the metadata model, song identity, and a difficulty assessment for every part of a Go reimplementation |
 
 Read the research document before writing any parser code. It is the reason the scope is what it
 is.
 
+## Running it
+
+```sh
+make build
+./bin/yarg-song-server --songs /path/to/songs --data ./data --listen :8080
+```
+
+Then `GET /api/v1/library` to see what it indexed, `GET /api/v1/songs?q=&sort=artist` to browse,
+and `GET /song/{chart_hash}.sng` to pull a song. Every endpoint is in [`docs/API.md`](docs/API.md).
+
+The library is read only ever; `--data` is where the server keeps its own state, including
+archives packed from loose folders, and must be writable.
+
+**It is unauthenticated and read-only. Run it on your LAN, not on the internet.**
+
+### Configuration
+
+Every setting can be a flag or a line in a config file, with the same name for both. A flag beats
+the file, the file beats the defaults, and `./yarg-song-server.conf` is read automatically if it
+exists:
+
+```sh
+./bin/yarg-song-server --write-config > yarg-song-server.conf
+```
+
+An unknown setting in that file is an error rather than a warning. A typo that is silently
+ignored leaves you certain you changed something you did not.
+
 ## Building
 
 ```sh
 make build      # host binary into ./bin
-make test       # unit tests
+make test       # unit tests, with the race detector
+make release    # every promised platform into ./dist
 make docker     # multi-arch image
 ```
 
-## Trying the scanner
+CI runs the same checks on every push — `gofmt`, `go vet`, the suite with and without `-race`,
+all six release targets, and an assertion that the Dockerfile's Go is not older than `go.mod`
+requires. See [`.gitlab-ci.yml`](.gitlab-ci.yml).
 
-There is no server yet, but the scanner works. Point it at a song library and it
-prints the catalog as JSON, one song per record:
+## Trying the scanner directly
+
+The CLI is still there, and is how the parsers get pointed at a real collection. Point it at a
+song library and it prints the catalog as JSON, one song per record:
 
 ```sh
 ./bin/yarg-song-server scan /path/to/songs

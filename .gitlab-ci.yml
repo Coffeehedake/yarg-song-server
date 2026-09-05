@@ -1,0 +1,120 @@
+# CI for yarg-song-server.
+#
+# Its first job is to EXIST. Without a .gitlab-ci.yml this project fell through
+# to Auto DevOps, whose jobs assume a container executor: pipeline #2216 ran
+# `/build/build.sh`, `/bin/herokuish` and `lsif-go` on a shell runner that has
+# none of them and failed three jobs with exit 127. That is noise, not a signal,
+# and a red pipeline nobody believes is worse than no pipeline at all.
+#
+# THE RUNNER IS A SHELL EXECUTOR on Vault2, so `image:` is ignored and nothing is
+# guaranteed to be installed. Each pipeline therefore brings its own pinned Go
+# toolchain, SHA-256 verified before use, cached between runs. Depending on
+# whatever happens to be on the host is how a pipeline starts failing after an
+# upgrade that had nothing to do with this project.
+#
+# ENG-1 is deliberately not a CI target. Runner 4 (eng-1-windows) is locked and
+# does not run untagged jobs, and nothing here asks for it: it is Jay's
+# workstation, not a build machine.
+
+stages:
+  - check
+  - build
+
+variables:
+  # Keep this in step with the toolchain the workstations use. The SHA-256 is
+  # the one published at go.dev/dl/?mode=json, verified 2026-09-05.
+  GO_VERSION: "1.27.1"
+  GO_SHA256: "63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445"
+
+  # Never let the toolchain silently swap itself for another one: go.mod's
+  # directive should be satisfied by what we installed, or the job should say so.
+  GOTOOLCHAIN: "local"
+
+  # Everything Go writes goes inside the project directory so it can be cached
+  # and so nothing is left behind on the host.
+  GOPATH: "$CI_PROJECT_DIR/.cache/gopath"
+  GOCACHE: "$CI_PROJECT_DIR/.cache/build"
+  GOMODCACHE: "$CI_PROJECT_DIR/.cache/mod"
+
+  GIT_DEPTH: "20"
+
+cache:
+  key: "go-$GO_VERSION"
+  paths:
+    - .toolchain/
+    - .cache/
+
+default:
+  before_script:
+    - ./ci/bootstrap-go.sh .toolchain
+    - export PATH="$CI_PROJECT_DIR/.toolchain/go/bin:$PATH"
+    - go version
+    - go env CGO_ENABLED
+
+# The one check that needs no toolchain, so it answers fastest.
+dockerfile-go-version:
+  stage: check
+  before_script: []
+  script:
+    - ./ci/check-dockerfile-go-version.sh
+
+lint:
+  stage: check
+  script:
+    # gofmt -l lists files that are NOT formatted, so the check is that its
+    # output is empty. `gofmt -l . && true` would pass on a dirty tree.
+    - |
+      unformatted="$(gofmt -l .)"
+      if [ -n "$unformatted" ]; then
+        echo "not gofmt-clean:"
+        echo "$unformatted"
+        exit 1
+      fi
+      echo "gofmt clean"
+    - go vet ./...
+
+test:
+  stage: check
+  script:
+    - go test ./... -count=1
+
+# Kept separate from `test` so a race failure is legible as a race failure.
+#
+# If this job dies with "-race requires cgo" then the Vault2 runner has no C
+# toolchain. That is a host change and belongs to whoever owns that box - do NOT
+# quietly drop -race to make the pipeline green. A green produced by removing the
+# instrument is the failure mode this project audits other repos for.
+test:race:
+  stage: check
+  script:
+    - go test ./... -count=1 -race
+
+# Every platform the project promises. The Pi target is a promise, not a bonus,
+# and CGO_ENABLED=0 is what keeps all six a single `go build`.
+release:
+  stage: build
+  variables:
+    CGO_ENABLED: "0"
+  script:
+    - mkdir -p dist
+    - VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo "$CI_COMMIT_SHORT_SHA")"
+    - echo "building $VERSION"
+    - |
+      set -e
+      build() {
+        goos="$1"; goarch="$2"; goarm="$3"; out="$4"
+        echo "  $goos/$goarch${goarm:+v$goarm}"
+        GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" \
+          go build -ldflags "-s -w -X main.version=$VERSION" -o "dist/$out" ./cmd/yarg-song-server
+      }
+      build linux   amd64 "" yarg-song-server-linux-amd64
+      build linux   arm64 "" yarg-song-server-linux-arm64
+      build linux   arm   7  yarg-song-server-linux-armv7
+      build darwin  amd64 "" yarg-song-server-darwin-amd64
+      build darwin  arm64 "" yarg-song-server-darwin-arm64
+      build windows amd64 "" yarg-song-server-windows-amd64.exe
+    - ls -l dist
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
