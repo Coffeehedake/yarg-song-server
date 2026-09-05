@@ -1,0 +1,18 @@
+# Test fixtures are byte-exact inputs, not text. Never let git translate them.
+#
+# Song identity in this project is SHA1(chart file bytes) and nothing else, so a
+# line-ending translation on checkout does not just reformat a file — it moves a
+# hash that tests assert and that the client would have to agree with.
+#
+# The concrete case, measured 2026-09-05: internal/sng/testdata/reference-notes.chart
+# is the loose copy of the chart that also lives inside reference-sngcli-v0.3.0.sng.
+# The archive is binary and cannot be translated; the loose copy was being committed
+# LF-normalised. So TestReferenceChartRoundTripsByteExact compared CRLF bytes from
+# the archive against LF bytes from disk. It passed on ENG-1, where the working tree
+# still held the CRLF original (sha1 30b18fee1d336a6b83c2fd7e134487d013710e14), and
+# would have failed on any fresh Linux checkout, where the blob checks out as
+# sha1 15ba37a4812c74ad523ddcd614332efc598c3029 — that is the machine CI, the Docker
+# build and the Pi all run on. The failure reads as a reader bug, not as a line
+# ending, which is what makes it worth pinning here rather than remembering.
+
+**/testdata/** -text

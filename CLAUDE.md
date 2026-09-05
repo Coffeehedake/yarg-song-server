@@ -60,6 +60,17 @@ shell predates the PATH change — open a new one.
   `.mp3` whatever the source was; a `song.wav` comes back as `song.mp3` with its RIFF header
   intact. Classify by name (as YARG does), but sniff before decoding, and do not reproduce the
   behaviour in our writer.
+- **Test fixtures are byte-exact inputs, and `.gitattributes` marks `**/testdata/**` as `-text`
+  to keep them that way.** Song identity is `SHA1(chart file bytes)`, so a line-ending translation
+  on checkout moves a hash a test asserts. `internal/sng/testdata/reference-notes.chart` is the
+  loose copy of the chart that also sits inside `reference-sngcli-v0.3.0.sng`; the archive is
+  binary and cannot be translated, so the loose copy must not be either. Before the attribute
+  existed the fixture committed LF-normalised while the archive held CRLF, and
+  `TestReferenceChartRoundTripsByteExact` therefore passed on ENG-1 (working tree
+  `30b18fee1d336a6b83c2fd7e134487d013710e14`) and would have failed on any fresh Linux checkout
+  (blob `15ba37a4812c74ad523ddcd614332efc598c3029`) — CI, the Docker build and the Pi. The failure
+  presents as "chart bytes differ", which reads as a reader bug. **Never add a fixture that a
+  platform is allowed to rewrite.**
 
 ## The oracle
 
