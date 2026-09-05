@@ -39,15 +39,27 @@ git lfs pull
 **Exit criterion:** both repos exist, both push to Vault2, both mirror to GitHub, and the format
 spec is committed. **Met 2026-09-05.**
 
-`Coffeehedake/yarg` is a real GitHub *fork* of `YARC-Official/YARG`, not a plain repository.
-That matters twice: it is the only shape GitHub accepts a pull request to upstream from, and
-forks share LFS storage with their parent, so upstream's ~180 MB of LFS objects resolve on the
-mirror without being re-pushed.
+`Coffeehedake/yarg` is a real GitHub *fork* of `YARC-Official/YARG`, not a plain repository,
+because that is the only shape GitHub accepts a pull request to upstream from.
 
-**LFS caveat, worth knowing before Phase 3:** GitLab push mirroring does *not* transfer LFS
-objects. Upstream's existing objects resolve through the fork relationship, but any NEW LFS
-object committed on the GitLab side would arrive at GitHub as a dangling pointer. If client
-work ever adds binary assets, push those to GitHub directly or move the fork to a full mirror.
+**Correction — LFS does propagate.** An earlier revision of this roadmap claimed GitLab push
+mirroring drops LFS objects, and that the fork relationship was what made upstream's ~180 MB
+resolve. That was asserted from priors, not measured, and it is wrong.
+
+The measurement: a throwaway GitLab project (**not** a fork, so no parent LFS storage to borrow
+from) with `*.png filter=lfs`, one fresh 1 MB object, push-mirrored to a throwaway **non-fork**
+GitHub repo. GitHub's LFS batch API returned a download action with no error, and the object
+downloaded from `github-cloud.githubusercontent.com` at exactly 1,048,576 bytes with a SHA-256
+matching the OID. GitLab 18.11.3, git-lfs 3.7.1. Both throwaway repos were deleted afterwards.
+
+So no special handling is needed when client work adds one of the five patterns YARG's
+`.gitattributes` tracks — `*.png`, `*.exr`, `*.jpg`, `*.fbx`, `*.ttf`. Which is just as well:
+almost any UI work in Phase 3 adds a `.png`.
+
+**The caveat that does survive:** the mirror force-overwrites and the GitHub side is a fork, so
+anything done directly on GitHub is clobbered on the next sync. To open an upstream PR, create
+the branch on GitLab, let it mirror, open the PR from the mirrored branch, and leave it alone on
+GitHub after that.
 
 ---
 
