@@ -38,8 +38,12 @@ heuristics and no fuzzy matching.
 - Decrypt Rock Band CON packages or encrypted moggs. Upstream lists CON decryption as out of
   scope and will reject PRs for it on sight; it also carries real legal exposure. `.con`,
   `_rb3con` and `.pkg` are refused on ingest with a clear message.
-- Generate YARG's `songcache.bin`. It is version-stamped, holds absolute local paths, and is
-  strictly internal to the client.
+- Generate YARG's `songcache.bin`. Not because it is unreadable — it is a plain binary file — but
+  because it stores **absolute local paths**, so a cache built here is meaningless on your
+  machine; because its version is a date stamp checked with no compatibility window and no
+  migration path, and its field layout is internal with no version of its own; and because
+  getting any of it wrong fails *silently*, with YARG quietly rebuilding the cache while the tool
+  appears to have worked.
 - Distribute copyrighted audio. Charts and audio are separable by design.
 
 ## Documentation

@@ -247,13 +247,30 @@ Plus a minimum-file-size check. Per-entry invalidation compares `AbridgedFileInf
 public Dictionary<HashWrapper, List<SongEntry>> Entries
 ```
 
-### Verdict: strictly internal
+### Verdict: must not, rather than cannot
+
+**Precision note, added 2026-09-05 after this section was challenged.** Nothing here makes the
+file *impossible* to read or write — it is a plain binary, neither encrypted nor signed. The
+three reasons below are reasons it is a bad bet, and it is worth keeping them straight, because
+"impossible" and "unwise" lead to different conversations with upstream later. Reason 1 is the
+one that actually rules out the only use that would justify the work.
 
 Three independent reasons an external tool must not write `songcache.bin`:
 
-1. **`CACHE_VERSION` is a moving target** with no compatibility window — it changed as recently as 2026‑09‑04. Any Go writer would break on the next YARG release.
-2. **It stores absolute local paths** (`string location = stream.ReadString()` throughout `ReadCONGroup()`, `ReadUpgradeDirectory()`, etc.). A server has no idea what path a client will place a song at.
-3. Deserialization is tightly coupled to `SongEntry.Serialize`'s field ordering, which is internal (`internal virtual void Serialize(...)`) and unversioned independently of the cache.
+1. **It is machine-specific, which kills the only use case.** Locations are written as absolute
+   paths (`directory.FullName`, `info.FullName`; read back with `stream.ReadString()` throughout
+   `ReadCONGroup()`, `ReadUpgradeDirectory()`). A server has no idea where a client will place a
+   song, so it cannot ship a prebuilt cache — and shipping one is the *only* thing forging this
+   format would buy.
+2. **There is no stability contract.** `CACHE_VERSION` is a date stamp (`26_09_04_00`, changed
+   2026-09-04) checked on load with **no compatibility window and no migration path** — a
+   mismatch logs `Cache outdated`, returns `null`, and the entire library is rescanned. The field
+   layout carries no version of its own, and the methods are not public API:
+   `internal virtual void Serialize(MemoryStream, CacheWriteIndices)` and
+   `private protected void Deserialize(ref FixedArrayStream, CacheReadStrings)`. Either can change
+   in any release without the cache version telling you what moved.
+3. **Failure is silent.** Get any of it wrong and YARG simply rebuilds the cache. The tool appears
+   to work and accomplishes nothing, which is the worst shape a bug can take.
 
 **Design implication:** the server should expose its own JSON/protobuf catalog. The client, after downloading, simply scans normally. If you later want fast startup, the right integration is a YARG-side feature (a "remote source" provider inside `CacheHandler`), not an externally-forged cache file.
 

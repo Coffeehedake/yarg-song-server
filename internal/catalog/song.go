@@ -1,9 +1,30 @@
 // Package catalog defines what the server stores and serves about a song.
 //
-// This is deliberately OUR schema, not YARG's. YARG's own songcache.bin is
-// version-stamped, holds absolute local filesystem paths and rejects itself on
-// any mismatch, so it can be neither produced nor consumed by an external tool.
-// See docs/research/yarg-song-formats.md.
+// This is deliberately OUR schema, not YARG's.
+//
+// YARG's own songcache.bin is not encrypted or signed, so an external tool
+// COULD read or write it. It must not, for three reasons, and only the third
+// is about difficulty:
+//
+//  1. It is machine-specific. Song locations are written as absolute paths
+//     (directory.FullName / info.FullName), so a cache built on a server says
+//     nothing about where a client will put the files. This alone rules out
+//     the one use that would justify the work - shipping a prebuilt cache to
+//     clients so they start fast.
+//  2. There is no stability contract. CACHE_VERSION is a date stamp
+//     (26_09_04_00 at time of writing, changed 2026-09-04) checked on load
+//     with NO compatibility window and no migration path: a mismatch logs
+//     "Cache outdated", returns null, and the whole library is rescanned. The
+//     field layout has no version of its own, and Serialize/Deserialize are
+//     `internal` and `private protected` - nothing about the format is public
+//     API, so it may change in any release without notice.
+//  3. Failure is silent. Get any of it wrong and YARG simply rebuilds the
+//     cache. The tool appears to work and accomplishes nothing.
+//
+// So the server ships its own catalog and lets the client scan normally. If
+// fast client startup is ever wanted, the right shape is a remote-source
+// provider inside YARG's own CacheHandler - a Phase 3 conversation with
+// upstream, not a forged file. See docs/research/yarg-song-formats.md.
 package catalog
 
 import "time"
