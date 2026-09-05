@@ -163,6 +163,9 @@ func applyMetadata(s *catalog.Song, ini *songini.File) {
 		s.Source = str("icon")
 	}
 	s.Icon = str("icon")
+	// Promoted rather than left among the credit_* keys: for a server this is
+	// a redistribution question, not a credit line. See catalog.Song.License.
+	s.License = str("credit_license")
 
 	s.Year = str("year")
 	if y, ok := ini.YearAsNumber(); ok {

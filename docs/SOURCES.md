@@ -16,6 +16,46 @@ source.
 | [mdsitton/SngFileFormat](https://github.com/mdsitton/SngFileFormat) | The `.sng` container spec and the reference `SngCli` encoder | The only spec for `.sng` |
 | [YARG `CONTRIBUTING.md`](https://github.com/YARC-Official/YARG/blob/master/CONTRIBUTING.md) | The six-tier scope framework, including what will be rejected on sight | Authoritative on what upstream will accept |
 
+## The charting documentation, found late
+
+[Help:Charting](https://wiki.yarg.in/wiki/Help:Charting) is the wiki's hub for how charts are
+actually authored, and it links most of what this project still needs:
+
+| Source | Why it matters here |
+|---|---|
+| [RBN/C3 Documentation](https://wiki.yarg.in/wiki/Help:Charting) (linked from that page) | Called "the most comprehensive specification of the `notes.mid` format". **Read before Phase 1 step 6.** |
+| [Chart File Format Specifications](https://wiki.yarg.in/wiki/Help:Charting) by FireFox2000000 | The `.chart` spec, written by Moonscraper's author |
+| [Elite Drums MIDI/Engine Specification](https://wiki.yarg.in/wiki/Help:Charting) | A complete spec for the newest instrument, including expected game behaviour |
+| [Comprehensive song.ini Guide](https://wiki.yarg.in/wiki/Help:Charting) by grishhung | The `song.ini` reference the wiki's own table cites |
+| `opensource.yarg.in` | **The authoritative list of every song source YARG recognises.** We treat `icon`/`source` as free text; it is an enumeration. Not yet wired in |
+| [YARN submission guidelines](https://wiki.yarg.in/wiki/YARN_submission_guidelines) | Chart validity rules and, crucially, the licensing framework below |
+
+### Facts from YARN that touch this code
+
+- **`icon = yarn`** for YARN charts; the charting team overwrites whatever the charter set. This
+  confirms `icon` is the *source*, which the scanner already assumes.
+- **`credit_license` is the redistribution field**, not a credit line. YARN requires it on every
+  Creative Commons and royalty-free song, formatted as `Released under CC BY-NC-SA 3.0. <link>`
+  or `Music provided by NoCopyrightSounds. <link>`. It is now a first-class `license` field on
+  `catalog.Song`, because a server deciding what it may serve asks a different question from a UI
+  showing credits.
+- **`rating`** is assigned by the charting team, not the charter — FF / SR / MC.
+- Chart validity rules a preparser could check: must be tempo-mapped, at least 2 seconds of
+  leading silence, correct track names, and **an Expert chart for every instrument charted**.
+- Conventions: album art `.png` at 512×512 (500×500 accepted), backgrounds `.jpg` 16:9, and
+  background *videos* are not allowed in YARN charts.
+
+### Phase 5 already has tools
+
+Help:Charting names two that do the first half of LLM auto-charting, and both are free:
+
+- **Ultimate Vocal Remover (UVR)** — separates a mix into bass, drums, vocals and other stems.
+  That is exactly the "upload any song, get per-instrument audio" step.
+- **Basic Pitch** (Spotify) — "generates pitched MIDI notes from a vocal stem", i.e. a baseline
+  vocals chart to work from.
+
+Phase 5 should start from these rather than from scratch.
+
 ## What is genuinely NOT documented
 
 Derived from source and from measurement, because nothing else covers it:

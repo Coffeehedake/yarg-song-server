@@ -104,13 +104,24 @@ type Song struct {
 	DelayMS        int64  `json:"delay_ms,omitempty"`
 	LoadingPhrase  string `json:"loading_phrase,omitempty"`
 	Icon           string `json:"icon,omitempty"`
-	Rating         int64  `json:"rating,omitempty"`
-	VocalGender    string `json:"vocal_gender,omitempty"`
-	CleanVocals    bool   `json:"clean_vocals,omitempty"`
-	Modchart       bool   `json:"modchart,omitempty"`
-	VideoStartMS   int64  `json:"video_start_ms,omitempty"`
-	VideoEndMS     int64  `json:"video_end_ms,omitempty"`
-	VideoLoop      bool   `json:"video_loop,omitempty"`
+
+	// License is the song.ini `credit_license` value, promoted out of the
+	// generic credit keys because for a SERVER it is not a credit - it is the
+	// answer to "may this be redistributed".
+	//
+	// YARN's submission guidelines require it for every Creative Commons and
+	// royalty-free song, in the form "Released under CC BY-NC-SA 3.0. <link>"
+	// or "Music provided by NoCopyrightSounds. <link>". A song whose audio is
+	// redistributable says so here; one that says nothing is not thereby
+	// permitted, only unlabelled.
+	License      string `json:"license,omitempty"`
+	Rating       int64  `json:"rating,omitempty"`
+	VocalGender  string `json:"vocal_gender,omitempty"`
+	CleanVocals  bool   `json:"clean_vocals,omitempty"`
+	Modchart     bool   `json:"modchart,omitempty"`
+	VideoStartMS int64  `json:"video_start_ms,omitempty"`
+	VideoEndMS   int64  `json:"video_end_ms,omitempty"`
+	VideoLoop    bool   `json:"video_loop,omitempty"`
 
 	// --- instruments ---
 

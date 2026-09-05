@@ -404,3 +404,30 @@ func TestFretsIsADeprecatedCharterAlias(t *testing.T) {
 		t.Fatalf("charter = %q, want the modern key to win", s.Charter)
 	}
 }
+
+// credit_license is where YARN requires Creative Commons and royalty-free
+// attribution to live. For a server it answers "may this be redistributed",
+// which is a different question from the other credit_* keys, so it is a
+// first-class field rather than one entry in a bag of credits.
+func TestLicenseIsSurfaced(t *testing.T) {
+	f := sampleFolder()
+	const lic = "Released under CC BY-NC-SA 3.0. https://www.newgrounds.com/audio/listen/106783"
+	f["song.ini"] = &fstest.MapFile{Data: []byte(sampleINI + "credit_license = " + lic + "\n")}
+	s, err := ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.License != lic {
+		t.Fatalf("license = %q, want %q", s.License, lic)
+	}
+
+	// Absent is absent. An unlabelled song is not thereby permitted, and the
+	// scanner must not invent a default that reads like permission.
+	s, err = ScanDir(sampleFolder())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.License != "" {
+		t.Fatalf("license = %q for a song that declared none", s.License)
+	}
+}

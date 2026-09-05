@@ -65,6 +65,26 @@ individual charters' licensing varies, and most community packages bundle commer
 Individual charts may be used where the charter's own licence permits it — that is a per-chart
 question, answered before the chart is added, not a bulk decision.
 
+### There IS a documented framework, and it reopens this
+
+The [YARN submission guidelines](https://wiki.yarg.in/wiki/YARN_submission_guidelines) define
+exactly which music may be used with YARG, which is a better answer than "self-authored only":
+
+- **Acceptable:** CC BY, CC BY-SA, CC BY-NC, CC BY-NC-SA and CC0, at version 3.0 or 4.0; plus the
+  catalogue of accepted royalty-free labels (currently NCS).
+- **Not acceptable:** the no-derivatives licences, CC BY-ND and CC BY-NC-ND — because *visual
+  synchronisation is itself a derivative work*. That is a subtlety worth knowing: a chart is a
+  derivative of the song, not merely a companion to it.
+- **Share-alike propagates:** a chart of a CC BY-SA song is, by definition, released under the
+  same licence as the song.
+- The wiki points at a curated list of Creative Commons songs (the "YARN Planning - CC" tab of the
+  YARN Charts Master Spreadsheet) as a starting point.
+
+So a legitimately-licensed corpus is reachable: a CC BY or CC0 song, charted, is redistributable
+in full — audio included — and could live in this repository as a real end-to-end fixture rather
+than a generated one. That is a better long-term answer than the synthetic corpus, and the only
+reason it is not the current answer is that nobody has charted one yet.
+
 ## What the oracle actually found, 2026-09-05
 
 `cmd/mkcorpus` wrote 20 deliberately awkward song folders; YARG v0.15.0 scanned them; its

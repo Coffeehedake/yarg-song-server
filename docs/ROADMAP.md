@@ -159,11 +159,20 @@ Build order (each step is independently testable):
    walking is needed, not full chart semantics. This step is deliberately last; everything before
    it works with `parts_derived: false`.
 
-   **Read [Guitar Game Chart Formats](https://thenathannator.github.io/GuitarGame_ChartFormats/)
-   before writing any of it.** `.chart` and `.mid` are both documented there as complete, and the
-   YARG wiki has `notes.mid` and `notes.chart` pages besides. Deriving `song.ini` from source when
-   the wiki documented it better cost this project four defects — see `docs/SOURCES.md`. Do not
-   repeat that here, where the format is considerably harder.
+   **Read the specs before writing any of it.** The wiki's
+   [Help:Charting](https://wiki.yarg.in/wiki/Help:Charting) page links every one:
+   TheNathannator's [Guitar Game Chart Formats](https://thenathannator.github.io/GuitarGame_ChartFormats/)
+   (`.chart` and `.mid`, both marked complete), the **RBN/C3 Documentation** it calls "the most
+   comprehensive specification of the `notes.mid` format", FireFox2000000's `.chart` specification
+   from Moonscraper's own author, and a complete **Elite Drums MIDI/Engine Specification**.
+
+   Deriving `song.ini` from source when the wiki documented it better cost this project four
+   defects — see `docs/SOURCES.md`. Repeating that here, on a considerably harder format with
+   *more* documentation available, would be inexcusable.
+
+   YARN's chart requirements also give a preparser things it can actually check: a chart must be
+   tempo-mapped, carry at least 2 seconds of leading silence, use correct track names, and have an
+   Expert chart for every instrument it charts.
 
 **Exit criterion:** a CLI that scans a real song library, emits a catalog, repacks to `.sng`, and
 YARG scans the repacked output with identical metadata and an identical hash.
@@ -230,11 +239,20 @@ The point at which the server stops being one feature and becomes a platform.
 
 The long-term goal, and the phase most likely to move. It depends on every phase above working.
 
+- **Start from the tools that already exist.** Help:Charting names two, both free, that do the
+  first half of this: **Ultimate Vocal Remover (UVR)** separates a mix into bass, drums, vocals and
+  other stems, and Spotify's **Basic Pitch** generates pitched MIDI from a vocal stem — a baseline
+  vocals chart to work from. The novel part of this phase is the instrument charting and the
+  difficulty reduction, not stem separation, and building either from scratch would be waste.
 - Upload any song; auto-generate instrument and vocal parts across all difficulty levels.
 - Produce a complete, working, **editable** package — generated charts are a starting point, not
   a final answer.
 - **Distribution constraint, non-negotiable:** the chart/vocal tracks must be packageable and
   distributable *separately from the audio*, so charts can be shared without the music.
+- Note what YARN's guidelines establish about this: **visual synchronisation is itself a
+  derivative work**, which is why they refuse no-derivatives licences. A generated chart is a
+  derivative of the song it was generated from, not a neutral companion to it — so separating
+  chart from audio reduces the problem, and does not by itself dissolve it.
 - Runs against the existing GPU arbitration on the home estate rather than a new stack.
 
 ---
