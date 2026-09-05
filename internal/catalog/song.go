@@ -193,6 +193,12 @@ const (
 	// nothing from it and titles the song after its folder, so any metadata in
 	// the file is invisible to the player.
 	IssueNoMetadataSection = "no_metadata_section"
+
+	// IssueUltraStarNoTitle: an UltraStar notes.txt with no #TITLE tag. Unlike
+	// every other format, UltraStar takes its title from the chart rather than
+	// song.ini, and YARG refuses the song outright when it is missing -
+	// "Name metadata not provided".
+	IssueUltraStarNoTitle = "ultrastar_no_title"
 )
 
 // PartValues is one instrument's state.

@@ -48,12 +48,15 @@ func applyPreparse(s *catalog.Song, raw []byte, format catalog.ChartFormat, ini 
 		res, err = chart.PreparseMIDI(raw)
 	case catalog.FormatChart:
 		res, err = chart.PreparseChart(raw)
+	case catalog.FormatUltraStar:
+		var us *chart.UltraStar
+		res, us, err = chart.PreparseUltraStar(raw)
+		if err == nil {
+			applyUltraStarMetadata(s, us)
+		}
 	default:
-		// UltraStar. YARG rejects notes.txt charts whose title it cannot find,
-		// by a rule we have not established - see docs/SOURCES.md. Deriving
-		// parts from it would be guessing twice over.
 		s.PartsNotes = append(s.PartsNotes,
-			"UltraStar charts are not preparsed; instrument availability is unknown for this song")
+			"unrecognised chart format; instrument availability is unknown for this song")
 		return
 	}
 	if err != nil {
@@ -119,5 +122,32 @@ func applyDrumOverrides(res *chart.Result, ini *songini.File) {
 		res.Difficulties[chart.FiveLaneDrums] = mask
 		delete(res.Difficulties, chart.ProDrums)
 		delete(res.Difficulties, chart.FourLaneDrums)
+	}
+}
+
+// applyUltraStarMetadata overrides the song.ini-derived title, artist and album
+// for an UltraStar chart.
+//
+// UltraStar is the one format whose metadata does not come from song.ini: YARG
+// reads TITLE, ARTIST and ALBUM from the .txt itself. Leaving the song.ini
+// values in place would put a different title in our catalog from the one the
+// player sees, which is the same class of bug as the headerless-song.ini case.
+//
+// A chart with no TITLE is refused outright by YARG, so it is flagged rather
+// than served as if it were playable.
+func applyUltraStarMetadata(s *catalog.Song, us *chart.UltraStar) {
+	if !us.HasTitle {
+		s.Issues = append(s.Issues, catalog.Issue{
+			Code:   catalog.IssueUltraStarNoTitle,
+			Detail: "UltraStar chart has no #TITLE; YARG refuses the song with \"Name metadata not provided\"",
+		})
+		return
+	}
+	s.Name = us.Title
+	if us.Artist != "" {
+		s.Artist = us.Artist
+	}
+	if us.Album != "" {
+		s.Album = us.Album
 	}
 }

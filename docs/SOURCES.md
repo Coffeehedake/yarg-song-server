@@ -90,6 +90,32 @@ Plus two things the wiki gives that the source cannot: the **compatibility tier*
 parsed today but acted on only in some future version — presenting those as meaningful promises
 behaviour the client does not have), and the **meanings of the `rating` and `vocal_gender` enums**.
 
+## UltraStar: the format that breaks the song.ini rule
+
+Worth stating plainly because it is a genuine exception to how every other chart works.
+
+**YARG is not MIDI-only.** It reads three chart notations, chosen in this fixed priority order:
+`notes.mid` → `notes.midi` → `notes.chart` → `notes.txt`. First match wins, and the selection is
+hard: given both a `.mid` and a `.chart`, YARG takes the `.mid` and rejects the whole song if it
+is unplayable, rather than falling back.
+
+- **`.chart`** carries the 5-fret family, 6-fret (GHL), and 4-lane / Pro / 5-lane drums. The wiki
+  calls it *"inferior to the notes.mid format due to its limited range of available instruments"*:
+  vocals, harmonies, Pro Keys, Pro Guitar and Elite Drums cannot be expressed in it at all.
+- **`.mid`** carries everything.
+- **`notes.txt`** is UltraStar, a karaoke format, and in YARG it is **vocals-only** — no
+  instrumental part is derived from it. `ScanUltraStar` sets lead vocals at Expert, and harmony
+  when the chart declares `#PARTS:2`.
+
+**And UltraStar takes its metadata from the chart, not from `song.ini`** — `#TITLE`, `#ARTIST`
+and `#ALBUM` are read from the `.txt`, and a missing or blank `#TITLE` makes YARG refuse the song
+with *"Name metadata not provided"*. Confirmed by measurement: a corpus case carrying a different
+name in each file shows the `.txt` title in YARG's cache and never the `song.ini` one.
+
+One discrepancy noted rather than reconciled: the official UltraStar specification names voices
+with `#P1`…`#P9`, but YARG keys harmony on `#PARTS`. We follow YARG, because agreeing with the
+client is the point, and say so where a `#P2` appears without `#PARTS:2`.
+
 ## One unresolved conflict
 
 The wiki documents `vocal_gender` as an **integer** enum (0=Female … 4=Unspecified). YARG.Core

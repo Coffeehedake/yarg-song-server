@@ -92,6 +92,10 @@ reason it is not the current answer is that nobody has charted one yet.
 three of them.** These are the only findings in this repo that came from an oracle rather than
 from our own reasoning, which is precisely why they are the ones worth having.
 
+**As of the last run, every song YARG rejects is one this scanner independently flags**, by three
+different routes: no parts detected (`13-mid-beats-chart`), `no_audio` (`19-no-audio`), and
+`ultrastar_no_title` (`21-ultrastar-no-title`). No divergences remain in the corpus.
+
 | Case | YARG | We had | Fixed |
 |---|---|---|---|
 | `song.ini` with no `[Song]` header | reads **nothing**, titles the song after its folder | read the keys | yes — parser now requires the header, and the song is flagged `no_metadata_section` |
@@ -113,15 +117,21 @@ player sees on their own screen — a bug with no error message anywhere.
 - Uppercase `[SONG]`, ragged whitespace, CRLF, values containing `=`, free-text years, unknown
   keys, the `cover` override, clean/explicit stem variants and a 4-way drum kit all matched.
 
-### Two divergences left open, deliberately
+### Both divergences are now closed
 
-1. **UltraStar `notes.txt`.** YARG rejected it with *"Name metadata not provided"* even though the
-   `song.ini` carried `name = UltraStar`. So UltraStar charts appear to take their title from
-   somewhere other than `song.ini`. We report the `song.ini` name. **Not guessed at** — the rule
-   is not understood, and inventing one would be worse than a known gap. Settle it by reading
-   `ScanUltraStar` before UltraStar support is claimed.
+1. ~~**UltraStar `notes.txt`.**~~ **CLOSED.** YARG rejected it with *"Name metadata not
+   provided"* despite `song.ini` carrying a name, and the reason turned out to be structural:
+   **UltraStar is the one format whose metadata does not come from `song.ini`.** YARG reads
+   `#TITLE`, `#ARTIST` and `#ALBUM` from the `.txt` itself and refuses the song outright when
+   `#TITLE` is missing. It is also **vocals-only** — no instrumental part is derived from it,
+   and harmony is keyed on `#PARTS:2`.
 
-2. ~~**We do not know whether a chart is playable.**~~ **CLOSED 2026-09-05** by the chart
+   Re-measured with corrected fixtures: a valid UltraStar chart is accepted and **YARG titles it
+   from the `.txt`, not from `song.ini`** — the corpus case deliberately carries a different name
+   in each, and `song.ini`'s never appears in YARG's cache. Our scanner now does the same, reports
+   lead vocals (plus harmony on `#PARTS:2`), and flags a titleless chart as `ultrastar_no_title`.
+
+2. ~~**We do not know whether a chart is playable.**~~ **CLOSED** by the chart
    preparsers. YARG rejected the header-only `.mid` with *"No notes found"*; our preparser now
    reports zero parts for that same chart, reaching the same conclusion by an independent route.
    A song with no detectable parts is still catalogued rather than dropped, but it no longer

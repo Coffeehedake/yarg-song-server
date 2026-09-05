@@ -46,6 +46,29 @@ type aCase struct {
 	ini []byte
 	// chart overrides the default notes.chart name.
 	chartName string
+	// chartBody overrides the generated .chart content, for formats that are
+	// not .chart at all.
+	chartBody []byte
+}
+
+// ultraStar is a valid notes.txt. UltraStar is the ONE format whose metadata
+// comes from the chart rather than song.ini - YARG reads #TITLE, #ARTIST and
+// #ALBUM from here and refuses the song outright if #TITLE is missing.
+// ultraStarDuet puts #PARTS in the HEADER, where it belongs - a tag after the
+// first body element is body, not header, and would be ignored.
+func ultraStarDuet() []byte {
+	return []byte("#VERSION:1.0.0\n#TITLE:UltraStar Duet\n#ARTIST:Corpus Artist\n" +
+		"#BPM:120\n#MP3:song.ogg\n#PARTS:2\n: 0 4 0 Hel~\n: 4 4 2 lo\n- 8\nE\n")
+}
+
+func ultraStar(title string) []byte {
+	body := "#VERSION:1.0.0\n"
+	if title != "" {
+		body += "#TITLE:" + title + "\n"
+	}
+	body += "#ARTIST:Corpus Artist\n#ALBUM:Corpus Album\n#BPM:120\n#GAP:0\n#MP3:song.ogg\n" +
+		": 0 4 0 Hel~\n: 4 4 2 lo\n- 8\nE\n"
+	return []byte(body)
 }
 
 const baseINI = `[Song]
@@ -140,8 +163,14 @@ var cases = []aCase{
 	{dir: "19-no-audio", probe: "chart and metadata but no audio - does YARG accept it",
 		ini: ini("No Audio"), files: map[string][]byte{"__noaudio": nil}},
 
-	{dir: "20-ultrastar", probe: "notes.txt, the UltraStar format most tooling ignores",
-		ini: ini("UltraStar"), chartName: "notes.txt"},
+	{dir: "20-ultrastar", probe: "a VALID UltraStar chart - vocals only, metadata from the .txt",
+		ini: ini("UltraStar Ignored"), chartName: "notes.txt", chartBody: ultraStar("UltraStar Real Title")},
+
+	{dir: "21-ultrastar-no-title", probe: "UltraStar with no #TITLE - YARG refuses these outright",
+		ini: ini("Has A Name In song.ini"), chartName: "notes.txt", chartBody: ultraStar("")},
+
+	{dir: "22-ultrastar-duet", probe: "UltraStar with #PARTS:2, which is how YARG keys harmony",
+		ini: ini("Duet"), chartName: "notes.txt", chartBody: ultraStarDuet()},
 }
 
 func write(root string) error {
@@ -165,7 +194,11 @@ func write(root string) error {
 		if chartName == "" {
 			chartName = "notes.chart"
 		}
-		if err := os.WriteFile(filepath.Join(dir, chartName), chart(c.dir), 0o644); err != nil {
+		body := c.chartBody
+		if body == nil {
+			body = chart(c.dir)
+		}
+		if err := os.WriteFile(filepath.Join(dir, chartName), body, 0o644); err != nil {
 			return err
 		}
 
