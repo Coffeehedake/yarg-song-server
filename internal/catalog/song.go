@@ -131,7 +131,39 @@ type Song struct {
 	// UnknownKeys lists keys not in the recognised table. Informational: they
 	// are preserved in RawMetadata regardless.
 	UnknownKeys []string `json:"unknown_keys,omitempty"`
+
+	// Issues records reasons the real YARG client would refuse or mishandle
+	// this package. We still catalog it - a server that silently drops content
+	// is impossible to debug - but a server should not offer a song the client
+	// cannot play without saying so.
+	//
+	// Every value here was established by scanning a corpus with YARG itself
+	// and reading its badsongs report, not inferred from the source.
+	Issues []Issue `json:"issues,omitempty"`
 }
+
+// Issue is one client-compatibility problem.
+type Issue struct {
+	Code   string `json:"code"`
+	Detail string `json:"detail"`
+}
+
+// Issue codes. Each corresponds to an observed YARG behaviour.
+const (
+	// IssueNoAudio: YARG rejects a chart with no accompanying audio outright -
+	// "No audio accompanying the chart file" in its badsongs report.
+	IssueNoAudio = "no_audio"
+
+	// IssueNoSongIni: a folder with a chart but no song.ini was neither cached
+	// nor reported as bad by YARG - it was silently skipped. Recorded with
+	// that uncertainty rather than asserted as a rejection.
+	IssueNoSongIni = "no_song_ini"
+
+	// IssueNoMetadataSection: a song.ini with no [Song] header. YARG reads
+	// nothing from it and titles the song after its folder, so any metadata in
+	// the file is invisible to the player.
+	IssueNoMetadataSection = "no_metadata_section"
+)
 
 // PartValues is one instrument's state.
 type PartValues struct {

@@ -29,14 +29,28 @@ func ScanDir(fsys fs.FS) (*catalog.Song, error) {
 		return nil, err
 	}
 	var ini *songini.File
+	var issues []catalog.Issue
 	if raw, err := fs.ReadFile(fsys, findCaseInsensitive(names, "song.ini")); err == nil {
 		ini = songini.Parse(raw)
+		if !ini.SawSection {
+			issues = append(issues, catalog.Issue{
+				Code:   catalog.IssueNoMetadataSection,
+				Detail: "song.ini has no [Song] header, so YARG reads no metadata from it and titles the song after its folder",
+			})
+		}
 	} else {
-		// A chart with no song.ini is unusual but not invalid: the chart itself
-		// may carry a name. Carry on with empty metadata rather than refusing.
 		ini = songini.Parse(nil)
+		issues = append(issues, catalog.Issue{
+			Code:   catalog.IssueNoSongIni,
+			Detail: "no song.ini; YARG neither cached this folder nor reported it as bad when measured, so treat it as skipped by the client",
+		})
 	}
-	return scan(fsys, names, ini)
+	song, err := scan(fsys, names, ini)
+	if err != nil {
+		return nil, err
+	}
+	song.Issues = append(issues, song.Issues...)
+	return song, nil
 }
 
 // ScanArchive scans a .sng.
@@ -109,6 +123,17 @@ func scan(fsys fs.FS, names []string, ini *songini.File) (*catalog.Song, error) 
 		return nil, err
 	}
 	s.PackageHash = pkg
+
+	// YARG refuses a chart with no audio outright - "No audio accompanying the
+	// chart file". Measured, not inferred. We still catalog it, because a
+	// server that silently drops content is impossible to debug, but a server
+	// must not offer it as playable.
+	if len(s.Assets.Stems) == 0 {
+		s.Issues = append(s.Issues, catalog.Issue{
+			Code:   catalog.IssueNoAudio,
+			Detail: "no recognised audio stem; YARG rejects a chart with no accompanying audio",
+		})
+	}
 	return s, nil
 }
 

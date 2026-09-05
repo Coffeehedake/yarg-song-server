@@ -65,6 +65,59 @@ individual charters' licensing varies, and most community packages bundle commer
 Individual charts may be used where the charter's own licence permits it — that is a per-chart
 question, answered before the chart is added, not a bulk decision.
 
+## What the oracle actually found, 2026-09-05
+
+`cmd/mkcorpus` wrote 20 deliberately awkward song folders; YARG v0.15.0 scanned them; its
+`badsongs.txt` and song cache were read back. **Our scanner had passed all 20 and was wrong about
+three of them.** These are the only findings in this repo that came from an oracle rather than
+from our own reasoning, which is precisely why they are the ones worth having.
+
+| Case | YARG | We had | Fixed |
+|---|---|---|---|
+| `song.ini` with no `[Song]` header | reads **nothing**, titles the song after its folder | read the keys | yes — parser now requires the header, and the song is flagged `no_metadata_section` |
+| chart with no audio | rejects: *"No audio accompanying the chart file"* | accepted it silently | yes — flagged `no_audio` |
+| folder with a chart but no `song.ini` | neither cached nor reported bad — silently skipped | accepted it silently | yes — flagged `no_song_ini` |
+
+The headerless case is the one that mattered most. Our leniency was a guess written into a comment
+("some charts omit it"), and it would have produced a catalog whose titles disagreed with what the
+player sees on their own screen — a bug with no error message anywhere.
+
+**Confirmations**, where YARG agreed with decisions we had reached from source:
+
+- Duplicate keys resolve **last-wins** — `FIRST` never appears in YARG's cache, `SECOND` does.
+  That is now three independent sources: `IniModifierCollection.cs`, SngCli's round-trip, YARG.
+- Latin-1, UTF-16LE and UTF-8-BOM `song.ini` files all read correctly on both sides.
+- `notes.mid` is a **hard selection** over `notes.chart`, not a preference. Given both, YARG chose
+  the `.mid`, found it unplayable, and rejected the whole song rather than falling back. Hashing
+  the wrong file would be a real divergence, exactly as `chartfile.go` warns.
+- Uppercase `[SONG]`, ragged whitespace, CRLF, values containing `=`, free-text years, unknown
+  keys, the `cover` override, clean/explicit stem variants and a 4-way drum kit all matched.
+
+### Two divergences left open, deliberately
+
+1. **UltraStar `notes.txt`.** YARG rejected it with *"Name metadata not provided"* even though the
+   `song.ini` carried `name = UltraStar`. So UltraStar charts appear to take their title from
+   somewhere other than `song.ini`. We report the `song.ini` name. **Not guessed at** — the rule
+   is not understood, and inventing one would be worse than a known gap. Settle it by reading
+   `ScanUltraStar` before UltraStar support is claimed.
+
+2. **We do not know whether a chart is playable.** YARG rejected a header-only `.mid` with *"No
+   notes found"*; we catalogued it happily. That is expected — deriving what a chart contains is
+   Phase 1 step 6, the MIDI preparsers — but until then the catalog can offer a song the client
+   will refuse, and that limit should be stated rather than discovered by a user.
+
+### Reproducing this
+
+```powershell
+go run ./cmd/mkcorpus -out $env:USERPROFILE\yarg-test\corpus
+# point YARG at it by editing SongFolders in
+#   %USERPROFILE%\AppData\LocalLow\YARC\YARGelease\settings.json
+# then delete songcache.bin, launch YARG, and read badsongs.txt beside it
+```
+
+The corpus is generated, never committed: it is large, and a committed corpus rots into something
+nobody regenerates.
+
 ## The gap this leaves, stated honestly
 
 Self-authored input cannot produce unknown unknowns. We can write a `song.ini` with the mistakes
@@ -78,3 +131,6 @@ we thought of; we cannot write one with the mistakes we did not. Two things part
 
 Neither is a substitute for a large real library. If a legitimately-licensed corpus becomes
 available, revisit this.
+
+That said, the first run of this method found three real bugs, two of which had been written into
+the code as confident comments. The oracle is doing work.

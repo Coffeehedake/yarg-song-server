@@ -261,3 +261,79 @@ func buildTestSNG(t *testing.T, meta [][2]string, files [][2]string) []byte {
 	}
 	return b.Bytes()
 }
+
+// The three cases below are not hypotheticals: each was produced by generating
+// a corpus with cmd/mkcorpus, scanning it with a real YARG v0.15.0 install, and
+// reading YARG's own badsongs report and song cache. They are the only findings
+// in this package that came from an oracle rather than from our own reasoning.
+
+func TestNoAudioIsFlaggedBecauseYARGRejectsIt(t *testing.T) {
+	f := fstest.MapFS{
+		"song.ini":    {Data: []byte(sampleINI)},
+		"notes.chart": {Data: []byte("[Song]\n{\n}\n")},
+	}
+	s, err := ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasIssue(s.Issues, catalog.IssueNoAudio) {
+		t.Fatalf("audio-less chart not flagged; YARG reports \"No audio accompanying the chart file\". issues=%+v", s.Issues)
+	}
+	// Still catalogued, not dropped - a server that silently loses content
+	// cannot be debugged.
+	if s.ChartHash == "" {
+		t.Fatal("song was dropped rather than flagged")
+	}
+}
+
+func TestHeaderlessIniIsFlaggedAndYieldsNoMetadata(t *testing.T) {
+	f := fstest.MapFS{
+		"song.ini":    {Data: []byte("name = Invisible\nartist = Nobody\n")},
+		"notes.chart": {Data: []byte("[Song]\n{\n}\n")},
+		"song.ogg":    {Data: []byte("audio")},
+	}
+	s, err := ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Name != "" {
+		t.Fatalf("name = %q; YARG reads nothing from a headerless song.ini", s.Name)
+	}
+	if !hasIssue(s.Issues, catalog.IssueNoMetadataSection) {
+		t.Fatalf("headerless song.ini not flagged: %+v", s.Issues)
+	}
+}
+
+func TestMissingSongIniIsFlagged(t *testing.T) {
+	f := fstest.MapFS{
+		"notes.chart": {Data: []byte("[Song]\n{\n}\n")},
+		"song.ogg":    {Data: []byte("audio")},
+	}
+	s, err := ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasIssue(s.Issues, catalog.IssueNoSongIni) {
+		t.Fatalf("missing song.ini not flagged: %+v", s.Issues)
+	}
+}
+
+// A well-formed song must carry no issues at all, or the flag means nothing.
+func TestGoodSongHasNoIssues(t *testing.T) {
+	s, err := ScanDir(sampleFolder())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Issues) != 0 {
+		t.Fatalf("a valid song was flagged: %+v", s.Issues)
+	}
+}
+
+func hasIssue(issues []catalog.Issue, code string) bool {
+	for _, i := range issues {
+		if i.Code == code {
+			return true
+		}
+	}
+	return false
+}

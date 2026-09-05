@@ -39,10 +39,28 @@ func TestSectionHandling(t *testing.T) {
 	if v, _ := f.String("name"); v != "ok" {
 		t.Fatalf("name = %q", v)
 	}
-	// A file with no header at all is still read.
-	f = Parse([]byte("name = headerless\n"))
-	if v, _ := f.String("name"); v != "headerless" {
-		t.Fatalf("name = %q", v)
+}
+
+// Measured against YARG on 2026-09-05: given a song.ini with no [Song] header,
+// YARG read NO metadata and titled the song after its folder. An earlier
+// version of this parser read those keys, which would have made our catalog
+// disagree with what the player sees on their own screen.
+func TestHeaderlessFileYieldsNoMetadata(t *testing.T) {
+	f := Parse([]byte("name = headerless\nartist = nobody\n"))
+	if len(f.Values) != 0 {
+		t.Fatalf("read %v from a file with no [Song] header; YARG reads nothing", f.Values)
+	}
+	if f.SawSection {
+		t.Fatal("SawSection true without a header")
+	}
+}
+
+func TestSawSectionDistinguishesEmptyFromHeaderless(t *testing.T) {
+	if f := Parse([]byte("[Song]\n")); !f.SawSection || len(f.Values) != 0 {
+		t.Fatalf("a header with no keys: SawSection=%v values=%v", f.SawSection, f.Values)
+	}
+	if f := Parse([]byte("[other]\nname = x\n")); f.SawSection {
+		t.Fatal("a non-song section set SawSection")
 	}
 }
 

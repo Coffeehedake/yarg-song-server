@@ -28,15 +28,29 @@ type File struct {
 	// them and so do we - but a repack must carry them through, since a chart
 	// may use a key a newer YARG understands and this build does not.
 	Unknown []string
+
+	// SawSection reports whether a [song] header was found. A file with keys
+	// but no header parses to nothing, because that is what YARG does; this
+	// flag lets the caller say WHY the metadata is empty rather than leaving a
+	// charter wondering where their title went.
+	SawSection bool
 }
 
 // Parse reads a song.ini from raw bytes.
 //
 // It is deliberately lenient, because charts in the wild are. It accepts UTF-8,
-// UTF-16 with a BOM, and Latin-1; a missing or misspelled section header; lines
-// with no '='; and blank lines. It never returns an error: an unreadable line is
-// skipped, because refusing a whole library over one malformed line is worse
-// than ignoring the line, and that is what YARG does too.
+// UTF-16 with a BOM, and Latin-1; lines with no '='; values containing '='; and
+// blank lines. It never returns an error: an unreadable line is skipped, because
+// refusing a whole library over one malformed line is worse than ignoring the
+// line, and that is what YARG does too.
+//
+// It is NOT lenient about the section header, and that is a correction. An
+// earlier version read a song.ini with no [Song] line at all, on the reasoning
+// that some charts omit it. Measured against YARG on 2026-09-05, that is wrong:
+// given a headerless song.ini, YARG read NO metadata from it and fell back to
+// the folder name for the title. Reading keys the client ignores is worse than
+// reading nothing, because the server's catalog would then disagree with what
+// the player sees on their own screen.
 //
 // UNVERIFIED against upstream: the exact whitespace and multiple-'=' handling
 // lives in YARGTextReader.ExtractModifierName, which has not been read. The
@@ -47,7 +61,6 @@ func Parse(raw []byte) *File {
 	f := &File{Values: make(map[string]string)}
 
 	inSection := false
-	sawAnySection := false
 
 	for _, line := range strings.Split(decodeText(raw), "\n") {
 		line = strings.TrimRight(line, "\r")
@@ -57,20 +70,25 @@ func Parse(raw []byte) *File {
 		}
 
 		if strings.HasPrefix(line, "[") {
-			sawAnySection = true
 			// Trailing text after the closing bracket is ignored, and the name
 			// is lowercased - YARG does `PeekLine(...).ToLower()`.
 			name := line[1:]
 			if i := strings.IndexByte(name, ']'); i >= 0 {
 				name = name[:i]
 			}
-			inSection = strings.EqualFold(strings.TrimSpace(name), Section)
+			if strings.EqualFold(strings.TrimSpace(name), Section) {
+				inSection = true
+				f.SawSection = true
+			} else {
+				inSection = false
+			}
 			continue
 		}
 
-		// A file with no section header at all is still worth reading: some
-		// charts omit it. A file WITH sections is read only inside [song].
-		if sawAnySection && !inSection {
+		// Keys are read ONLY inside [song]. Before the first header, and
+		// inside any other section, they are skipped - matching YARG, which
+		// seeks to the next '[' rather than reading loose keys.
+		if !inSection {
 			continue
 		}
 
@@ -233,7 +251,7 @@ func decodeUTF16(b []byte, bigEndian bool) string {
 // metadata keys, so a .sng written with "Name" instead of "name" would miss
 // every lookup if we did not normalise. Order is preserved for re-emit.
 func FromMap(kv map[string]string, order []string) *File {
-	f := &File{Values: make(map[string]string, len(kv))}
+	f := &File{Values: make(map[string]string, len(kv)), SawSection: true}
 	seen := make(map[string]bool, len(kv))
 
 	add := func(k, v string) {
