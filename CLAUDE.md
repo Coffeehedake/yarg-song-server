@@ -22,6 +22,9 @@ choice costs. `docs/ROADMAP.md` has the build order.
 
 ## Verification, not vibes
 
+Go 1.27.0 is installed on ENG-1 as a per-user toolchain at `%LOCALAPPDATA%\Programs\go`, already
+on the user `Path`. If `go` is not found, the shell predates the PATH change — open a new one.
+
 - `go vet ./...`, `gofmt -l .` and `go test ./... -race` must all be clean before a commit.
 - `make release` must succeed for every promised platform — linux/amd64, linux/arm64, linux/armv7,
   darwin/amd64, darwin/arm64, windows/amd64. The Pi target is a project promise, not a bonus.

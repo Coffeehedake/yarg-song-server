@@ -166,9 +166,19 @@ Can be picked up at any time; does not block the server.
 None. The Coffeehedake GitHub PAT was rotated on 2026-09-05 and verified (`login=Coffeehedake`,
 scopes `repo`, `workflow`, `project`, `write:packages`, `delete:packages`, `audit_log`).
 
-One thing to sort out before Phase 1 gets far: **Go is not installed on ENG-1**. The scaffold's
-build, vet, test and six-platform cross-compile were all verified in a cloud container. Either
-install Go on ENG-1 or keep building elsewhere — but do not let "it compiles" go unmeasured.
+Go 1.27.0 was installed on ENG-1 on 2026-09-05, so the toolchain claim is now measured on the
+machine the work actually happens on: `gofmt` clean, `go vet` exit 0, `go test ./...` green, and
+all six release targets building — linux/amd64, linux/arm64, linux/armv7, darwin/amd64,
+darwin/arm64, windows/amd64.
+
+It is a **per-user** install at `%LOCALAPPDATA%\Programs\go`, from the official zip with its
+SHA-256 verified against `go.dev/dl/?mode=json` before extraction, with `go\bin` and
+`%USERPROFILE%\go\bin` added to the user `Path`. Per-user rather than machine-wide on purpose:
+the MSI needs elevation, and an unattended `msiexec /qn` from a non-elevated session fails
+*silently* — the same failure mode that produced the Bambu Studio update loop. Nothing about this
+install needs elevation, and `GOPATH`/`GOCACHE` land in the user profile rather than in the
+Syncthing root. Promote it to a machine-wide install later if you want; nothing depends on where
+it lives.
 
 ## Sequencing note
 
