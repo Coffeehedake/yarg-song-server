@@ -203,6 +203,21 @@ install needs elevation, and `GOPATH`/`GOCACHE` land in the user profile rather 
 Syncthing root. Promote it to a machine-wide install later if you want; nothing depends on where
 it lives.
 
+**mingw-w64 followed, for the race detector.** `go test -race` needs cgo, and cgo needs a C
+compiler; without one ENG-1 reported `CGO_ENABLED=0` and `-race` failed outright with "requires
+cgo" rather than passing quietly. WinLibs GCC **16.2.0** (UCRT, POSIX threads, SEH) is now
+installed the same way — per-user at `%LOCALAPPDATA%\Programs\mingw64`, SHA-256 verified against
+the publisher's own `.sha256` before extraction, `bin` on the user `Path`. `go env CGO_ENABLED`
+now reports 1 and the suite is race-clean in about 16 seconds on the first run.
+
+The extraction ran through a **scheduled task** rather than `Start-Process`, because a long child
+process started from a Cowork session dies with the process tree when a bridge call times out —
+that is what silently cancelled an earlier `winget` attempt mid-download. A scheduled task is
+detached from that tree and survives.
+
+And the detector was proved able to go **red** before its green was believed: a throwaway module
+with eight goroutines incrementing a shared int returned `WARNING: DATA RACE` and exit 1.
+
 ## Sequencing note
 
 Phases 1 and 2 are the whole of the "#1 priority". Nothing in phases 3–5 should start before a
