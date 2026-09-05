@@ -87,6 +87,26 @@ Build order (each step is independently testable):
    reaches the same result only because it decrypts whole 1 MB buffers and 1 MB is a multiple of
    the 256-byte table; tracking the real offset is equivalent and survives arbitrary read sizes.
    Malformed input is rejected with an error rather than a panic, which is tested.
+
+   **Validated against the reference encoder, 2026-09-05.** SngCli v0.3.0 (MIT, from
+   `mdsitton/SngFileFormat` — the tool that defines the format) encoded a song folder we wrote,
+   and our reader read the result: same chart bytes, same SHA-1, same metadata, and chunked
+   streaming matching a whole-file read. The archive is committed at
+   `internal/sng/testdata/reference-sngcli-v0.3.0.sng` so this stays a regression test rather
+   than a thing that was true once. Until this, every `.sng` the reader had seen was produced by
+   an encoder written from the same understanding as the reader — which proves only that the two
+   agree with each other.
+
+   Two things the real file taught us that synthetic input could not:
+
+   - **Duplicate `song.ini` keys: last wins — confirmed independently.** A probe archive with
+     `name = FIRST VALUE` … `name = SECOND VALUE` round-tripped through SngCli as
+     `SECOND VALUE`, matching what we had concluded from reading `IniModifierCollection.cs`.
+   - **A file's extension can lie about its container.** SngCli emits audio under a `.mp3` name
+     regardless of source format: our `song.wav` came back as `song.mp3`, byte-identical, RIFF
+     header intact. We classify stems by name, as YARG does, so the scan is unaffected — but
+     anything that later *decodes* audio must sniff the container, and our own writer must not
+     reproduce this. There is a test pinning the observation.
 3. **Scanner** — ✅ done (`internal/scan`, `internal/catalog`). Walks a folder or a `.sng` through
    the same `fs.FS`, applies the chart-file priority order, classifies stems (all 14 standard, 5
    clean and 4 explicit variants), resolves album art with the `cover` key overriding

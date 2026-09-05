@@ -40,6 +40,14 @@ shell predates the PATH change — open a new one.
 - Any `.sng` writer must be validated two ways: round-trip through the reference `SngCli`, **and**
   a real YARG install scanning the output and reporting the same hash and metadata. Round-tripping
   against our own reader only proves our reader and writer agree with each other.
+- **SngCli lives at `%LOCALAPPDATA%\Programs\sngcli\win-x64\SngCli.exe`** (v0.3.0, MIT). The
+  reader is already validated against its output; `internal/sng/testdata/` holds the archive so
+  that stays a regression test. `.gitignore` excludes `*.sng` with an explicit exception for that
+  directory — keep song libraries out of the repo, keep the reference fixtures in.
+- **Do not trust a contained file's extension to describe its container.** SngCli emits audio as
+  `.mp3` whatever the source was; a `song.wav` comes back as `song.mp3` with its RIFF header
+  intact. Classify by name (as YARG does), but sniff before decoding, and do not reproduce the
+  behaviour in our writer.
 
 ## Docs
 
