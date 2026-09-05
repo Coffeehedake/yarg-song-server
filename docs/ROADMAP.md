@@ -19,7 +19,9 @@ Repos, remotes, mirrors and the format research that everything else is built on
 - [x] Project instructions mirrored into `CLAUDE.md` so both machines pick them up
 - [x] `yarg` imported from upstream server-side: 21 branches, 172 MB of repository and 180 MB of
       LFS objects, default branch set to `dev`
-- [ ] Public push mirrors to `github.com/coffeehedake` (blocked — see Blockers)
+- [x] Public push mirrors to `github.com/Coffeehedake` configured and verified: `yarg-song-server` (GitLab mirror 10) and `yarg` (mirror 11), both one-way, all branches,
+      divergent refs not kept. First sync 2026-09-05 16:44 ET, both `finished` with no error,
+      and the GitHub side matches GitLab commit-for-commit.
 
 **Deliberately deferred:** the `yarg` fork is *not* cloned locally. The project folder is inside
 the Syncthing `dev-projects` mesh, so a local clone replicates ~350 MB to r7 and Vault2 for a repo
@@ -35,7 +37,17 @@ git lfs pull
 ```
 
 **Exit criterion:** both repos exist, both push to Vault2, both mirror to GitHub, and the format
-spec is committed.
+spec is committed. **Met 2026-09-05.**
+
+`Coffeehedake/yarg` is a real GitHub *fork* of `YARC-Official/YARG`, not a plain repository.
+That matters twice: it is the only shape GitHub accepts a pull request to upstream from, and
+forks share LFS storage with their parent, so upstream's ~180 MB of LFS objects resolve on the
+mirror without being re-pushed.
+
+**LFS caveat, worth knowing before Phase 3:** GitLab push mirroring does *not* transfer LFS
+objects. Upstream's existing objects resolve through the fork relationship, but any NEW LFS
+object committed on the GitLab side would arrive at GitHub as a dangling pointer. If client
+work ever adds binary assets, push those to GitHub directly or move the fork to a full mirror.
 
 ---
 
@@ -151,9 +163,12 @@ Can be picked up at any time; does not block the server.
 
 ## Blockers
 
-| Blocker | Impact | Needed |
-|---|---|---|
-| The `Coffeehedake` GitHub PAT in 1Password (`MCP` vault, item `GitHub PAT`) returns **401 Bad credentials** | Cannot fork upstream to `coffeehedake`, cannot configure either GitHub push mirror | Jay to rotate the token and update that 1Password item |
+None. The Coffeehedake GitHub PAT was rotated on 2026-09-05 and verified (`login=Coffeehedake`,
+scopes `repo`, `workflow`, `project`, `write:packages`, `delete:packages`, `audit_log`).
+
+One thing to sort out before Phase 1 gets far: **Go is not installed on ENG-1**. The scaffold's
+build, vet, test and six-platform cross-compile were all verified in a cloud container. Either
+install Go on ENG-1 or keep building elsewhere — but do not let "it compiles" go unmeasured.
 
 ## Sequencing note
 
