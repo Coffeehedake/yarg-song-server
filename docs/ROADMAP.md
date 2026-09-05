@@ -17,8 +17,22 @@ Repos, remotes, mirrors and the format research that everything else is built on
 - [x] Song-format research spec written (`docs/research/yarg-song-formats.md`)
 - [x] Architecture decision recorded (`docs/ADR-001-server-architecture.md`)
 - [x] Project instructions mirrored into `CLAUDE.md` so both machines pick them up
+- [x] `yarg` imported from upstream server-side: 21 branches, 172 MB of repository and 180 MB of
+      LFS objects, default branch set to `dev`
 - [ ] Public push mirrors to `github.com/coffeehedake` (blocked — see Blockers)
-- [ ] `yarg` populated from upstream with `dev` tracking and Git LFS
+
+**Deliberately deferred:** the `yarg` fork is *not* cloned locally. The project folder is inside
+the Syncthing `dev-projects` mesh, so a local clone replicates ~350 MB to r7 and Vault2 for a repo
+nothing touches until Phase 3. Clone it when Phase 3 starts:
+
+```powershell
+cd "C:\dev\YARG - Open Source Contributions"
+git clone https://gitlab.badassium.com/fatalexception/yarg.git yarg
+cd yarg
+git remote add upstream https://github.com/YARC-Official/YARG.git
+git submodule update --init --recursive
+git lfs pull
+```
 
 **Exit criterion:** both repos exist, both push to Vault2, both mirror to GitHub, and the format
 spec is committed.
