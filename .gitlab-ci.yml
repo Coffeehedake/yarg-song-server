@@ -19,6 +19,7 @@
 stages:
   - check
   - build
+  - image
 
 variables:
   # Keep this in step with the toolchain the workstations use. The SHA-256 is
@@ -109,3 +110,66 @@ release:
     paths:
       - dist/
     expire_in: 1 week
+
+# The container image: one manifest covering linux/amd64 and linux/arm64.
+#
+# IT NEEDS NO EMULATION, AND NOTHING ON THE RUNNER HOST SHOULD BE CHANGED TO
+# MAKE IT WORK. Go cross-compiles natively, and the Dockerfile pins its build
+# stage with `FROM --platform=$BUILDPLATFORM`, so the toolchain runs at the
+# host's own architecture and Go emits the arm64 binary itself. Emulation would
+# only enter if the build stage were pulled FOR the target platform, which that
+# directive is there to prevent. If anyone finds themselves installing qemu or
+# registering binfmt_misc for this project, they have gone wrong.
+#
+# The runner is a shell executor with the host Docker socket mounted, which is
+# how fatalexception/fallout-research already builds and pushes to this
+# registry. Nothing new is needed on the host.
+container-image:
+  stage: image
+  variables:
+    BUILDX_BUILDER: yarg-song-server-multiarch
+  # No Go here, so the default toolchain bootstrap is not wanted - and neither
+  # are the Go caches, which would otherwise be restored into the build context.
+  cache: []
+  before_script:
+    - ./ci/ensure-buildx.sh
+  script:
+    # The DEFAULT buildx builder uses the `docker` driver, which cannot build
+    # more than one platform and cannot produce a manifest list at all. A
+    # docker-container builder is required. This is the step that is easy to
+    # miss, because buildx then fails with a message about the docker driver
+    # rather than anything that mentions multi-arch.
+    - docker buildx inspect "$BUILDX_BUILDER" >/dev/null 2>&1 || docker buildx create --name "$BUILDX_BUILDER" --driver docker-container --bootstrap
+    - docker buildx use "$BUILDX_BUILDER"
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - |
+      VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo "$CI_COMMIT_SHORT_SHA")"
+      set -- --tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        set -- "$@" --tag "$CI_REGISTRY_IMAGE:latest"
+      fi
+      echo "building $VERSION for linux/amd64,linux/arm64"
+      docker buildx build \
+        --platform linux/amd64,linux/arm64 \
+        --build-arg VERSION="$VERSION" \
+        "$@" \
+        --push \
+        .
+    # Exit 0 from buildx is NOT evidence the image is really multi-arch, and an
+    # amd64 binary under an arm64 manifest entry would pass every check that
+    # only reads exit codes - and then fail to start on the Pi.
+    - ./ci/verify-multiarch.sh "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+  after_script:
+    - docker logout "$CI_REGISTRY" 2>/dev/null || true
+    # Remove the builder rather than leaving it behind. buildx's own state lives
+    # in $HOME/.docker INSIDE the GitLab-CE container, which Unraid recreates
+    # nightly, while the buildkit container it spawns lives on the HOST daemon
+    # and survives. That asymmetry would orphan one buildkit container per
+    # recreate into a docker.img that has 99 GB free.
+    - docker buildx rm "$BUILDX_BUILDER" 2>/dev/null || true
+  rules:
+    # Default branch, plus ci/* so the job can be proved on a branch before it
+    # is trusted on main. Deliberately not every branch: each run pushes an
+    # image, and the disk it lands on is not large.
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_BRANCH =~ /^ci\//'

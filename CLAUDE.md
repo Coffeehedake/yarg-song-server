@@ -59,6 +59,14 @@ shell predates the PATH change — open a new one.
   with eight goroutines incrementing a shared int returned `WARNING: DATA RACE` and exit 1. A
   green result from an instrument that has never produced a finding is indistinguishable from an
   instrument that cannot produce one.
+- **The container image is multi-arch and needs NO emulation.** Go cross-compiles, and the
+  Dockerfile pins its build stage with `FROM --platform=$BUILDPLATFORM`, so the toolchain runs at
+  the host's architecture and Go emits the arm64 binary. Do not install qemu, do not register
+  `binfmt_misc`, and do not change the runner for this. Two non-obvious details: the job must
+  create a **`docker-container`** buildx builder, because the default `docker` driver cannot build
+  more than one platform or produce a manifest list at all; and `ci/verify-multiarch.sh` reads the
+  ELF machine type inside the arm64 image, because buildx exiting 0 is not evidence the arm64 half
+  is really arm64.
 - `make release` must succeed for every promised platform — linux/amd64, linux/arm64, linux/armv7,
   darwin/amd64, darwin/arm64, windows/amd64. The Pi target is a project promise, not a bonus.
 - Any `.sng` writer must be validated two ways: round-trip through the reference `SngCli`, **and**

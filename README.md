@@ -108,7 +108,13 @@ make docker     # multi-arch image
 
 CI runs the same checks on every push — `gofmt`, `go vet`, the suite with and without `-race`,
 all six release targets, and an assertion that the Dockerfile's Go is not older than `go.mod`
-requires. See [`.gitlab-ci.yml`](.gitlab-ci.yml).
+requires. On the default branch it also builds and pushes a **multi-arch container image** for
+`linux/amd64` and `linux/arm64`. See [`.gitlab-ci.yml`](.gitlab-ci.yml).
+
+That image needs no emulation: Go cross-compiles, and the Dockerfile pins its build stage with
+`FROM --platform=$BUILDPLATFORM`, so the toolchain runs at the host's architecture and Go emits
+the arm64 binary. If you are ever tempted to install qemu or register `binfmt_misc` to build this
+project, something else has gone wrong.
 
 ## Trying the scanner directly
 

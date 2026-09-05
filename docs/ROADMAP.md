@@ -242,10 +242,31 @@ exists, and it is the proof that the server is correct.
       requires. See below for what this replaced.
 - [ ] A bound or an eviction policy for the pack cache. It is content-keyed and therefore always
       safe to delete, which is why this is a finishing task and not a design question.
-- [ ] The multi-arch Docker image itself. The `Dockerfile` and `make docker` exist and the Go
-      version mismatch in them is fixed, but **no image has been built** — neither ENG-1 nor the
-      Vault2 runner has a usable Docker daemon reachable from a session, so this is stated as
-      unmeasured rather than assumed to work.
+- [x] **The multi-arch container image** — `container-image` in `.gitlab-ci.yml`, pushing
+      `linux/amd64` + `linux/arm64` to `registry.badassium.com/fatalexception/yarg-song-server`.
+
+**And it needs no emulation, which is the part worth remembering.** The earlier plan here was to
+install qemu/binfmt on Vault2. That plan was wrong. Go cross-compiles natively, and the Dockerfile
+already pins its build stage with `FROM --platform=$BUILDPLATFORM`, so the toolchain runs at the
+host's own architecture and Go emits the arm64 binary itself. Emulation only enters if the build
+stage is pulled *for* the target platform, which that directive prevents. **Nothing on the Vault2
+host was changed, and nothing should be.**
+
+That correction came from the ShopStack session, who also established that `juniper-pi-deploy` —
+the "Pi framework" this was going to be cloned from — builds bootable SD-card images and publishes
+no container images at all. Same word, different problem.
+
+Two things the job does that are not obvious:
+
+- **It creates a `docker-container` buildx builder.** The default builder uses the `docker` driver,
+  which cannot build more than one platform and cannot produce a manifest list at all. Without this
+  step buildx fails with a message about the driver rather than anything that mentions multi-arch.
+- **It verifies the result rather than trusting the exit code.** `ci/verify-multiarch.sh` asserts
+  the manifest covers both platforms *and* reads the ELF machine type of the binary inside the
+  arm64 image. An amd64 binary under an arm64 manifest entry passes every check that only reads
+  exit codes, and then fails to start on the Pi. The check is structural rather than execution-
+  based on purpose: running the arm64 binary would need the emulation this project deliberately
+  does not have.
 
 **What CI replaced.** This project had no `.gitlab-ci.yml`, so GitLab fell through to Auto DevOps.
 Pipeline #2216 — the only pipeline this project has ever run — failed three jobs with exit 127

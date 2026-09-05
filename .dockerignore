@@ -1,0 +1,24 @@
+# Build-context hygiene.
+#
+# CI restores a pinned Go toolchain into .toolchain/ and the module/build caches
+# into .cache/, both INSIDE the project directory, because the runner is a shell
+# executor with nowhere else that is writable and cached. Without this file every
+# image build would ship all of that to the Docker daemon before doing any work.
+#
+# .git is excluded too: the image build does not need it, because the version is
+# computed in CI and passed in as --build-arg VERSION.
+
+.git/
+.gitattributes
+.gitignore
+.gitlab-ci.yml
+.toolchain/
+.cache/
+bin/
+dist/
+data/
+docs/
+ci/
+*.sng
+*.exe
+*.test
