@@ -1,0 +1,30 @@
+# build output
+/bin/
+/dist/
+*.exe
+*.test
+
+# local runtime state
+/data/
+*.db
+*.sqlite
+config.local.*
+.env
+
+# song fixtures are large and often copyrighted - never commit them
+/testdata/songs/
+*.sng
+*.ogg
+*.opus
+*.mp3
+*.wav
+*.aiff
+*.mogg
+*.con
+*_rb3con
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

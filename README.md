@@ -1,0 +1,69 @@
+# yarg-song-server
+
+A self-hosted song library server for [YARG](https://github.com/YARC-Official/YARG)
+(Yet Another Rhythm Game).
+
+Point it at a folder of songs, run it on whatever is always-on in your house, and every YARG
+machine on the network plays from the same library. It is a single static binary — Docker,
+Raspberry Pi, macOS and Windows all run the same code.
+
+> **Status: early. Nothing works yet.**
+> This repository currently contains the architecture, the format research it is built on, and
+> the scaffolding. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for what is being built and in what
+> order.
+
+## Design in one paragraph
+
+The server is a **content source, not a game modification**. It serves ordinary `.sng` files that
+an unmodified YARG already knows how to read, so the first useful version needs no client changes
+at all — a small sync companion pulls the library into a normal songs folder. Native in-client
+browsing comes later, and separately, as an upstream conversation.
+
+Songs are identified by `SHA1(chart file bytes)`, which is exactly how YARG itself identifies
+them. Client and server therefore agree precisely on "do I already have this song", with no
+heuristics and no fuzzy matching.
+
+## What it will and will not do
+
+**Will**
+
+- Ingest loose song folders (`song.ini` + `notes.mid`/`notes.chart` + stems), `.sng` containers,
+  and zipped versions of either
+- Serve a browsable, searchable catalog over HTTP, sorted by the same attributes YARG sorts by
+- Serve songs as `.sng`, and answer "which of these hashes am I missing?" in bulk
+- Run on `linux/amd64`, `linux/arm64` (Raspberry Pi), macOS and Windows
+
+**Will not, ever**
+
+- Decrypt Rock Band CON packages or encrypted moggs. Upstream lists CON decryption as out of
+  scope and will reject PRs for it on sight; it also carries real legal exposure. `.con`,
+  `_rb3con` and `.pkg` are refused on ingest with a clear message.
+- Generate YARG's `songcache.bin`. It is version-stamped, holds absolute local paths, and is
+  strictly internal to the client.
+- Distribute copyrighted audio. Charts and audio are separable by design.
+
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Phases, build order, exit criteria, blockers |
+| [`docs/ADR-001-server-architecture.md`](docs/ADR-001-server-architecture.md) | Why Go, why two repos, why sync-first, why LGPL |
+| [`docs/research/yarg-song-formats.md`](docs/research/yarg-song-formats.md) | The `.sng` binary layout, `song.ini` keys, the metadata model, song identity, and a difficulty assessment for every part of a Go reimplementation |
+
+Read the research document before writing any parser code. It is the reason the scope is what it
+is.
+
+## Building
+
+```sh
+make build      # host binary into ./bin
+make test       # unit tests
+make docker     # multi-arch image
+```
+
+## Licence
+
+LGPL-3.0-or-later, matching YARG and YARG.Core. See [`LICENSE`](LICENSE).
+
+This project is not affiliated with or endorsed by YARC. It stands with upstream against piracy:
+it ships no content, and it will not help you play content you do not own.
