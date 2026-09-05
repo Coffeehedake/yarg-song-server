@@ -106,12 +106,28 @@ player sees on their own screen — a bug with no error message anywhere.
    Phase 1 step 6, the MIDI preparsers — but until then the catalog can offer a song the client
    will refuse, and that limit should be stated rather than discovered by a user.
 
+## The writer's gate, 2026-09-05
+
+The same oracle was then pointed at output we produced. `yarg-song-server pack` repacked 14 corpus
+folders plus the reference song; YARG scanned the 15 archives and accepted 14, reading every title
+out of our metadata section.
+
+The single rejection — `No notes found` — was settled by a **control** rather than explained away:
+SngCli's own archive of the same source folder was placed beside ours and scanned in the same
+pass, and YARG rejected both with the identical error. The fixture's hand-written chart has no
+note events. Without that control, "YARG rejected one of ours" would have looked like a writer
+bug, and chasing it would have been wasted work.
+
+Independently, `SngCli decode` extracted our archive with zero errors and every contained file
+came back byte-identical to the source folder.
+
 ### Reproducing this
 
 ```powershell
 go run ./cmd/mkcorpus -out $env:USERPROFILE\yarg-test\corpus
 # point YARG at it by editing SongFolders in
-#   %USERPROFILE%\AppData\LocalLow\YARC\YARGelease\settings.json
+#   %USERPROFILE%\AppData\LocalLow\YARC\YARG
+elease\settings.json
 # then delete songcache.bin, launch YARG, and read badsongs.txt beside it
 ```
 

@@ -46,6 +46,17 @@ func main() {
 	// JSON. It exists so the scanner can be pointed at a real song collection
 	// before any of it is behind an HTTP API - the parsers are only as good as
 	// the charts they have actually been run against.
+	// `yarg-song-server pack <song-folder> <out.sng>` repacks a loose folder.
+	// It is here so the writer can be pointed at the reference decoder and at a
+	// real YARG install, which are the only two things that can say it is right.
+	if args := flag.Args(); len(args) >= 3 && args[0] == "pack" {
+		if err := runPack(args[1], args[2]); err != nil {
+			fmt.Fprintln(os.Stderr, "pack:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if args := flag.Args(); len(args) >= 1 && args[0] == "scan" {
 		root := "."
 		if len(args) >= 2 {
@@ -64,6 +75,27 @@ func main() {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
+}
+
+func runPack(src, dst string) error {
+	f, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if err := scan.PackDir(src, f); err != nil {
+		f.Close()
+		os.Remove(dst) // never leave a half-written archive behind
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	st, err := os.Stat(dst)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "packed %s -> %s (%d bytes)\n", src, dst, st.Size())
+	return nil
 }
 
 func runScan(root string) error {

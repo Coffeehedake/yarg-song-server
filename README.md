@@ -78,6 +78,16 @@ It recognises loose song folders and `.sng` archives, walks nested directories,
 skips folders that hold no chart, and reports an unreadable song on stderr
 rather than abandoning the scan.
 
+Repacking a loose folder into a `.sng` also works:
+
+```sh
+./bin/yarg-song-server pack /path/to/song-folder out.sng
+```
+
+The chart is copied byte for byte, so the song's identity is unchanged. Archives
+written this way have been decoded by the reference `SngCli` and scanned by a
+real YARG install — see [`docs/TEST-CORPUS.md`](docs/TEST-CORPUS.md).
+
 ## Licence
 
 LGPL-3.0-or-later, matching YARG and YARG.Core. See [`LICENSE`](LICENSE).

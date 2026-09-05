@@ -132,8 +132,29 @@ Build order (each step is independently testable):
    chart hash but *different* package hashes, because the folder carries `song.ini` as a file and
    the `.sng` carries it in the header — that is correct, and the test asserts it rather than
    papering over it.
-5. **`.sng` writer** — validated two ways: round-trip through the reference `SngCli`, and by
-   confirming a real YARG install scans the output and shows correct metadata.
+5. **`.sng` writer** — ✅ done (`internal/sng/write.go`, `scan.PackDir`,
+   `yarg-song-server pack <folder> <out.sng>`). Validated three ways, weakest first:
+
+   - **Our own round-trip** — proves only that our reader and writer agree.
+   - **The reference decoder.** `SngCli decode` extracted our archive with zero errors, and
+     `notes.chart`, `album.png` and the audio all came back byte-identical to the source folder.
+     Our archive of the same song is the same size as SngCli's, 8,806 bytes.
+   - **The client.** YARG v0.15.0 scanned 15 archives written by us and accepted **14**, reading
+     every title correctly out of our metadata section — including Latin-1, UTF-16LE, a duplicate
+     key resolving to `SECOND`, and an unknown key surviving the repack.
+
+   The one rejection was `No notes found`, and a **control settles it**: SngCli's own archive of
+   the same source folder, scanned alongside ours in the same pass, was rejected with the
+   identical error. The fixture's hand-written chart has no note events. As far as the client is
+   concerned our writer is indistinguishable from the reference encoder.
+
+   Deliberate differences from the reference encoder: we do **not** rename audio to `.mp3`
+   (SngCli does this regardless of the source container), and we refuse `song.ini` as a contained
+   file rather than letting it disagree with the metadata section. Filenames are lowercased and
+   collisions after lowercasing are refused, metadata keys are emitted lowercase because YARG
+   matches `.sng` keys against a lowercase table without normalising them, and the header size is
+   asserted against what was actually written — a mismatch there would silently corrupt every
+   file offset.
 6. **MIDI preparsers** — derive which instruments and difficulties actually exist. Only note-range
    walking is needed, not full chart semantics. This step is deliberately last; everything before
    it works with `parts_derived: false`.

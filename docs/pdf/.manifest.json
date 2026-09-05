@@ -1,10 +1,10 @@
 {
   "_comment": "sha256 of each source .md at the time its PDF was last rendered. Written by build-pdfs.py; verified by --verify. Do not hand-edit.",
   "sources": {
-    "README.md": "972823ec3ad3685788589676233d0cfd1ed40bab1feb9dd0087c552938645d6b",
+    "README.md": "3e925d000926e88223b6875ed28c6d61d3ebe5b33b0f77240494dfa7cab15622",
     "docs/ADR-001-server-architecture.md": "77c9fb3c76b2a3edb19a39bfecbc1b66af03227b2115fb9ca6752886a64553b7",
-    "docs/ROADMAP.md": "d31de8d93209c22e661eafde1eee16f0547edab7a3cd9e402456a5993d4569aa",
-    "docs/TEST-CORPUS.md": "d99e2b18cd67418d8e252c07dd0d817b5480da14a7aef7ee0f46497333713f38",
+    "docs/ROADMAP.md": "415eda8578a9cb102e62eae5db1ad3484c2f32697098cf89b365319a78ca350b",
+    "docs/TEST-CORPUS.md": "8e538c93926f48696b9475424a7a6b8ad7eec095da754ca573243014cdb1da3c",
     "docs/research/yarg-song-formats.md": "4c5d0ffb36386e910a877a1269a6443790c29f6d69034210636c5e072d506fdd"
   }
 }
