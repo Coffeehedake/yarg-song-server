@@ -437,5 +437,46 @@ larger body of real community charts would test different things, and the licens
 on where those may come from are in the section above.
 
 Both machines run the same Windows build of the same YARG version, so nothing here says anything
-about Linux, macOS, or a different client release. And no ARM hardware has run anything: the
-arm64 image is still verified only by ELF machine type.
+about Linux, macOS, or a different client release.
+
+### The ARM leg — 2026-09-06, and the determinism result crosses an architecture
+
+The arm64 half of "portable to Raspberry Pi" had never been executed; it rested on ELF machine
+type and image config, which are checks on bytes. It has now run, on a **Raspberry Pi 4 Model B
+Rev 1.5**, `aarch64`, Debian 13 trixie.
+
+| What ran | Evidence |
+|---|---|
+| The cross-compiled `linux/arm64` binary | the Pi's own `file`: `ELF 64-bit LSB executable, ARM aarch64, statically linked`; 22 songs indexed in 24 ms |
+| The published multi-arch container image | `arch=arm64`, image id `3c5fdd28…`, `version=1ae2219`, 22 songs in 25 ms, docker.io 26.1.5 |
+
+Then both were synced from, and compared against the reference:
+
+| Client | Server | Result |
+|---|---|---|
+| ENG-1 | ENG-1, working tree (windows/amd64) | reference |
+| ENG-1 | same, after a full cache wipe | identical |
+| r7-desktop | ENG-1's server | identical |
+| ENG-1 | vault2 container (linux/amd64) | identical |
+| r7-desktop | vault2 container (linux/amd64) | identical |
+| ENG-1 | **Pi, bare binary (linux/arm64)** | **identical** |
+| ENG-1 | **Pi, container (linux/arm64)** | **identical** |
+
+**Seven independent syncs, two operating systems, two CPU architectures, 154 archives, one set of
+bytes.** The mask is derived with SHA-256 over a domain string and the package hash, and nothing
+had shown that this is stable across architectures — it was assumed, which is the same species of
+assumption that produced the original defect. It now holds by measurement.
+
+Three caveats, stated rather than buried:
+
+- The board was a **Pi 4, not the 3B+** this project had been waiting on. That 3B+ is dead:
+  steady red PWR, no ACT activity at all, across three independently written cards — one from
+  Imager, one written sector-by-sector and verified by reading it back, and one written by a
+  freshly installed Imager. Zero ACT means the SoC never reads the card, so no card could have
+  fixed it.
+- The Pi was **one-shot and wiped afterwards**. This is "arm64 ran on this date", not a
+  maintained deployment, and the claim should be re-measured rather than inherited.
+- The image reached the Pi by `docker save` on vault2 and `docker load` on the Pi rather than a
+  direct registry pull, to avoid putting a registry credential on a throwaway host. The image id
+  is identical either way, so what ran is the published image; only its transport differed. The
+  multi-arch manifest itself was separately confirmed to carry both `amd64` and `arm64`.

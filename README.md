@@ -39,7 +39,10 @@ heuristics and no fuzzy matching.
   and zipped versions of either
 - Serve a browsable, searchable catalog over HTTP, sorted by the same attributes YARG sorts by
 - Serve songs as `.sng`, and answer "which of these hashes am I missing?" in bulk
-- Run on `linux/amd64`, `linux/arm64` (Raspberry Pi), macOS and Windows
+- Run on `linux/amd64`, `linux/arm64` (Raspberry Pi), macOS and Windows — the arm64 half is
+  measured rather than assumed: a Raspberry Pi 4 has run both the binary and the published
+  container image, and the archives it served were byte-identical to the x86-64 ones
+  (`docs/TEST-CORPUS.md`, "The ARM leg")
 
 **Will not, ever**
 

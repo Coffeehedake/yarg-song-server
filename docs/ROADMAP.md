@@ -275,8 +275,13 @@ Two things the job does that are not obvious:
   the manifest covers both platforms *and* reads the ELF machine type of the binary inside the
   arm64 image. An amd64 binary under an arm64 manifest entry passes every check that only reads
   exit codes, and then fails to start on the Pi. The check is structural rather than execution-
-  based on purpose: running the arm64 binary would need the emulation this project deliberately
-  does not have.
+  based on purpose: running the arm64 binary in CI would need the emulation this project
+  deliberately does not have.
+
+  That structural check was doing its job, but it is not the same as an execution, and this
+  document said so for weeks. On 2026-09-06 the gap was closed on real hardware instead of in
+  CI — a Raspberry Pi 4 ran both the arm64 binary and the published arm64 image. CI's job is
+  unchanged: catch a mislabelled manifest early. Proving it *runs* stays a hardware exercise.
 
 **What CI replaced.** This project had no `.gitlab-ci.yml`, so GitLab fell through to Auto DevOps.
 Pipeline #2216 — the only pipeline this project has ever run — failed three jobs with exit 127
@@ -336,10 +341,29 @@ and exercises the whole server end-to-end.
       files were in fact not identical, for the reason below — and a second sync transferred
       nothing. **Unmodified YARG on the result: 20 accepted, 2 refused**
       — the same two, both flagged by our scanner. Write-up in `docs/DEPLOY-VAULT2.md`.
-- [ ] **Execute the arm64 image on real ARM hardware.** Still unmeasured, and the reason the Pi
-      goal is not closed: `plzpi` is unreachable and there is no Pi on the tailnet at all. The
-      arm64 binary is verified by ELF machine type only. Until something runs it, "portable to
-      Raspberry Pi" is a claim.
+- [x] **Execute arm64 on real ARM hardware** — done 2026-09-06 on a **Raspberry Pi 4 Model B
+      Rev 1.5**, `aarch64`, Debian 13 trixie. Both halves ran:
+      - the cross-compiled `linux/arm64` **binary**, confirmed by the Pi's own `file` as
+        `ELF 64-bit LSB executable, ARM aarch64, statically linked`, indexing 22 songs in 24 ms;
+      - the published multi-arch **container image**, `arch=arm64`, image id `3c5fdd28…`,
+        `version=1ae2219`, indexing 22 songs in 25 ms under docker.io 26.1.5.
+
+      Until this run, "portable to Raspberry Pi" rested entirely on ELF machine type and image
+      config — checks on bytes, never an execution. It is now a measured result.
+
+      **And it extended the determinism result.** Archives served by the arm64 server, both as a
+      bare binary and as the container, are byte-for-byte identical to all five earlier x86-64
+      sync sets. Seven independent syncs, two operating systems, two CPU architectures, 154
+      archives, one set of bytes. The mask derivation is architecture-independent, which it had
+      to be and which nothing had tested. Write-up in `docs/TEST-CORPUS.md`.
+
+      Caveats stated rather than buried: the board was a **Pi 4, not the 3B+** this project had
+      been waiting on (that board is dead — steady red PWR, no ACT activity, with three
+      independently written cards). The Pi was a **one-shot machine, wiped afterwards**, so this
+      is "arm64 ran on this date", not a maintained deployment. And the image reached it by
+      `docker save` on vault2 and `docker load` on the Pi rather than a direct registry pull, to
+      avoid putting a registry credential on a throwaway host — the image id is identical either
+      way, so what ran is the published image; only its transport differed.
 - [x] **The exit criterion, with a second client** — done 2026-09-06. YARG was installed on
       r7-desktop by copying ENG-1's portable install, and both machines synced from one server and
       were scanned by unmodified YARG: **20 accepted, 2 refused on each, the same two songs for the

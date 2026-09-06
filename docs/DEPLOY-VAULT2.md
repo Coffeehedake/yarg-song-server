@@ -137,10 +137,14 @@ Three things in that table, in order of importance:
 
 ## What this still does not prove
 
-- **arm64 has never been executed.** The image is multi-arch and the arm64
-  binary is verified by ELF machine type, but no ARM hardware has run it. The Pi
-  is the missing piece: `plzpi` was unreachable and there is no Pi on the tailnet
-  at all. Until then, "portable to Raspberry Pi" is a claim.
+- ~~**arm64 has never been executed.**~~ **Closed 2026-09-06.** Both the
+  cross-compiled arm64 binary and the published arm64 container image ran on a
+  Raspberry Pi 4 Model B Rev 1.5 (`aarch64`, Debian 13 trixie), each indexing the
+  22-song corpus in about 25 ms, and the archives they served were byte-for-byte
+  identical to every x86-64 sync. See `docs/TEST-CORPUS.md`, "The ARM leg".
+  Note the caveats there: it was a Pi 4 rather than the 3B+ (that board is dead),
+  the machine was one-shot and wiped, and the image was transported by
+  `docker save`/`load` rather than pulled directly on the Pi.
 - ~~**The Phase 2b exit criterion needs two clients.**~~ **Closed 2026-09-06.**
   YARG was installed on r7-desktop and both machines were scanned: 20 accepted,
   2 refused on each, the same two songs. Doing it is what found the determinism
