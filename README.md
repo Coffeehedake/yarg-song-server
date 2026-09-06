@@ -129,7 +129,10 @@ archive is within about 2% of the size of the folder it came from — so an unbo
 loose library eventually needs a second copy of that library on the data disk. That is fine on a
 server and fatal on a Raspberry Pi whose `--data` is the SD card. Hitting the bound costs a
 re-pack and never data: the archive is rebuilt byte-identically and its package hash, which comes
-from the content, does not change. Raise it if you have the disk; `0` means unbounded and the
+from the content, does not change. (Byte-identically because the archive's obfuscation mask is
+*derived* from the package hash. It was drawn at random until 2026-09-06, which made this
+sentence false and cost two clients a shared library; `docs/TEST-CORPUS.md` has the run that
+found it.) Raise it if you have the disk; `0` means unbounded and the
 server says so loudly at start if you choose it.
 
 ## Building

@@ -122,15 +122,32 @@ Three things in that table, in order of importance:
   all of them. That is the concrete evidence that eviction costs a re-pack and
   never data.
 
+  > **The conclusion drawn from that third bullet was too strong, and the number
+  > in it was a clue nobody read.** "Eviction costs a re-pack and never data" is
+  > true; "and therefore the re-packed archive is the same archive" does not
+  > follow, and was false. Those same sixteen songs came back with *different
+  > bytes* — the packer drew a random mask per call — which the client could not
+  > notice, because it verifies the chart's identity and the chart is copied
+  > byte for byte. Identity survived; the archive did not. The next day the same
+  > sixteen turned up as sixteen SHA-256 mismatches between two machines, and
+  > that is what named the defect. Fixed on 2026-09-06 by deriving the mask;
+  > `docs/TEST-CORPUS.md` has the run. **A client that verifies identity will
+  > accept a byte stream that a cache, an `ETag` and a `Range` resume all
+  > require to be stable — so client acceptance is not evidence of stability.**
+
 ## What this still does not prove
 
 - **arm64 has never been executed.** The image is multi-arch and the arm64
   binary is verified by ELF machine type, but no ARM hardware has run it. The Pi
   is the missing piece: `plzpi` was unreachable and there is no Pi on the tailnet
   at all. Until then, "portable to Raspberry Pi" is a claim.
-- **The Phase 2b exit criterion needs two clients.** Only ENG-1 has YARG
-  installed; r7 has no YARG, no settings directory and no Go. So "two machines
-  running stock YARG both see the same library" remains unmeasured — this run
-  did the server half and one client.
+- ~~**The Phase 2b exit criterion needs two clients.**~~ **Closed 2026-09-06.**
+  YARG was installed on r7-desktop and both machines were scanned: 20 accepted,
+  2 refused on each, the same two songs. Doing it is what found the determinism
+  defect above — see `docs/TEST-CORPUS.md`, fourth oracle run.
+- **This deployment predates the determinism fix.** `version=827e0fe` packs with
+  a random mask. The two-machine run used a server built from the working tree,
+  not this image, so the containerised chain has not been measured against the
+  fix. Re-pull and re-run before quoting these numbers again.
 - One library, 22 songs, 224 KB. Nothing here says anything about a real
   collection's size or scan time.

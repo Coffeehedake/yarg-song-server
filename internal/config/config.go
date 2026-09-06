@@ -189,7 +189,11 @@ const Example = `# yarg-song-server configuration.
 # card.
 #
 # Hitting the bound costs a re-pack, never data: an evicted archive is rebuilt
-# byte-identically from the folder, and its package hash does not change.
+# byte-identically from the folder, and its package hash does not change. That
+# holds because the archive's obfuscation mask is derived from the package hash
+# rather than drawn at random - it was random until 2026-09-06, when two
+# machines syncing one server were found to have received 16 different archives
+# out of 22.
 # Raise it if you have the disk; set 0 only if you mean it.
 # pack_cache_max = 2G
 `

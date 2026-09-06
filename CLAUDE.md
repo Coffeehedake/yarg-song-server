@@ -48,6 +48,21 @@ Then, by subject:
   song; it had raised no issue at all, and the run was written up as passing a standard it failed.
   If you find yourself reading a JSON field to decide whether something was caught, the answer is
   that it was not caught.
+- **Packing is DETERMINISTIC. Never make `PackDir` depend on anything but the folder.** The `.sng`
+  header mask is derived from the package hash (`sng.MaskKeyFor`), not drawn from `crypto/rand`.
+  It is stored in plaintext in the header, so randomising it protects nothing and costs the strong
+  `ETag`, the `Range` resume across a cache eviction, and "two machines syncing one server get the
+  same files". It *was* random until 2026-09-06, and two clients syncing one server received 16
+  different archives out of 22. If a timestamp, a counter, a map iteration order or a random value
+  ever reaches the packer, that property is gone again and no single-client test will notice.
+- **A test can lock a defect in.** `TestWriteUsesAFreshMask` required two packs of one folder to
+  differ, and it was the reason the random mask looked correct. Before adding a test that asserts
+  two runs must *not* agree, ask what would depend on them agreeing.
+- **Comparing counts and totals is not comparing bytes.** Two machines each reported 22 archives
+  and 229,515 bytes and were 16 files apart. Any claim of the form "identical" must come from
+  hashing every file; a summary line cannot support it. The same applies to a second request that
+  is a cache *hit* — it re-reads a file and proves nothing about the producer. Empty the cache
+  first, or the test passes no matter what the packer does.
 - **A Defender false positive on `cmd/yarg-sync` came and went on 2026-09-05.** For about a minute
   `go build ./cmd/yarg-sync` died with *"the file contains a virus or potentially unwanted
   software"* — `Trojan:Win32/Bearfoos.A!ml`, a machine-learning verdict on the shape of a small

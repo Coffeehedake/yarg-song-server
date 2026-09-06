@@ -41,6 +41,17 @@ type spec struct {
 
 func newTestServer(t *testing.T, specs []spec) (*httptest.Server, *library.Index) {
 	t.Helper()
+	srv, ix, _ := newTestServerWithPacks(t, specs)
+	return srv, ix
+}
+
+// newTestServerWithPacks also hands back the pack cache directory, so a test
+// can empty it and force the server to re-pack. Without that a test cannot tell
+// a cache from a deterministic packer: every second request is a hit, and a hit
+// returns the same bytes no matter how the packer behaves. That gap is exactly
+// how a random mask survived a full test suite.
+func newTestServerWithPacks(t *testing.T, specs []spec) (*httptest.Server, *library.Index, string) {
+	t.Helper()
 
 	root := t.TempDir()
 	for _, sp := range specs {
@@ -65,14 +76,15 @@ func newTestServer(t *testing.T, specs []spec) (*httptest.Server, *library.Index
 	if err != nil {
 		t.Fatal(err)
 	}
-	packs, err := packcache.New(filepath.Join(t.TempDir(), "packs"))
+	packDir := filepath.Join(t.TempDir(), "packs")
+	packs, err := packcache.New(packDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	api := &Server{Store: library.NewStore(ix), Packs: packs, Version: "test"}
 	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
-	return srv, ix
+	return srv, ix, packDir
 }
 
 func mustWrite(t *testing.T, path, body string) {
@@ -250,6 +262,42 @@ func TestSongFileIsAReadableSNGWithTheSameIdentity(t *testing.T) {
 	_, again := get(t, srv, "/song/"+hash+".sng")
 	if !bytes.Equal(body, again) {
 		t.Fatal("two requests for the same song returned different bytes")
+	}
+}
+
+// The test above passes whatever the packer does, because the second request is
+// a cache hit and a hit just re-reads a file. This one empties the cache in
+// between, so the second response has to be packed again from the folder. That
+// is the case the ETag actually promises, and it is the case a random mask
+// broke: same ETag, different octets.
+func TestTheSameSongIsTheSameBytesAfterTheCacheIsEmptied(t *testing.T) {
+	srv, ix, packDir := newTestServerWithPacks(t, defaultSpecs())
+	hash := ix.Missing(nil)[0]
+
+	resp, first := get(t, srv, "/song/"+hash+".sng")
+	etag := resp.Header.Get("ETag")
+
+	cached, err := filepath.Glob(filepath.Join(packDir, "*.sng"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cached) == 0 {
+		t.Fatal("nothing was cached, so this test would prove nothing")
+	}
+	for _, p := range cached {
+		if err := os.Remove(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resp2, second := get(t, srv, "/song/"+hash+".sng")
+	if !bytes.Equal(first, second) {
+		t.Fatalf("the same song packed to different bytes after an eviction (%d then %d); "+
+			"a client resuming a Range request across that eviction would splice two archives",
+			len(first), len(second))
+	}
+	if got := resp2.Header.Get("ETag"); got != etag {
+		t.Fatalf("ETag changed across a re-pack: %s then %s", etag, got)
 	}
 }
 

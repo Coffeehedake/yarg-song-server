@@ -72,7 +72,15 @@ art, a different `charter`, an extra stem. Identity is the chart, so the client
 wants one copy, and the server refuses to guess: `GET /song/{hash}.sng` answers
 **300 Multiple Choices** with the candidates. The client then picks the lowest
 package hash, which is arbitrary but *deterministic*: two machines syncing the
-same server get the same bytes, which is what makes a shared library shared.
+same server pick the same package.
+
+Picking the same package is half of a shared library. The other half is that the
+server encodes that package the same way every time, and until 2026-09-06 it did
+not — `PackDir` drew a random obfuscation mask per call, so two machines that had
+agreed perfectly about *which* song still received different files. It was found
+by running exactly this client on two computers and comparing SHA-256s: 16 of 22
+differed. The mask is now derived from the package hash. See
+`docs/TEST-CORPUS.md`, fourth oracle run.
 
 ## Windows Defender flagged the binary once, then stopped (false positive)
 

@@ -24,6 +24,13 @@ import (
 //
 // The chart is copied byte for byte, so the song's identity is unchanged by
 // packing. Every other guarantee this server makes rests on that one.
+//
+// PackDir is deterministic: the same folder produces the same archive, byte for
+// byte, on every machine and every run. That is what lets the server hand out a
+// strong ETag, honour a Range resume across a cache eviction, and tell two
+// clients they have the same download. It is achieved by deriving the .sng
+// header mask from the package hash instead of drawing it at random - see
+// sng.MaskKeyFor for why that costs nothing.
 func PackDir(dir string, w io.Writer) error {
 	fsys := os.DirFS(dir)
 	names, err := rootNames(fsys)
@@ -52,5 +59,13 @@ func PackDir(dir string, w io.Writer) error {
 		}
 		files = append(files, n)
 	}
-	return sng.Write(w, meta, fsys, files)
+
+	// Seed the mask with the package hash, over the FULL name list including
+	// song.ini - the same input scan.newSong hashes - so the mask is a function
+	// of the package's content and matches the ETag the server will send for it.
+	pkg, err := packageHash(fsys, names)
+	if err != nil {
+		return fmt.Errorf("pack: derive mask: %w", err)
+	}
+	return sng.Write(w, sng.MaskKeyFor(pkg), meta, fsys, files)
 }

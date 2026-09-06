@@ -16,9 +16,14 @@ it rather than incidental, so changing them breaks a shipped binary:
   empty-list form is how `-prune` learns the server's full set.
 - **300 Multiple Choices** on a shared chart hash. The client relies on the server *not*
   choosing, and resolves it deterministically itself so that two machines syncing the same
-  library end up byte-identical.
+  library pick the same package. (Picking the same package is necessary for a shared
+  library; it is not sufficient. Until 2026-09-06 the two machines picked the same package
+  and still received different bytes, because packing itself was not deterministic.)
 - **`ETag` as the package hash, and `Range`.** Identity is re-derived from the received
-  bytes client-side, so a substituted or truncated response fails closed.
+  bytes client-side, so a substituted or truncated response fails closed. Both of these
+  rest on packing being deterministic — one `ETag` must mean one sequence of octets, or a
+  resume splices two different archives together. It did not hold until 2026-09-06; see
+  `docs/TEST-CORPUS.md`.
 
 ## Endpoints
 

@@ -247,7 +247,9 @@ exists, and it is the proof that the server is correct.
       eventually needs a second copy of that library on the data disk. On the Pi target, with the
       library on external storage and `-data` on the SD card, that fills the card. Eviction costs a
       re-pack and never data, because the archive is rebuilt byte-identically and its package hash
-      comes from the content. Two smaller leaks went with it: the per-key lock map (now 256 fixed
+      comes from the content. **That last sentence was written on 2026-09-05 and was untrue until
+      2026-09-06** - packing drew a random mask, so a re-pack produced a different archive; see the
+      determinism entry below. Two smaller leaks went with it: the per-key lock map (now 256 fixed
       shards, bounded by construction) and orphaned `.partial` files from a crash mid-pack (now
       swept at start). `internal/packcache` had no tests at all; it now has six, each red-proofed.
 - [x] **The multi-arch container image** — `container-image` in `.gitlab-ci.yml`, pushing
@@ -329,15 +331,35 @@ and exercises the whole server end-to-end.
       The published image had never actually been executed before this; CI only ever checked the
       image config's architecture and the binary's ELF machine type, which are checks on bytes.
       It now runs: 8.6 MB distroless, indexed 22 songs in 7 ms, `version=827e0fe`. `yarg-sync`
-      from ENG-1 over Tailscale pulled 22/22 in 341 ms, byte-identical to the localhost run, and
-      a second sync transferred nothing. **Unmodified YARG on the result: 20 accepted, 2 refused**
+      from ENG-1 over Tailscale pulled 22/22 in 341 ms — recorded at the time as "byte-identical
+      to the localhost run", which was a **byte-count** comparison and not a per-file one; the
+      files were in fact not identical, for the reason below — and a second sync transferred
+      nothing. **Unmodified YARG on the result: 20 accepted, 2 refused**
       — the same two, both flagged by our scanner. Write-up in `docs/DEPLOY-VAULT2.md`.
 - [ ] **Execute the arm64 image on real ARM hardware.** Still unmeasured, and the reason the Pi
       goal is not closed: `plzpi` is unreachable and there is no Pi on the tailnet at all. The
       arm64 binary is verified by ELF machine type only. Until something runs it, "portable to
       Raspberry Pi" is a claim.
-- [ ] **The exit criterion needs a second client.** Only ENG-1 has YARG; r7 has no YARG, no
-      settings directory and no Go. The server half and one client are done.
+- [x] **The exit criterion, with a second client** — done 2026-09-06. YARG was installed on
+      r7-desktop by copying ENG-1's portable install, and both machines synced from one server and
+      were scanned by unmodified YARG: **20 accepted, 2 refused on each, the same two songs for the
+      same two reasons.**
+- [x] **Deterministic packing** — found by that run and only findable by it. The two machines
+      received 22 archives each, 229,515 bytes each, 0 failures each — and **16 of the 22 files
+      differed**. `sng.Write` drew its header mask from `crypto/rand` on every call, so `PackDir`
+      was not a function of its input, and 16 was exactly the number the bounded cache had evicted
+      and re-packed between the two syncs. That broke the strong `ETag`, broke a `Range` resume
+      spanning an eviction, and made "two machines syncing one server get the same bytes" false
+      wherever this repo asserted it. The mask is now derived from the package hash
+      (`sng.MaskKeyFor`); it is stored in plaintext in the header regardless, so deriving it gives
+      nothing away. **22/22 identical across a full cache wipe and across the two machines.**
+      Two of the things that hid it are worth more than the fix: a same-song-twice test that was
+      always a cache *hit* and therefore passed whatever the packer did, and
+      `TestWriteUsesAFreshMask`, which actively *required* the non-determinism. Write-up in
+      `docs/TEST-CORPUS.md`.
+- [ ] **Re-measure the containerised chain against the fix.** The two-machine run used a server
+      built from the working tree, not the published image; the vault2 deployment predates the
+      determinism fix.
 
 **Resolved, and worth remembering for the response rather than the event:** on 2026-09-05 a
 Defender machine-learning verdict (`Trojan:Win32/Bearfoos.A!ml`) quarantined `cmd/yarg-sync`

@@ -28,6 +28,17 @@
 // Eviction costs CPU and latency, never data: an evicted archive is re-packed
 // byte-identically from the folder on the next request, and its package hash is
 // unchanged because the hash comes from the content.
+//
+// That sentence was written on 2026-09-05 and was FALSE when written. PackDir
+// drew a fresh random mask on every call, so a re-pack produced a different
+// archive with the same package hash - which made the strong ETag and every
+// Range resume across an eviction dishonest. It was caught the next day by
+// syncing two machines from one server and comparing SHA-256s: 16 of 22
+// archives differed, and 16 was exactly the number this cache had re-packed.
+// The mask is now derived from the package hash (see sng.MaskKeyFor) and the
+// sentence is true and measured. Nobody had compared the bytes; the claim was
+// reasoned from "the hash comes from the content", which is true of the hash
+// and says nothing about the archive.
 package packcache
 
 import (

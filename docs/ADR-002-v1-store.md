@@ -113,6 +113,14 @@ claim of parity is made for it, and the API documentation says so.
 - A packed archive is cached once and is byte-identical on every later request, which is
   what makes `ETag` and `Range` honest.
 
+  **This was written as a design intent and shipped as a defect.** `PackDir` drew a fresh
+  random mask on every call, so the property held only while the cache held the archive —
+  the moment one was evicted, the next request produced different octets under the same
+  strong `ETag`. Found on 2026-09-06 by syncing two machines from one server and comparing
+  SHA-256s: **16 of 22 archives differed**, 16 being exactly the number the bounded cache
+  had re-packed. Fixed by deriving the mask from the package hash (`sng.MaskKeyFor`). The
+  bullet is now true, and it is now measured rather than intended.
+
 **Bad / accepted**
 
 - Start-up cost grows with the library, and a new song needs a rescan to appear.
@@ -124,6 +132,9 @@ claim of parity is made for it, and the API documentation says so.
   bytes of library produced 229,515 bytes of cache — so "grows without a bound" meant *a second
   copy of the whole loose library*, which is a Pi's entire SD card rather than an untidiness. The
   content-keyed property is what makes eviction free, exactly as this entry said: an evicted
-  archive is rebuilt byte-identically and its package hash is unchanged.
+  archive is rebuilt byte-identically and its package hash is unchanged. **That last sentence
+  was false for one day.** It was true of the *package hash*, which is computed from the folder,
+  and simply assumed of the *archive*, which was not — see the correction above. Deriving a
+  property of the output from a property of the key is the mistake; only the bytes settle it.
 - Reproducing `SortString` means it can drift from upstream, exactly as ADR-001 accepted for
   the format parsers. Mitigated the same way: by measuring against a real client.

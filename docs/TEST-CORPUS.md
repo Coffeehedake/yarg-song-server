@@ -340,9 +340,83 @@ After the fix, the corpus reads:
 was re-checked and is unchanged by all of this — `SHA1(chart bytes)` does not move because our
 derivation improved.
 
+## Fourth oracle run — 2026-09-06, TWO machines, and the defect only two machines could find
+
+The third run closed the Phase 2b claim for one client. This one is the exit criterion in full:
+**two different computers, each running an unmodified YARG, each pointed at a folder `yarg-sync`
+filled from the same server.** It is the first run in this project where the question was not
+"does the client accept what we serve" but "do two clients receive the *same thing*".
+
+They did not.
+
+| | ENG-1 | r7-desktop |
+|---|---|---|
+| Archives received | 22 | 22 |
+| Total bytes | 229,515 | 229,515 |
+| Songs failed | 0 | 0 |
+| **Archives with matching SHA-256** | **6 of 22** | |
+
+Same count, same byte total, same server — and 16 of the 22 files were different. The count and
+the total are exactly the numbers a summary line reports, and both were green. Only hashing every
+file showed it.
+
+### The cause, and why every earlier run missed it
+
+`sng.Write` generated its 16-byte header mask with `crypto/rand` on every call, so `PackDir` was
+not a function of its input. 16 was not a coincidence: the server was running with a deliberately
+tight `pack_cache_max`, 16 of the 22 songs had been evicted and re-packed between the two syncs,
+and a re-pack meant a new mask.
+
+Three things had hidden it:
+
+- **A cache hit is not a re-pack.** `TestSongFileIsAReadableSNGWithTheSameIdentity` asked for the
+  same song twice and compared the bytes — but the second request was served from the cache, and
+  a hit re-reads a file rather than packing anything. It passes whatever the packer does. It
+  still passes today with the defect deliberately reintroduced; the new
+  `TestTheSameSongIsTheSameBytesAfterTheCacheIsEmptied` fails, which is how we know the
+  difference is real and not a matter of taste.
+- **A test asserted the defect.** `TestWriteUsesAFreshMask` required two writes of the same
+  content to differ, on the belief that a repeated mask weakened the obfuscation. It does not:
+  the mask is stored in plaintext in the header of every `.sng`, so it protects nothing at all.
+  The test locked the bug in and made removing it look like a regression.
+- **The claim was reasoned, not measured.** Six documents said an evicted archive is re-packed
+  *byte-identically*. That was inferred from "the package hash comes from the content", which is
+  a fact about the hash and says nothing about the archive. Nobody had compared two archives.
+
+### The fix and the measurement
+
+The mask is now derived: `key = SHA-256("yarg-song-server/sng-mask/v1\0" + package_hash)[:16]`,
+and `sng.Write` takes the key as a parameter instead of drawing it itself. Nothing is given away
+— the mask is in the header regardless — and packing becomes a pure function of the folder.
+
+| Measurement | Result |
+|---|---|
+| Pack the same folder twice in-process | identical |
+| Sync, wipe the server's entire pack cache, sync again | **22 / 22 identical** |
+| ENG-1 vs r7, same server, independent syncs | **22 / 22 identical** (was 6 / 22) |
+| **Unmodified YARG on ENG-1** | **20 accepted, 2 refused** |
+| **Unmodified YARG on r7-desktop** | **20 accepted, 2 refused** |
+
+Both machines refused the same two songs for the same two reasons — `No notes found` on
+`30334065…` and `No audio accompanying the chart file` on `4ec68053…` — which are the two our own
+scanner flags. r7 had never run YARG before; its install was copied from ENG-1 and its
+`settings.json` written from ours with only `SongFolders` changed.
+
+**So the Phase 2b exit criterion is closed, and closing it is what found the defect.** A single
+client cannot notice that it received one of several possible encodings.
+
+*(Footnote worth keeping: the two `songcache.bin` files are 6,619 and 6,606 bytes. Same 22 songs,
+same verdicts, different sizes — they embed absolute paths. That is a small live demonstration of
+why generating `songcache.bin` is a permanent non-goal.)*
+
 ### What is still not measured
 
-One real YARG version, on one machine, against a corpus we wrote ourselves. The corpus is
-adversarial by design, but it is still ours: it cannot contain the case nobody thought of. A
+One real YARG version, on two Windows machines, against a corpus we wrote ourselves. The corpus
+is adversarial by design, but it is still ours: it cannot contain the case nobody thought of. A
 larger body of real community charts would test different things, and the licensing constraints
 on where those may come from are in the section above.
+
+Both machines run the same Windows build of the same YARG version, so nothing here says anything
+about Linux, macOS, or a different client release. And the two-machine run used a server built
+from the working tree on ENG-1, not the published container image on vault2 — the containerised
+half of the chain was last measured on 2026-09-05 and predates this fix.

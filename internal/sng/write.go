@@ -1,7 +1,6 @@
 package sng
 
 import (
-	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -29,7 +28,14 @@ type Pair struct {
 //
 // Contained file data is streamed, so packing a 200 MB library costs a buffer,
 // not the library.
-func Write(w io.Writer, meta []Pair, fsys fs.FS, names []string) error {
+//
+// The caller supplies the header mask. Write used to draw it from crypto/rand
+// itself, which made the output of an otherwise pure function unreproducible
+// and quietly broke every promise built on "the same song is the same bytes".
+// The mask is written to the header in plaintext, so there is nothing for
+// randomness to protect; making it a parameter puts the choice where the caller
+// can see it. See MaskKeyFor.
+func Write(w io.Writer, key [MaskSize]byte, meta []Pair, fsys fs.FS, names []string) error {
 	entries, err := prepare(fsys, names)
 	if err != nil {
 		return err
@@ -38,10 +44,6 @@ func Write(w io.Writer, meta []Pair, fsys fs.FS, names []string) error {
 		return err
 	}
 
-	var key [MaskSize]byte
-	if _, err := rand.Read(key[:]); err != nil {
-		return fmt.Errorf("sng: generate mask: %w", err)
-	}
 	mask := NewMask(key)
 
 	metaBytes := 0
@@ -175,8 +177,9 @@ func prepare(fsys fs.FS, names []string) ([]entry, error) {
 		}
 		out = append(out, entry{name: lower, source: n, size: st.Size()})
 	}
-	// Deterministic order, so packing the same folder twice differs only by the
-	// random mask.
+	// Deterministic order. With a caller-supplied mask this is the last piece
+	// that makes Write a pure function of its inputs: same folder, same key,
+	// same bytes.
 	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
 	return out, nil
 }

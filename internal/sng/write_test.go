@@ -8,6 +8,11 @@ import (
 	"testing/fstest"
 )
 
+// testKey stands in for the package hash a real caller would seed with. Tests
+// that are not about masking should not have to care which key they used, only
+// that they used the same one every run.
+var testKey = MaskKeyFor("write_test")
+
 func packFS(t *testing.T, fsys fstest.MapFS, meta []Pair) *Archive {
 	t.Helper()
 	names := make([]string, 0, len(fsys))
@@ -15,7 +20,7 @@ func packFS(t *testing.T, fsys fstest.MapFS, meta []Pair) *Archive {
 		names = append(names, n)
 	}
 	var buf bytes.Buffer
-	if err := Write(&buf, meta, fsys, names); err != nil {
+	if err := Write(&buf, testKey, meta, fsys, names); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	a, err := Open(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
@@ -55,22 +60,71 @@ func TestWriteRoundTrip(t *testing.T) {
 	}
 }
 
-// Every write must produce a different mask, or the obfuscation is a constant
-// and two archives of the same content are byte-identical.
-func TestWriteUsesAFreshMask(t *testing.T) {
+// This test used to be TestWriteUsesAFreshMask, and it asserted the opposite:
+// that two writes of the same content must NEVER be byte-identical, on the
+// belief that a repeated mask weakened the obfuscation. It does not. The mask
+// sits in the header in plaintext, so it protects nothing, and treating
+// byte-identical output as a bug is what let a random mask survive review and
+// reach a deployment - where it broke the ETag, the Range resume, and the claim
+// that two clients syncing one server get the same files. A test can lock in a
+// defect just as firmly as it can catch one.
+func TestWriteIsAPureFunctionOfItsInputs(t *testing.T) {
 	fsys := fstest.MapFS{"notes.chart": {Data: []byte("x")}}
+	key := MaskKeyFor("some package hash")
+
 	var a, b bytes.Buffer
-	if err := Write(&a, nil, fsys, []string{"notes.chart"}); err != nil {
+	if err := Write(&a, key, nil, fsys, []string{"notes.chart"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := Write(&b, nil, fsys, []string{"notes.chart"}); err != nil {
+	if err := Write(&b, key, nil, fsys, []string{"notes.chart"}); err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Equal(a.Bytes(), b.Bytes()) {
-		t.Fatal("two writes produced identical bytes; the mask is not random")
+	if !bytes.Equal(a.Bytes(), b.Bytes()) {
+		t.Fatal("same content and same key produced different bytes; Write is not deterministic")
 	}
-	if a.Len() != b.Len() {
-		t.Fatalf("same content produced different sizes: %d vs %d", a.Len(), b.Len())
+
+	var c bytes.Buffer
+	if err := Write(&c, MaskKeyFor("a different package hash"), nil, fsys, []string{"notes.chart"}); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(a.Bytes(), c.Bytes()) {
+		t.Fatal("a different key produced identical bytes; the key is being ignored")
+	}
+	if a.Len() != c.Len() {
+		t.Fatalf("the key changed the archive size: %d vs %d", a.Len(), c.Len())
+	}
+}
+
+// The seed must reach the header unchanged in effect: the mask stored in the
+// file has to be the one MaskKeyFor derived, or "derived from the package hash"
+// is a claim about code that does something else.
+func TestTheDerivedKeyIsTheMaskInTheHeader(t *testing.T) {
+	fsys := fstest.MapFS{"notes.chart": {Data: []byte("x")}}
+	key := MaskKeyFor("seed")
+	var buf bytes.Buffer
+	if err := Write(&buf, key, nil, fsys, []string{"notes.chart"}); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.Bytes()[HeaderSize-MaskSize : HeaderSize]
+	if !bytes.Equal(got, key[:]) {
+		t.Fatalf("header mask %x, derived key %x", got, key)
+	}
+}
+
+// Deriving must not collapse distinct seeds onto one mask, or two packages
+// would pack to archives that differ only where their content differs - which
+// is fine for correctness but means the derivation is not doing its job.
+func TestMaskKeyForSeparatesSeeds(t *testing.T) {
+	seen := map[[MaskSize]byte]string{}
+	for _, seed := range []string{"", "a", "b", "aa", "package-hash-1", "package-hash-2"} {
+		k := MaskKeyFor(seed)
+		if prev, dup := seen[k]; dup {
+			t.Fatalf("seeds %q and %q derive the same mask", prev, seed)
+		}
+		seen[k] = seed
+	}
+	if MaskKeyFor("x") != MaskKeyFor("x") {
+		t.Fatal("MaskKeyFor is not a function")
 	}
 }
 
@@ -81,7 +135,7 @@ func TestWriteRefusesSongIniAsAFile(t *testing.T) {
 		"notes.chart": {Data: []byte("x")},
 		"song.ini":    {Data: []byte("[Song]\n")},
 	}
-	err := Write(&bytes.Buffer{}, nil, fsys, []string{"notes.chart", "song.ini"})
+	err := Write(&bytes.Buffer{}, testKey, nil, fsys, []string{"notes.chart", "song.ini"})
 	if err == nil {
 		t.Fatal("accepted song.ini as a contained file")
 	}
@@ -97,7 +151,7 @@ func TestWriteLowercasesNamesAndCatchesCollisions(t *testing.T) {
 	}
 
 	fsys := fstest.MapFS{"Album.PNG": {Data: []byte("x")}, "album.png": {Data: []byte("y")}}
-	err := Write(&bytes.Buffer{}, nil, fsys, []string{"Album.PNG", "album.png"})
+	err := Write(&bytes.Buffer{}, testKey, nil, fsys, []string{"Album.PNG", "album.png"})
 	if err == nil || !strings.Contains(err.Error(), "collide") {
 		t.Fatalf("collision after lowercasing was not caught: %v", err)
 	}
@@ -111,7 +165,7 @@ func TestWriteRejectsReservedCharactersInMetadata(t *testing.T) {
 		{"name", "a\nb"},
 		{"", "v"},
 	} {
-		if err := Write(&bytes.Buffer{}, []Pair{bad}, fsys, []string{"notes.chart"}); err == nil {
+		if err := Write(&bytes.Buffer{}, testKey, []Pair{bad}, fsys, []string{"notes.chart"}); err == nil {
 			t.Errorf("accepted metadata pair %+v", bad)
 		}
 	}
@@ -122,7 +176,7 @@ func TestWriteRejectsReservedCharactersInMetadata(t *testing.T) {
 func TestWriteRejectsOverlongFilename(t *testing.T) {
 	long := strings.Repeat("a", MaxFilenameLen+1) + ".ogg"
 	fsys := fstest.MapFS{long: {Data: []byte("x")}}
-	if err := Write(&bytes.Buffer{}, nil, fsys, []string{long}); err == nil {
+	if err := Write(&bytes.Buffer{}, testKey, nil, fsys, []string{long}); err == nil {
 		t.Fatal("accepted a filename longer than the format allows")
 	}
 }
