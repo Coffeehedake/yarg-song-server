@@ -123,6 +123,15 @@ exists:
 An unknown setting in that file is an error rather than a warning. A typo that is silently
 ignored leaves you certain you changed something you did not.
 
+**One setting is worth knowing about before you deploy: `pack_cache_max`, default 2 GiB.** A song
+stored as a loose folder is packed to `.sng` on first request and the archive is kept, and an
+archive is within about 2% of the size of the folder it came from — so an unbounded cache over a
+loose library eventually needs a second copy of that library on the data disk. That is fine on a
+server and fatal on a Raspberry Pi whose `--data` is the SD card. Hitting the bound costs a
+re-pack and never data: the archive is rebuilt byte-identically and its package hash, which comes
+from the content, does not change. Raise it if you have the disk; `0` means unbounded and the
+server says so loudly at start if you choose it.
+
 ## Building
 
 ```sh

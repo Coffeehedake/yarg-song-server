@@ -240,8 +240,16 @@ exists, and it is the proof that the server is correct.
 - [x] **CI** — `.gitlab-ci.yml`. `gofmt`, `go vet`, the suite, the suite again with `-race`, all
       six release targets, and an assertion that the Dockerfile's Go is not older than `go.mod`
       requires. See below for what this replaced.
-- [ ] A bound or an eviction policy for the pack cache. It is content-keyed and therefore always
-      safe to delete, which is why this is a finishing task and not a design question.
+- [x] **A bound and an eviction policy for the pack cache** — done. `pack_cache_max`, defaulting
+      to **2 GiB** rather than to unbounded, with LRU eviction. The number that decided the default
+      was measured on the vault2 deployment: 225,406 bytes of loose library produced 229,515 bytes
+      of cache across 22 archives, **a ratio of 1.02** — so an unbounded cache over a loose library
+      eventually needs a second copy of that library on the data disk. On the Pi target, with the
+      library on external storage and `-data` on the SD card, that fills the card. Eviction costs a
+      re-pack and never data, because the archive is rebuilt byte-identically and its package hash
+      comes from the content. Two smaller leaks went with it: the per-key lock map (now 256 fixed
+      shards, bounded by construction) and orphaned `.partial` files from a crash mid-pack (now
+      swept at start). `internal/packcache` had no tests at all; it now has six, each red-proofed.
 - [x] **The multi-arch container image** — `container-image` in `.gitlab-ci.yml`, pushing
       `linux/amd64` + `linux/arm64` to `registry.badassium.com/fatalexception/yarg-song-server`.
 

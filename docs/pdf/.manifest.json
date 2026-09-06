@@ -1,12 +1,12 @@
 {
   "_comment": "sha256 of each source .md at the time its PDF was last rendered. Written by build-pdfs.py; verified by --verify. Do not hand-edit.",
   "sources": {
-    "README.md": "6b7d933dc67fbd520801de3ed9738fcd595c6c8683d82ce49e2db9e260355900",
+    "README.md": "156b67ac911f42ed281b005188e5b9744c6c847b2f13c994dc57ed9f01935230",
     "docs/ADR-001-server-architecture.md": "77c9fb3c76b2a3edb19a39bfecbc1b66af03227b2115fb9ca6752886a64553b7",
-    "docs/ADR-002-v1-store.md": "fce41c56b8395c7cc91419aa20b074a1fc183609b34cb8d59ebdfb561841fbd4",
+    "docs/ADR-002-v1-store.md": "886accda9fb7a0e66cab298e9dfa85f35d655ddef6c2b39b2310b894c4fb68ea",
     "docs/API.md": "2edd4dfe469b5fff02f0cc4972c7051964e062c426bcf7ca649e0e6d3916fe83",
     "docs/DEPLOY-VAULT2.md": "0cef7ed1073ab73f3a5d529b52afe89c464dc7ba9742cbf4c8bbba2b7f7da03e",
-    "docs/ROADMAP.md": "294d6f430b1c650ebc54d631f9b101dcab05f0d665c0aa8a53cae6908aa6c856",
+    "docs/ROADMAP.md": "c122ecbf3b4228f36690488dfd7d0d53120b656611dd20d80ce2e13f093712a0",
     "docs/SOURCES.md": "ae8f29dc86ef0df75a7dbca575ef59a4c9c73f8cfa4c44b5a003facaf1627ad5",
     "docs/SYNC-CLIENT.md": "a5e4c82ae4e5eb2b4d0860746b7c787a00323ffcfb38cc7c92858150306352e6",
     "docs/TEST-CORPUS.md": "d92304b0a6402b2916df9508c42f1b1fa930f52d48b8671f1b5945e1690f1cf6",

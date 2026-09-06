@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -25,14 +26,30 @@ type Config struct {
 	Listen string
 	Songs  string
 	Data   string
+	// PackCacheMax bounds the on-demand pack cache in bytes. Zero means
+	// unbounded, which an operator may choose but which is not the default.
+	PackCacheMax int64
 }
 
 // Defaults are what the server does when told nothing.
+//
+// PackCacheMax defaults to 2 GiB rather than to unbounded, and that is a
+// judgement worth stating. A packed archive is within 2% of the size of the
+// folder it came from (measured 2026-09-05: 225,406 bytes of library produced
+// 229,515 bytes of cache), so an unbounded cache over a library of loose
+// folders eventually needs a second copy of the whole library on the data disk.
+// On this project's primary target - a Raspberry Pi with the library on
+// external storage and -data on the SD card - that fills the card.
+//
+// 2 GiB is generous for a modest library and small enough to matter on a card.
+// An operator with a large library and a large disk should raise it; nothing
+// breaks when the bound is hit, because eviction only costs a re-pack.
 func Defaults() Config {
 	return Config{
-		Listen: ":8080",
-		Songs:  "./songs",
-		Data:   "./data",
+		Listen:       ":8080",
+		Songs:        "./songs",
+		Data:         "./data",
+		PackCacheMax: 2 << 30, // 2 GiB
 	}
 }
 
@@ -89,11 +106,52 @@ func Apply(c *Config, r io.Reader) error {
 			c.Songs = value
 		case "data":
 			c.Data = value
+		case "pack_cache_max":
+			n, err := parseSize(value)
+			if err != nil {
+				return fmt.Errorf("line %d: pack_cache_max: %w", line, err)
+			}
+			c.PackCacheMax = n
 		default:
-			return fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data", line, key)
+			return fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max", line, key)
 		}
 	}
 	return sc.Err()
+}
+
+// parseSize reads a byte count, optionally with a K/M/G/T suffix, binary units.
+//
+// "0" is accepted and means unbounded. A NEGATIVE value is rejected rather than
+// silently treated as unbounded: someone writing -1 is expressing an intent the
+// parser should not guess at, and quietly turning it into "no limit at all"
+// would be the worst possible reading of it.
+func parseSize(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("empty value; use a byte count such as 2G, or 0 for unbounded")
+	}
+	mult := int64(1)
+	switch last := s[len(s)-1]; last {
+	case 'k', 'K':
+		mult, s = 1<<10, s[:len(s)-1]
+	case 'm', 'M':
+		mult, s = 1<<20, s[:len(s)-1]
+	case 'g', 'G':
+		mult, s = 1<<30, s[:len(s)-1]
+	case 't', 'T':
+		mult, s = 1<<40, s[:len(s)-1]
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a byte count; use e.g. 2G, 512M, or 0 for unbounded", s)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("must not be negative; use 0 for unbounded")
+	}
+	if mult > 1 && n > (1<<62)/mult {
+		return 0, fmt.Errorf("%q overflows", s)
+	}
+	return n * mult, nil
 }
 
 func trimMatchingQuotes(s string) string {
@@ -119,4 +177,19 @@ const Example = `# yarg-song-server configuration.
 # Where the server keeps its own state, including packed .sng archives.
 # Must be writable.
 # data = ./data
+
+# Bound the on-demand pack cache. Accepts a plain byte count or a K/M/G/T
+# suffix (binary units). 0 means UNBOUNDED.
+#
+# A song stored as a loose folder is packed to .sng on first request and the
+# archive is kept. An archive is within about 2% of the size of the folder it
+# came from, so an unbounded cache over a library of loose folders eventually
+# needs a second copy of that library on this disk. On a Raspberry Pi with the
+# library on external storage and this directory on the SD card, that fills the
+# card.
+#
+# Hitting the bound costs a re-pack, never data: an evicted archive is rebuilt
+# byte-identically from the folder, and its package hash does not change.
+# Raise it if you have the disk; set 0 only if you mean it.
+# pack_cache_max = 2G
 `

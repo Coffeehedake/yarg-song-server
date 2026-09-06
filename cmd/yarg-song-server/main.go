@@ -44,6 +44,8 @@ func main() {
 	flag.StringVar(&flagged.Listen, "listen", def.Listen, "address to listen on")
 	flag.StringVar(&flagged.Songs, "songs", def.Songs, "path to the song library")
 	flag.StringVar(&flagged.Data, "data", def.Data, "path for catalog and server state")
+	flag.Int64Var(&flagged.PackCacheMax, "pack-cache-max", def.PackCacheMax,
+		"bound the on-demand pack cache, in bytes; 0 means unbounded")
 	flag.Parse()
 
 	if *showVersion {
@@ -131,6 +133,9 @@ func resolve(configPath string, flagged config.Config, given map[string]bool) (c
 	if given["data"] {
 		cfg.Data = flagged.Data
 	}
+	if given["pack-cache-max"] {
+		cfg.PackCacheMax = flagged.PackCacheMax
+	}
 	return cfg, nil
 }
 
@@ -201,9 +206,18 @@ func run(opt config.Config, log *slog.Logger) error {
 		log.Warn("could not index", "path", p.Path, "err", p.Err)
 	}
 
-	packs, err := packcache.New(filepath.Join(opt.Data, "packs"))
+	packs, err := packcache.New(filepath.Join(opt.Data, "packs"),
+		packcache.WithMaxBytes(opt.PackCacheMax))
 	if err != nil {
 		return err
+	}
+	// Say the bound out loud at start. An operator who set it wrongly, or who
+	// deliberately turned it off, should be able to see which from the log
+	// rather than by watching a disk fill.
+	if opt.PackCacheMax > 0 {
+		log.Info("pack cache bounded", "max_bytes", opt.PackCacheMax)
+	} else {
+		log.Warn("pack cache is UNBOUNDED; it can grow to the size of the loose part of the library")
 	}
 
 	api := &httpapi.Server{

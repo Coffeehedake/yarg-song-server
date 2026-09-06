@@ -118,7 +118,12 @@ claim of parity is made for it, and the API documentation says so.
 - Start-up cost grows with the library, and a new song needs a rescan to appear.
 - Memory holds the whole catalog. Acceptable at v1 scale; the first library that makes it
   hurt is the signal to put something underneath `library.Store`, not to change the API.
-- The pack cache grows without a bound or an eviction policy. It is content-keyed, so it is
-  always safe to delete; a policy is a Phase 2 finishing task, not a design question.
+- ~~The pack cache grows without a bound or an eviction policy.~~ **Closed 2026-09-05.** It is
+  bounded by `pack_cache_max` (default 2 GiB) with LRU eviction. The consequence this entry
+  understated: an archive is within 2% of the size of the folder it came from — measured, 225,406
+  bytes of library produced 229,515 bytes of cache — so "grows without a bound" meant *a second
+  copy of the whole loose library*, which is a Pi's entire SD card rather than an untidiness. The
+  content-keyed property is what makes eviction free, exactly as this entry said: an evicted
+  archive is rebuilt byte-identically and its package hash is unchanged.
 - Reproducing `SortString` means it can drift from upstream, exactly as ADR-001 accepted for
   the format parsers. Mitigated the same way: by measuring against a real client.

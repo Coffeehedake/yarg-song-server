@@ -24,8 +24,52 @@ songs = /srv/songs
 	}
 }
 
+func TestPackCacheMaxAcceptsUnitSuffixes(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want int64
+	}{
+		{"0", 0}, // the explicit opt-out
+		{"1024", 1024},
+		{"512K", 512 << 10},
+		{"512k", 512 << 10},
+		{"256M", 256 << 20},
+		{"2G", 2 << 30},
+		{"1T", 1 << 40},
+		{"  4G  ", 4 << 30},
+	} {
+		c := Defaults()
+		if err := Apply(&c, strings.NewReader("pack_cache_max = "+tc.in)); err != nil {
+			t.Errorf("%q: %v", tc.in, err)
+			continue
+		}
+		if c.PackCacheMax != tc.want {
+			t.Errorf("%q parsed to %d, want %d", tc.in, c.PackCacheMax, tc.want)
+		}
+	}
+}
+
+// A bad size must stop the server rather than fall back to a default, on the
+// same reasoning as the unknown-key rule: a setting that is silently ignored
+// leaves an operator certain of something untrue. A NEGATIVE value is called
+// out separately because the tempting shortcut - treat it as unbounded - would
+// turn a typo into "no limit at all", which is the worst available reading.
+func TestBadPackCacheMaxIsAnError(t *testing.T) {
+	for _, in := range []string{"", "banana", "2GB", "-1", "1.5G", "G", "2 G B"} {
+		c := Defaults()
+		err := Apply(&c, strings.NewReader("pack_cache_max = "+in))
+		if err == nil {
+			t.Errorf("pack_cache_max = %q was accepted, parsed to %d", in, c.PackCacheMax)
+			continue
+		}
+		if !strings.Contains(err.Error(), "pack_cache_max") {
+			t.Errorf("%q: error does not name the setting: %v", in, err)
+		}
+	}
+}
+
 // Only the keys present are touched, so a file that sets one thing does not
-// silently reset the other two to zero values.
+// silently reset the others to zero values.
 func TestApplyLeavesUnmentionedKeysAlone(t *testing.T) {
 	c := Defaults()
 	if err := Apply(&c, strings.NewReader("listen = :9999\n")); err != nil {
