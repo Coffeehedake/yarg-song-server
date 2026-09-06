@@ -36,7 +36,8 @@ heuristics and no fuzzy matching.
 **Will**
 
 - Ingest loose song folders (`song.ini` + `notes.mid`/`notes.chart` + stems), `.sng` containers,
-  and zipped versions of either
+  and `.zip`/`.7z` archives of a song folder — a song packs to the same bytes whichever of those
+  it arrived in, so reorganising a library does not make every client re-download it
 - Serve a browsable, searchable catalog over HTTP, sorted by the same attributes YARG sorts by
 - Serve songs as `.sng`, and answer "which of these hashes am I missing?" in bulk
 - Run on `linux/amd64`, `linux/arm64` (Raspberry Pi), macOS and Windows — the arm64 half is
@@ -65,6 +66,7 @@ heuristics and no fuzzy matching.
 | [`docs/API.md`](docs/API.md) | Every HTTP endpoint, what it promises, and what it explicitly does not claim |
 | [`docs/ADR-001-server-architecture.md`](docs/ADR-001-server-architecture.md) | Why Go, why two repos, why sync-first, why LGPL |
 | [`docs/ADR-002-v1-store.md`](docs/ADR-002-v1-store.md) | Why the catalog lives in memory, why packed archives are cached, and the two places this server deliberately sorts differently from the client |
+| [`docs/ADR-003-archive-ingest.md`](docs/ADR-003-archive-ingest.md) | Why `.zip`/`.7z` are ingested, what the `.7z` dependency actually costs measured rather than estimated, and why Rock Band packages are refused out loud |
 | [`docs/SYNC-CLIENT.md`](docs/SYNC-CLIENT.md) | `yarg-sync`: flags, what it refuses to touch, why files are named by chart hash, and the Windows Defender false positive |
 | [`docs/DEPLOY-VAULT2.md`](docs/DEPLOY-VAULT2.md) | Running the image as a container — the `chown 65532` and pool-path details that matter, registry auth, and the first end-to-end result off the dev machine |
 | [`docs/SOURCES.md`](docs/SOURCES.md) | What is already documented and where — **read this before reverse-engineering anything** |

@@ -191,7 +191,7 @@ serves.* The two runs answer different questions and both are worth keeping.
 Procedure, end to end and all of it measured:
 
 ```powershell
-go run ./cmd/mkcorpus -out $env:USERPROFILE\yarg-test\corpus     # 22 cases
+go run ./cmd/mkcorpus -out $env:USERPROFILE\yarg-test\corpus     # 22 cases at the time; 23 now
 go build -o yss.exe ./cmd/yarg-song-server
 .\yss.exe -listen 127.0.0.1:8099 -songs $env:USERPROFILE\yarg-test\corpus -data .\data
 # POST /api/v1/have with an empty list -> 22 missing
@@ -428,6 +428,39 @@ platform-dependent**, which it had to be for any of this to mean anything and wh
 actually shown. Unmodified YARG on the container's output: 20 accepted, 2 refused, the same two.
 
 Details of the redeploy are in `docs/DEPLOY-VAULT2.md`.
+
+## Fifth oracle run — 2026-09-06, a song served from inside a `.zip`
+
+`.zip`/`.7z` ingest landed, so the corpus gained a **23rd case, `23-zipped`** — an ordinary
+song delivered as `23-zipped.zip` containing `23-zipped/`, which is how songs are actually
+distributed. The song inside is deliberately unremarkable: the case under test is the
+container, and a case probing two things at once cannot say which one failed.
+
+| Step | Outcome |
+|---|---|
+| Index the corpus | 23 songs, 23 distinct charts, 0 problems, 14 ms |
+| The zipped song in the catalog | `name="Zipped"`, `source_path=23-zipped.zip` |
+| `yarg-sync` from an empty folder | 23 downloaded, 0 failed, 238,215 bytes |
+| **Unmodified YARG on the synced folder** | **21 accepted, 2 refused** |
+| Issues our own scanner raises, refusal-class | exactly 2 — the same two |
+| Issues on the zipped song | none |
+
+The two refusals are the same two as every run since the corpus existed — `No notes found`
+on `30334065…` and `No audio accompanying the chart file` on `4ec68053…`. **The song that
+arrived inside an archive was accepted, and by the time it reached the player's folder it was
+indistinguishable from any other**: the client writes `<chart_hash>.sng` regardless of what
+the server ingested it from.
+
+`.7z` is covered by `TestA7zSongPacksToTheSameBytesAsTheLooseFolder` rather than by the
+corpus, because **Go cannot write a 7z** — the library is read-only. The fixture at
+`internal/scan/testdata/song.7z` is committed, and was built with `py7zr` from exactly the
+bytes the loose-folder case uses. Regenerate it from anything else and the test fails for a
+reason that has nothing to do with 7z.
+
+The strongest assertion of the set is `TestAllThreeContainersProduceTheSameArchive`: a loose
+folder, a zip of it and a 7z of it all pack to one archive. That is what lets an operator
+restructure a library without invalidating every client's copy of every song — the same
+property the random-mask defect broke, arrived at from a different direction.
 
 ### What is still not measured
 

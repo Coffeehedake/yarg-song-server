@@ -50,6 +50,26 @@ func WalkLibrary(root string, emit func(Result)) error {
 			return nil
 		}
 
+		// A console package is REPORTED, not ignored. Decrypting one is a
+		// permanent non-goal, but an operator who drops a 2 GB _rb3con into the
+		// library and sees nothing at all concludes the server is broken. A
+		// stated refusal costs one line and answers the question.
+		if IsRockBandPackage(d.Name()) {
+			emit(Result{Path: rel(root, p), Err: ErrRockBandPackage})
+			return nil
+		}
+
+		if IsContainer(d.Name()) {
+			song, serr := ScanContainer(p)
+			if errors.Is(serr, ErrNoChart) {
+				// A zip of something else entirely. Libraries contain plenty of
+				// archives that are not songs; those are not errors.
+				return nil
+			}
+			emit(Result{Path: rel(root, p), Song: song, Err: serr})
+			return nil
+		}
+
 		if !strings.EqualFold(filepath.Ext(d.Name()), ".sng") {
 			return nil
 		}

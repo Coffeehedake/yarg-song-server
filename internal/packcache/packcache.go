@@ -135,7 +135,11 @@ func (c *Cache) MaxBytes() int64 { return c.maxBytes }
 //
 // Two requests for the same song pack once; two requests for different songs do
 // not block each other unless they collide on a lock shard.
-func (c *Cache) Path(packageHash, srcDir string) (string, error) {
+// src may be a loose folder, a .zip or a .7z. The cache does not care which:
+// the key is the package hash, which is computed from the song's contents, so a
+// song that moves from a folder into a zip keeps the same cache entry and the
+// same bytes.
+func (c *Cache) Path(packageHash, src string) (string, error) {
 	if packageHash == "" {
 		return "", fmt.Errorf("packcache: empty package hash")
 	}
@@ -164,9 +168,9 @@ func (c *Cache) Path(packageHash, srcDir string) (string, error) {
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }() // no-op once the rename has succeeded
 
-	if err := scan.PackDir(srcDir, tmp); err != nil {
+	if err := scan.PackPath(src, tmp); err != nil {
 		tmp.Close()
-		return "", fmt.Errorf("packcache: pack %s: %w", srcDir, err)
+		return "", fmt.Errorf("packcache: pack %s: %w", src, err)
 	}
 	if err := tmp.Close(); err != nil {
 		return "", fmt.Errorf("packcache: %w", err)

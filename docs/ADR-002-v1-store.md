@@ -25,8 +25,8 @@ answers that are easy to get wrong quietly.
 serves every request from that. There is no database, no file format, and nothing to
 migrate.
 
-**Why:** the whole catalog for a large library is small. The 22-case corpus indexes in
-15 ms; even a library of tens of thousands of songs is tens of megabytes of struct and a
+**Why:** the whole catalog for a large library is small. The corpus indexes in 15 ms at 22
+cases and 14 ms at 23; even a library of tens of thousands of songs is tens of megabytes of struct and a
 scan measured in seconds, on a Pi as much as on a workstation. Against that, a persisted
 catalog buys a faster start and costs a schema, a migration path, and a second source of
 truth that can disagree with the disk. Every one of those is a place for the server to be
@@ -108,6 +108,13 @@ claim of parity is made for it, and the API documentation says so.
 - Cross-compilation to every promised platform is untouched; the only new dependency is
   `golang.org/x/text`, which is pure Go, for Unicode normalisation that the standard
   library does not provide.
+
+  **No longer true as of 2026-09-06.** `github.com/bodgit/sevenzip` was added for `.7z`
+  ingest, taking the compiled third-party package count from 3 to 71 and the binary from
+  9.92 MB to 11.62 MB. Cross-compilation is unaffected — every dependency is pure Go and
+  all six targets still build with `CGO_ENABLED=0` — but "the only new dependency" is a
+  sentence about a state this project has left. See
+  [ADR-003](ADR-003-archive-ingest.md).
 - Browse order matches the game, which is the difference between a useful list and a
   correct-looking one.
 - A packed archive is cached once and is byte-identical on every later request, which is

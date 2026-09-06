@@ -13,12 +13,14 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/binary"
 	"flag"
 	"fmt"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"unicode/utf16"
 )
@@ -44,6 +46,14 @@ type aCase struct {
 	// ini, when non-empty, is written as song.ini verbatim - including any
 	// deliberate encoding weirdness.
 	ini []byte
+	// zipped delivers this case as <dir>.zip containing <dir>/ rather than as a
+	// loose folder, so the corpus exercises archive ingest through the whole
+	// chain the oracle runs: scan, pack, serve, sync, and YARG.
+	//
+	// The song inside is deliberately ordinary. The case under test is the
+	// container, and a case that probed two things at once could not say which
+	// one failed.
+	zipped bool
 	// chart overrides the default notes.chart name.
 	chartName string
 	// chartBody overrides the generated .chart content, for formats that are
@@ -171,6 +181,9 @@ var cases = []aCase{
 
 	{dir: "22-ultrastar-duet", probe: "UltraStar with #PARTS:2, which is how YARG keys harmony",
 		ini: ini("Duet"), chartName: "notes.txt", chartBody: ultraStarDuet()},
+
+	{dir: "23-zipped", probe: "an ordinary song delivered as a .zip - does the server ingest, pack and serve from inside an archive",
+		zipped: true, ini: ini("Zipped")},
 }
 
 func write(root string) error {
@@ -237,8 +250,57 @@ func write(root string) error {
 		if err := os.WriteFile(filepath.Join(dir, "PROBE.txt"), []byte(note), 0o644); err != nil {
 			return err
 		}
+
+		if c.zipped {
+			if err := zipCase(dir); err != nil {
+				return fmt.Errorf("zip %s: %w", c.dir, err)
+			}
+		}
 	}
 	return nil
+}
+
+// zipCase replaces a written folder with <folder>.zip containing it.
+//
+// The folder is nested INSIDE the archive rather than zipped at the root,
+// because that is how songs are actually distributed - "Song.zip" holding
+// "Song/song.ini" - and a corpus that only tested the tidy shape would not
+// exercise the descent the scanner has to do.
+func zipCase(dir string) error {
+	out, err := os.Create(dir + ".zip")
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	zw := zip.NewWriter(out)
+	base := filepath.Base(dir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	// Sorted, because os.ReadDir is sorted and a corpus that regenerated in a
+	// different order every run would be a poor thing to compare against.
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return err
+		}
+		w, err := zw.Create(path.Join(base, e.Name()))
+		if err != nil {
+			return err
+		}
+		if _, err := w.Write(body); err != nil {
+			return err
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	return os.RemoveAll(dir)
 }
 
 func chart(name string) []byte {

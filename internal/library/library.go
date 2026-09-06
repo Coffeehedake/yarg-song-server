@@ -27,7 +27,18 @@ type SourceKind string
 const (
 	SourceSNG SourceKind = "sng"
 	SourceDir SourceKind = "dir"
+	SourceZip SourceKind = "zip"
+	Source7z  SourceKind = "7z"
 )
+
+// NeedsPacking reports whether producing this song's bytes means packing it.
+//
+// Everything except a .sng needs packing, and the check is written that way
+// round on purpose: a new container added later is packed by default, which is
+// correct, rather than silently served as raw bytes because somebody forgot to
+// extend a list of kinds. The failure mode of the inverted test is handing a
+// client a .zip and calling it a .sng.
+func (k SourceKind) NeedsPacking() bool { return k != SourceSNG }
 
 // Entry is one indexed song.
 type Entry struct {
@@ -132,8 +143,13 @@ func Build(root string) (*Index, error) {
 		song.SourcePath = r.Path
 
 		kind := SourceDir
-		if strings.EqualFold(filepath.Ext(r.Path), ".sng") {
+		switch strings.ToLower(filepath.Ext(r.Path)) {
+		case ".sng":
 			kind = SourceSNG
+		case ".zip":
+			kind = SourceZip
+		case ".7z":
+			kind = Source7z
 		}
 		e := newEntry(song, kind, filepath.Join(root, filepath.FromSlash(r.Path)))
 

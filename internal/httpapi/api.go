@@ -267,7 +267,7 @@ func (s *Server) songFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := entry.Path
-	if entry.Kind == library.SourceDir {
+	if entry.Kind.NeedsPacking() {
 		packed, err := s.Packs.Path(entry.Song.PackageHash, entry.Path)
 		if err != nil {
 			s.logError("pack song", err, "chart_hash", hash)

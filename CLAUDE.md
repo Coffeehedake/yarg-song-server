@@ -18,6 +18,7 @@ Then, by subject:
 | `docs/ROADMAP.md` | The build order, with what is done and what each phase must prove |
 | `docs/ADR-001-server-architecture.md` | Why Go, why two repos, why sync-first — and what Go costs |
 | `docs/ADR-002-v1-store.md` | Why the catalog is in memory, why packed archives are cached to disk, and the two places the server deliberately sorts differently from the client |
+| `docs/ADR-003-archive-ingest.md` | `.zip`/`.7z` ingest, the measured cost of the `.7z` dependency, and why RB packages are refused out loud rather than skipped |
 | `docs/API.md` | The HTTP surface: every endpoint, what it promises, and what it does not claim |
 | `docs/research/chart-preparsing.md` | Track names, note maps and the false-positive traps, cited per claim. **Read before touching `internal/chart`** |
 | `docs/research/yarg-song-formats.md` | The `.sng` binary layout, song identity, stem naming. Marked as history at the top: parts of it were superseded, and it says which |
@@ -63,6 +64,16 @@ Then, by subject:
   hashing every file; a summary line cannot support it. The same applies to a second request that
   is a cache *hit* — it re-reads a file and proves nothing about the producer. Empty the cache
   first, or the test passes no matter what the packer does.
+- **The container a song arrived in must never reach its bytes.** A loose folder, a `.zip` of it
+  and a `.7z` of it all pack to one archive, and `TestAllThreeContainersProduceTheSameArchive`
+  exists to keep it that way. If that breaks, an operator who reorganises a library silently
+  invalidates every client's copy of every song in it — the same failure the random mask caused,
+  reached from a different direction. Everything archive-shaped goes through `scan.PackFS`; do
+  not add a second packing path for a new container.
+- **`go list -m all` is not the cost of a dependency.** Adding `sevenzip` made it list Google
+  Cloud Storage, gRPC and OpenTelemetry, none of which is compiled in — that is the module
+  graph, not the build. The real numbers come from `go list -deps ./cmd/yarg-song-server` and
+  the size of the binary. Measured: 3 → 71 packages, +1.62 MB. See `docs/ADR-003`.
 - **A Defender false positive on `cmd/yarg-sync` came and went on 2026-09-05.** For about a minute
   `go build ./cmd/yarg-sync` died with *"the file contains a virus or potentially unwanted
   software"* — `Trojan:Win32/Bearfoos.A!ml`, a machine-learning verdict on the shape of a small
@@ -156,8 +167,9 @@ Get-Content "$env:USERPROFILE\AppData\LocalLow\YARC\YARG\release\badsongs.txt"
 ```
 
 `badsongs.txt` is YARG's verdict on every song it refused. The standard to hold: **every song
-YARG rejects should be one this scanner independently flags.** That is true as of the 22-case
-corpus; if a change breaks it, the change is wrong or the reason is worth writing down.
+YARG rejects should be one this scanner independently flags.** That is true as of the 23-case
+corpus, most recently on 2026-09-06 (21 accepted, 2 refused, and exactly those two flagged by us);
+if a change breaks it, the change is wrong or the reason is worth writing down.
 
 Launch YARG windowed (`-screen-fullscreen 0 -screen-width 1280 -screen-height 720`) — it runs on
 Jay's workstation and should not take over the screen.

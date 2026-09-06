@@ -203,7 +203,8 @@ YARG accepted 14 of the 15 archives we wrote — the one rejection being a fixtu
 no note events, proven by a control in which SngCli's own archive of the same folder was rejected
 identically.
 
-And the parts we report now agree with the client's own verdict: on the 22-case corpus, **every
+And the parts we report now agree with the client's own verdict: on the corpus (22 cases then,
+23 since archive ingest landed), **every
 song YARG rejects is one this scanner independently flags**, by three routes — no parts detected,
 `no_audio`, and `ultrastar_no_title`.
 
@@ -230,8 +231,25 @@ exists, and it is the proof that the server is correct.
       grouping, UTF-16 ordinal comparison) and `internal/library` orders by upstream's own
       comparer chains. Without this a browse list is internally consistent and unlike anything
       the player sees in the game.
-- [ ] Ingest: loose folders, `.sng`, and `.zip`/`.7z` of a loose folder. Refuse RB packages with
-      a clear message.
+- [x] **Ingest: loose folders, `.sng`, and `.zip`/`.7z` of a loose folder** — done 2026-09-06.
+      `internal/scan/source.go`. `.zip` uses the standard library; `.7z` took a dependency,
+      recorded with its measured cost in [`ADR-003`](ADR-003-archive-ingest.md) (+1.62 MB,
+      3 → 71 compiled packages, no cloud stack despite what `go list -m all` implies).
+
+      **No adapter was needed and no scanning logic was duplicated.** `archive/zip`'s Reader
+      and sevenzip's Reader both already implement `fs.FS`, and the scanner has taken an
+      `fs.FS` since Phase 1, so an archived song is read by exactly the code that reads a
+      loose folder. `PackDir` became a one-line wrapper over a new `PackFS`.
+
+      The property that matters: **a song packs to the same bytes whether it is loose,
+      zipped or 7z'd**, so restructuring a library does not make every client re-download
+      every song. `TestAllThreeContainersProduceTheSameArchive` asserts it directly, and the
+      corpus now carries a zipped case (`23-zipped`) so the oracle exercises it end to end.
+
+      **RB packages are refused with a reason, not ignored** — `.con`, `_rb3con`, `.pkg`,
+      `.xex`, matched by SUFFIX because `_rb3con` files usually have no extension at all. An
+      archive holding several songs raises `ErrTooManySongs` rather than publishing one and
+      silently dropping the rest.
 - [x] **Config file + sane defaults** — `internal/config`. `key = value` with `#` comments, the
       same names as the flags, precedence defaults < file < flags actually typed, and
       `--write-config` to print a commented example. An unknown setting is an error, not a

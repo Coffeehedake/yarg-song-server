@@ -106,7 +106,10 @@ a close port of LGPL source, which would trigger the obligation anyway.
 - Format parsing is duplicated and can drift from YARG.Core. Mitigated by round-tripping against a
   real YARG install in CI, not by hoping.
 - Rock Band CON content cannot be ingested, ever — mogg decryption is out of scope upstream and
-  legally fraught. Users with RB libraries are not served by this project.
+  legally fraught. Users with RB libraries are not served by this project. **Enforced since
+  2026-09-06:** `.con`, `_rb3con`, `.pkg` and `.xex` are recognised and refused with a stated
+  reason rather than ignored, because a file that vanishes silently reads as a broken server.
+  See [ADR-003](ADR-003-archive-ingest.md).
 - Phase 5's LLM work will want Python tooling; it will have to talk to the Go server over a
   boundary rather than living inside it.
 - Two repos means two CI configs, two release processes, and cross-repo changes need coordination.

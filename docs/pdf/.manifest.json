@@ -1,15 +1,16 @@
 {
   "_comment": "sha256 of each source .md at the time its PDF was last rendered. Written by build-pdfs.py; verified by --verify. Do not hand-edit.",
   "sources": {
-    "README.md": "156b67ac911f42ed281b005188e5b9744c6c847b2f13c994dc57ed9f01935230",
-    "docs/ADR-001-server-architecture.md": "77c9fb3c76b2a3edb19a39bfecbc1b66af03227b2115fb9ca6752886a64553b7",
-    "docs/ADR-002-v1-store.md": "886accda9fb7a0e66cab298e9dfa85f35d655ddef6c2b39b2310b894c4fb68ea",
-    "docs/API.md": "2edd4dfe469b5fff02f0cc4972c7051964e062c426bcf7ca649e0e6d3916fe83",
-    "docs/DEPLOY-VAULT2.md": "e092853cc73ff6a551456a86c213df3cf84e3cd3eb0adc5f33dfea1800e491d4",
-    "docs/ROADMAP.md": "c122ecbf3b4228f36690488dfd7d0d53120b656611dd20d80ce2e13f093712a0",
+    "README.md": "4a3137224456210a744efea1b3938ed5bdd3baaede21abe627c9c1e77688a01c",
+    "docs/ADR-001-server-architecture.md": "efac771cc5499c44def053278310b39e882e6463fd37a2723104e28f72c74596",
+    "docs/ADR-002-v1-store.md": "52de9ad4eafa8926ce1a2b84dabf5b5ecf36999abc5db46c613274cd6c78419d",
+    "docs/ADR-003-archive-ingest.md": "387085563d2bf5a29fd057d41836ec8d262563bbe255710267fead14bf83cfcf",
+    "docs/API.md": "25a124a89379afa123dc6c372fe04ff0a2858dcb7f977b910ab397493ba9a64a",
+    "docs/DEPLOY-VAULT2.md": "c6b5563d215c2b251500c1fea193a46d4c419ff9340af5bc6285f0d4930711e9",
+    "docs/ROADMAP.md": "e61795ce8ee424bc3ce856cb68daaf759928eea5e43f8f473f8c921435403358",
     "docs/SOURCES.md": "ae8f29dc86ef0df75a7dbca575ef59a4c9c73f8cfa4c44b5a003facaf1627ad5",
-    "docs/SYNC-CLIENT.md": "a5e4c82ae4e5eb2b4d0860746b7c787a00323ffcfb38cc7c92858150306352e6",
-    "docs/TEST-CORPUS.md": "d92304b0a6402b2916df9508c42f1b1fa930f52d48b8671f1b5945e1690f1cf6",
+    "docs/SYNC-CLIENT.md": "db497b300c4d44462d8ceb6ebd94bdd4892cfa1d843810cffca8525b07de8f7e",
+    "docs/TEST-CORPUS.md": "2d1324cd9fe5ff4e847e2ef1a21f4ae60f10f26fded720cb8e2e2ee6781d0984",
     "docs/research/chart-preparsing.md": "5bbb0183f6b574ed54a215e48f7b3069aeedde551d7579438c68f270f5ec6e92",
     "docs/research/yarg-song-formats.md": "650bf169a65356c832ed474dd7293183e0649b2a09c11340b8a0949d5bb3e900"
   }

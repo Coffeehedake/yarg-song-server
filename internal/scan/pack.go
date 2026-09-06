@@ -31,8 +31,17 @@ import (
 // clients they have the same download. It is achieved by deriving the .sng
 // header mask from the package hash instead of drawing it at random - see
 // sng.MaskKeyFor for why that costs nothing.
-func PackDir(dir string, w io.Writer) error {
-	fsys := os.DirFS(dir)
+func PackDir(dir string, w io.Writer) error { return PackFS(os.DirFS(dir), w) }
+
+// PackFS is PackDir over any filesystem, so a song inside a .zip or a .7z packs
+// through exactly the same code as one in a folder.
+//
+// That shared path is not tidiness, it is the guarantee: the archive produced
+// from a zipped song is byte-identical to the one produced from the same song
+// unzipped, because nothing about the container reaches this function. If these
+// ever diverge, changing how a library is stored would silently invalidate
+// every client's copy of every song in it.
+func PackFS(fsys fs.FS, w io.Writer) error {
 	names, err := rootNames(fsys)
 	if err != nil {
 		return err
