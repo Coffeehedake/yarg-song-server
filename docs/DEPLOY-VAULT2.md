@@ -92,6 +92,36 @@ The client reached the server by its **Tailscale name**, not a LAN literal, so
 the same command works from anywhere ENG-1 happens to be. A `192.168.2.x`
 address would have worked at the time of the test and failed from the office.
 
+## The pack cache bound, verified here rather than in a test
+
+`pack_cache_max` shipped with six red-proofed tests and did not work. Every test
+inserted, so every test reached eviction through the insert path; this
+deployment's cache was already full, every request was a hit, nothing was ever
+packed, and the bound was never enforced. Deploying it found that in under a
+minute.
+
+After the fix (`6bcf4ec`, enforce at start as well as on insert), running
+deliberately tight at **102,400 bytes** against a library that packs to 229,515:
+
+| Moment | Cache |
+|---|---|
+| Before restart, from the broken build | 229,515 bytes, 22 archives |
+| **Immediately after start, having served nothing** | **67,681 bytes, 6 archives** |
+| After serving all 22 songs | 67,681 bytes, 6 archives |
+| Songs the client received | **22 of 22, 0 failed** |
+
+Three things in that table, in order of importance:
+
+- The cache dropped from 22 archives to 6 **before a single request arrived**.
+  That is the start-up enforcement, and it is the case the tests all missed.
+- It stayed at 6 while serving 22 songs, so eviction kept pace with insertion
+  rather than merely happening once.
+- **Every song was still delivered and verified.** Sixteen of the twenty-two had
+  to be re-packed mid-sync because eviction had removed them, and the client —
+  which re-derives each song's identity from the bytes it receives — accepted
+  all of them. That is the concrete evidence that eviction costs a re-pack and
+  never data.
+
 ## What this still does not prove
 
 - **arm64 has never been executed.** The image is multi-arch and the arm64
