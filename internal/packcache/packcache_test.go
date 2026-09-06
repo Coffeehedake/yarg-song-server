@@ -193,6 +193,47 @@ func TestLeastRecentlyUsedGoesFirst(t *testing.T) {
 	}
 }
 
+// TestBoundIsEnforcedAtStartNotOnlyOnInsert covers a defect found by deploying
+// the bound, not by testing it.
+//
+// Every test above inserts, so every one of them reached eviction through the
+// insert path and all six passed. In the real deployment the cache was already
+// full from an earlier unbounded run, every request was a HIT, nothing was ever
+// packed, and the cache sat at more than twice its bound indefinitely.
+// Enforcing only on insert does not bound a cache; it declines to grow one.
+func TestBoundIsEnforcedAtStartNotOnlyOnInsert(t *testing.T) {
+	src, cdir := t.TempDir(), t.TempDir()
+
+	// Fill a cache directory with an UNBOUNDED cache first, exactly as the
+	// deployment did.
+	pre, err := New(cdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 6 {
+		if _, err := pre.Path(fmt.Sprintf("%064d", i), song(t, src, fmt.Sprintf("song%02d", i), 4096)); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	before := sizeOf(t, cdir)
+	if countSNG(t, cdir) != 6 {
+		t.Fatalf("setup did not fill the cache: %d archives", countSNG(t, cdir))
+	}
+
+	// Now open the SAME directory with a bound well under what is in it, and
+	// serve nothing at all.
+	max := before / 3
+	if _, err := New(cdir, WithMaxBytes(max)); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := sizeOf(t, cdir); got > max {
+		t.Errorf("cache is %d bytes on start against a %d byte bound (was %d); "+
+			"a bound that only applies to new inserts does not bound anything", got, max, before)
+	}
+}
+
 // TestStalePartialsAreSwept covers crash residue. A .partial is not a .sng, so
 // it counts against no bound and nothing else would ever remove it.
 func TestStalePartialsAreSwept(t *testing.T) {

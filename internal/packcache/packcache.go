@@ -91,6 +91,25 @@ func New(dir string, opts ...Option) (*Cache, error) {
 		o(c)
 	}
 	c.sweepStalePartials()
+
+	// Enforce the bound at START as well as on insert.
+	//
+	// Found by deploying it rather than by a test, 2026-09-05: a bounded server
+	// was pointed at a cache directory left over from an unbounded run, every
+	// request was a cache HIT, nothing was ever packed, so enforceBound was
+	// never reached and the cache sat at 229,515 bytes against a 102,400 bound
+	// indefinitely. Enforcing only on insert does not bound a cache - it merely
+	// declines to grow one, which is a different and much weaker promise.
+	//
+	// The three cases this covers are all ordinary: an operator lowering the
+	// bound, a cache that predates the setting, and a library that is fully
+	// cached and stable so nothing new is ever packed.
+	//
+	// Deliberately NOT enforced on every cache hit: that would put a readdir
+	// and a stat per file into the hot path of serving a song, to catch a
+	// condition that only changes when something is inserted or the process
+	// restarts.
+	c.enforceBound("")
 	return c, nil
 }
 
