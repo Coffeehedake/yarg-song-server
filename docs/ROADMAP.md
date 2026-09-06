@@ -357,9 +357,13 @@ and exercises the whole server end-to-end.
       always a cache *hit* and therefore passed whatever the packer did, and
       `TestWriteUsesAFreshMask`, which actively *required* the non-determinism. Write-up in
       `docs/TEST-CORPUS.md`.
-- [ ] **Re-measure the containerised chain against the fix.** The two-machine run used a server
-      built from the working tree, not the published image; the vault2 deployment predates the
-      determinism fix.
+- [x] **Re-measure the containerised chain against the fix** — done 2026-09-06. vault2 re-pulled
+      onto `c623dae` with its pack cache wiped, then five independent syncs compared file by file:
+      ENG-1 and r7 against the working-tree server, ENG-1 against that server after a full cache
+      wipe, and both machines against the container. **110 archives, all one set of bytes.** Two
+      servers built for different operating systems by different toolchains agree, so **the mask
+      derivation is not platform-dependent** — which it had to be, and which nothing had shown.
+      Unmodified YARG on the container's output: 20 accepted, 2 refused, the same two.
 
 **Resolved, and worth remembering for the response rather than the event:** on 2026-09-05 a
 Defender machine-learning verdict (`Trojan:Win32/Bearfoos.A!ml`) quarantined `cmd/yarg-sync`

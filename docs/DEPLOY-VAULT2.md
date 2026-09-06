@@ -145,9 +145,50 @@ Three things in that table, in order of importance:
   YARG was installed on r7-desktop and both machines were scanned: 20 accepted,
   2 refused on each, the same two songs. Doing it is what found the determinism
   defect above — see `docs/TEST-CORPUS.md`, fourth oracle run.
-- **This deployment predates the determinism fix.** `version=827e0fe` packs with
-  a random mask. The two-machine run used a server built from the working tree,
-  not this image, so the containerised chain has not been measured against the
-  fix. Re-pull and re-run before quoting these numbers again.
 - One library, 22 songs, 224 KB. Nothing here says anything about a real
   collection's size or scan time.
+
+## Re-deployed 2026-09-06 on `c623dae`, and what it proved beyond the fix
+
+Every number above was taken from a server that packed with a random mask
+(`6bcf4ec` was running; an earlier revision of this document said `827e0fe`,
+which was the deployment before it). Pipeline 2259 published `c623dae` and the
+host was re-pulled:
+
+```bash
+docker pull registry.badassium.com/fatalexception/yarg-song-server:latest
+docker rm -f yarg-song-server
+rm -rf /mnt/cache/appdata/yarg-song-server/data/packs   # start with an empty cache on purpose
+docker run -d ...                                       # identical arguments to the first deploy
+```
+
+The stored registry credential from 2026-09-05 was still valid, so no fresh
+login was needed. Wiping the pack cache first is deliberate: every archive is
+then packed by the new binary, and nothing served afterwards is a leftover of
+the random-mask era.
+
+```
+library indexed songs=22 distinct_charts=22 duplicate_packages=0 problems=0 took=11ms
+pack cache bounded max_bytes=2147483648
+listening addr=:8080 songs=/songs data=/data version=c623dae
+```
+
+**Then five independent syncs were compared file by file:**
+
+| Client | Server | Result |
+|---|---|---|
+| ENG-1 | ENG-1, built from the working tree (windows/amd64) | reference |
+| ENG-1 | same, after wiping the whole pack cache | identical |
+| r7-desktop | ENG-1's server | identical |
+| ENG-1 | **the vault2 container (linux/amd64)** | **identical** |
+| r7-desktop | **the vault2 container (linux/amd64)** | **identical** |
+
+110 archives, two client machines, two servers built for different operating
+systems and by different toolchains, and one deliberate cache wipe — all one set
+of bytes. **The derivation is not platform-dependent**, which the fix needed to
+be but which nothing had shown until this run. Unmodified YARG on the
+container's output: **20 accepted, 2 refused**, the same two songs.
+
+Worth stating plainly because it is the standard this project holds: the last
+row of that table is an identity established by hashing every file, not by
+arguing that identical inputs must give identical results.

@@ -409,6 +409,26 @@ client cannot notice that it received one of several possible encodings.
 same verdicts, different sizes — they embed absolute paths. That is a small live demonstration of
 why generating `songcache.bin` is a permanent non-goal.)*
 
+### The container leg, measured the same day
+
+vault2 was re-pulled onto `c623dae` with its pack cache wiped, and both clients synced from the
+container as well. Five independent syncs, hashed file by file:
+
+| Client | Server | Result |
+|---|---|---|
+| ENG-1 | ENG-1, from the working tree (windows/amd64) | reference |
+| ENG-1 | same, after wiping the whole pack cache | identical |
+| r7-desktop | ENG-1's server | identical |
+| ENG-1 | the vault2 container (linux/amd64) | **identical** |
+| r7-desktop | the vault2 container (linux/amd64) | **identical** |
+
+110 archives, two clients, two servers built for different operating systems by different
+toolchains, one deliberate cache wipe — one set of bytes. **The derivation turns out not to be
+platform-dependent**, which it had to be for any of this to mean anything and which nothing had
+actually shown. Unmodified YARG on the container's output: 20 accepted, 2 refused, the same two.
+
+Details of the redeploy are in `docs/DEPLOY-VAULT2.md`.
+
 ### What is still not measured
 
 One real YARG version, on two Windows machines, against a corpus we wrote ourselves. The corpus
@@ -417,6 +437,5 @@ larger body of real community charts would test different things, and the licens
 on where those may come from are in the section above.
 
 Both machines run the same Windows build of the same YARG version, so nothing here says anything
-about Linux, macOS, or a different client release. And the two-machine run used a server built
-from the working tree on ENG-1, not the published container image on vault2 — the containerised
-half of the chain was last measured on 2026-09-05 and predates this fix.
+about Linux, macOS, or a different client release. And no ARM hardware has run anything: the
+arm64 image is still verified only by ELF machine type.
