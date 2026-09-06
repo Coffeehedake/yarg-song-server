@@ -301,6 +301,24 @@ A small companion binary that pulls the server's library into an ordinary local 
 Unmodified YARG then just sees files. This ships real value in days, with zero risk to the client,
 and exercises the whole server end-to-end.
 
+- [x] **`yarg-sync`** — `internal/syncclient` and `cmd/yarg-sync`, documented in
+      `docs/SYNC-CLIENT.md`. Writes `<chart_hash>.sng` and nothing else, verifies every download
+      by re-deriving identity from the bytes it received, resolves a shared chart hash
+      deterministically, and leaves everything it did not write strictly alone — including under
+      `-prune`, which is off by default. Built for all six release platforms.
+- [x] **End-to-end coverage** — `internal/e2e` runs the real `httpapi.Server`, `library.Build`
+      and `packcache` against the real client. Stubs prove one side's logic; only this catches
+      the two sides disagreeing about the wire. All five tests were red-proofed by breaking the
+      code they cover.
+- [ ] Run it against the oracle: a real YARG install pointed at a folder `yarg-sync` filled.
+      Until that is measured, "unmodified YARG just sees files" is a claim, not a result.
+- [ ] Ship it on the Pi alongside the server and run the exit criterion for real.
+
+**Known, documented, not a defect:** Windows Defender quarantines `cmd/yarg-sync` builds as
+`Trojan:Win32/Bearfoos.A!ml` — a machine-learning false positive on the shape of a small unsigned
+Go HTTP downloader. It blocks Windows developer builds, not CI, not the container image, and not
+the server binary. A code-signing certificate is the real fix. Details in `docs/SYNC-CLIENT.md`.
+
 **Exit criterion:** a Pi on the LAN serves a shared library; two machines running stock YARG both
 see the same songs without either one being modified.
 

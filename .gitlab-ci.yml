@@ -93,18 +93,23 @@ release:
     - echo "building $VERSION"
     - |
       set -e
+      # Both binaries, every platform. A release without the sync client is only
+      # half of Phase 2: the server is not usable by an unmodified YARG on its own.
       build() {
-        goos="$1"; goarch="$2"; goarm="$3"; out="$4"
-        echo "  $goos/$goarch${goarm:+v$goarm}"
+        cmd="$1"; goos="$2"; goarch="$3"; goarm="$4"; suffix="$5"
+        out="$cmd-$goos-$goarch${goarm:+v$goarm}$suffix"
+        echo "  $out"
         GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" \
-          go build -ldflags "-s -w -X main.version=$VERSION" -o "dist/$out" ./cmd/yarg-song-server
+          go build -ldflags "-s -w -X main.version=$VERSION" -o "dist/$out" "./cmd/$cmd"
       }
-      build linux   amd64 "" yarg-song-server-linux-amd64
-      build linux   arm64 "" yarg-song-server-linux-arm64
-      build linux   arm   7  yarg-song-server-linux-armv7
-      build darwin  amd64 "" yarg-song-server-darwin-amd64
-      build darwin  arm64 "" yarg-song-server-darwin-arm64
-      build windows amd64 "" yarg-song-server-windows-amd64.exe
+      for cmd in yarg-song-server yarg-sync; do
+        build "$cmd" linux   amd64 "" ""
+        build "$cmd" linux   arm64 "" ""
+        build "$cmd" linux   arm   7  ""
+        build "$cmd" darwin  amd64 "" ""
+        build "$cmd" darwin  arm64 "" ""
+        build "$cmd" windows amd64 "" ".exe"
+      done
     - ls -l dist
   artifacts:
     paths:

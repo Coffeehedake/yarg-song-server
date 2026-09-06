@@ -38,6 +38,27 @@ Then, by subject:
   it is more sensible.
 - Chart-file priority order (`notes.mid` → `notes.midi` → `notes.chart` → `notes.txt`) is
   load-bearing. Hashing the wrong file in a folder that has two produces a wrong identity silently.
+- **`yarg-sync` cannot be built on ENG-1 while Defender is on.** `go build ./cmd/yarg-sync` dies
+  with *"the file contains a virus or potentially unwanted software"*: Defender quarantines it as
+  `Trojan:Win32/Bearfoos.A!ml`, a machine-learning false positive on the shape of a small unsigned
+  Go HTTP downloader. `go test` binaries are **not** flagged, and the server binary is not flagged.
+  Do not disable Defender and do not add exclusions (the account is not admin anyway). Exercise
+  the client through `internal/e2e` instead of executing it; CI is Linux and unaffected. Full
+  detail and the escalation path are in `docs/SYNC-CLIENT.md`.
+
+## Two things that only look broken on ENG-1
+
+`core.autocrlf` is `true` here, so a Windows checkout has CRLF working-tree copies of files the
+repo stores as LF. Everything is `i/lf` in the index — verify with `git ls-files --eol` before
+believing otherwise — but two local commands lie about it:
+
+- `gofmt -l .` flags any Go file git checked out as CRLF. On 2026-09-05 that was four files, all
+  clean in the index and all clean in CI.
+- `bash ci/*.sh` fails with `$'\r': command not found`. The scripts are LF in the repo and run
+  fine on the runner.
+
+Neither is a defect and neither should be "fixed" by rewriting the files. Trust CI, or
+`git ls-files --eol`, over the local worktree.
 
 ## Verification, not vibes
 

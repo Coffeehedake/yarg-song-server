@@ -62,6 +62,7 @@ heuristics and no fuzzy matching.
 | [`docs/API.md`](docs/API.md) | Every HTTP endpoint, what it promises, and what it explicitly does not claim |
 | [`docs/ADR-001-server-architecture.md`](docs/ADR-001-server-architecture.md) | Why Go, why two repos, why sync-first, why LGPL |
 | [`docs/ADR-002-v1-store.md`](docs/ADR-002-v1-store.md) | Why the catalog lives in memory, why packed archives are cached, and the two places this server deliberately sorts differently from the client |
+| [`docs/SYNC-CLIENT.md`](docs/SYNC-CLIENT.md) | `yarg-sync`: flags, what it refuses to touch, why files are named by chart hash, and the Windows Defender false positive |
 | [`docs/SOURCES.md`](docs/SOURCES.md) | What is already documented and where — **read this before reverse-engineering anything** |
 | [`docs/TEST-CORPUS.md`](docs/TEST-CORPUS.md) | Where test input comes from, and what a real YARG install said about it |
 | [`docs/research/yarg-song-formats.md`](docs/research/yarg-song-formats.md) | The `.sng` binary layout, `song.ini` keys, the metadata model, song identity, and a difficulty assessment for every part of a Go reimplementation |
@@ -83,6 +84,28 @@ The library is read only ever; `--data` is where the server keeps its own state,
 archives packed from loose folders, and must be writable.
 
 **It is unauthenticated and read-only. Run it on your LAN, not on the internet.**
+
+### Syncing a library into stock YARG
+
+`yarg-sync` pulls a server's library into an ordinary songs folder. **YARG is not modified and
+does not know the server exists** — it sees files in a folder, which is all it has ever needed:
+
+```sh
+./bin/yarg-sync -server http://pi.local:8080 -songs "/path/to/YARG Songs" -dry-run
+```
+
+It writes `<chart_hash>.sng` files and nothing else, and never reads, renames or deletes anything
+it did not write — so it is safe to point at a folder that already holds your own charts.
+`-prune` is off by default. Every download is verified by re-deriving the song's identity from
+the bytes that arrived, so a truncated or substituted file fails closed rather than landing.
+
+Full behaviour, including the deterministic answer when two packages share a chart, is in
+[`docs/SYNC-CLIENT.md`](docs/SYNC-CLIENT.md).
+
+> **Windows:** Defender currently quarantines the unsigned `yarg-sync` binary as
+> `Trojan:Win32/Bearfoos.A!ml`. It is a machine-learning false positive on the shape of a small
+> Go HTTP downloader — the same one that hits many unsigned Go tools — and a code-signing
+> certificate is the real fix. The document above has the details and the escalation path.
 
 ### Configuration
 
