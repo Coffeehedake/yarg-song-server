@@ -250,6 +250,21 @@ exists, and it is the proof that the server is correct.
       `.xex`, matched by SUFFIX because `_rb3con` files usually have no extension at all. An
       archive holding several songs raises `ErrTooManySongs` rather than publishing one and
       silently dropping the rest.
+
+      **Hardened against hostile archives, by probing rather than by reasoning** — a
+      throwaway test printed what actually happens for traversal entries, corrupt files,
+      empty archives and odd separators, and only then were assertions written. Path
+      traversal is dropped by `fs.ValidPath` before it can reach a served `.sng`; a corrupt
+      archive is reported and the walk continues.
+
+      The probe found a real defect: a zip written with **backslash** separators
+      (`Song\song.ini`, as some Windows tools produce) surfaced a directory with nothing
+      readable under it, resolved to `ErrNoChart`, and was **silently ignored** — a
+      legitimate song vanishing from a library with no message, the same failure this
+      project had already rejected for `_rb3con`. Such an archive now reports
+      `ErrUnreadableArchive`. `internal/scan/hostile_test.go`; the shapes measured are
+      tabulated in [`TEST-CORPUS`](TEST-CORPUS.md) and the reasoning is in
+      [`ADR-003`](ADR-003-archive-ingest.md).
 - [x] **Config file + sane defaults** — `internal/config`. `key = value` with `#` comments, the
       same names as the flags, precedence defaults < file < flags actually typed, and
       `--write-config` to print a commented example. An unknown setting is an error, not a

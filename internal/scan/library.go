@@ -64,6 +64,12 @@ func WalkLibrary(root string, emit func(Result)) error {
 			if errors.Is(serr, ErrNoChart) {
 				// A zip of something else entirely. Libraries contain plenty of
 				// archives that are not songs; those are not errors.
+				//
+				// Note this is ErrNoChart specifically, NOT every failure.
+				// ErrUnreadableArchive - an archive that visibly holds a song we
+				// could not read - falls through and is reported, because
+				// swallowing that one is how a legitimate song disappears with
+				// no explanation.
 				return nil
 			}
 			emit(Result{Path: rel(root, p), Song: song, Err: serr})

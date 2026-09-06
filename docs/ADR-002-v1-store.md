@@ -45,9 +45,11 @@ so. The pure-Go driver avoids that but is a large dependency to carry for a quer
 
 ### 2. Packed archives are cached on disk, keyed by package hash
 
-A song found as a loose folder has to be packed before it can be served as `.sng`.
-`internal/packcache` packs it once into `<data>/packs/<package_hash>.sng` and serves the
-file thereafter.
+A song found as anything but a `.sng` — a loose folder, a `.zip` or a `.7z` — has to be
+packed before it can be served. `internal/packcache` packs it once into
+`<data>/packs/<package_hash>.sng` and serves the file thereafter. Packing is deterministic
+and identical across the three shapes, so an evicted entry re-packs to the same bytes and
+the cache is a pure accelerator, never data.
 
 **Why a file rather than streaming to the response:** streaming means no `Content-Length`,
 no `Range`, and therefore no resume. A sync client that cannot resume a 40 MB song over a

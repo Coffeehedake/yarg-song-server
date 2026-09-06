@@ -42,6 +42,23 @@ var ErrRockBandPackage = errors.New("scan: Rock Band console package; its audio 
 // operator meant would silently publish one song and drop the rest.
 var ErrTooManySongs = errors.New("scan: archive holds more than one song folder; unpack it and add the songs individually")
 
+// ErrUnreadableArchive means an archive plainly contains a song - there is a
+// song.ini or a chart file somewhere inside it - but no song folder could be
+// resolved from it.
+//
+// This exists because the alternative is silence. A library legitimately holds
+// archives that are not songs, so "no chart here" has to be ignored quietly or
+// every holiday-photos zip becomes a problem entry. But an archive that clearly
+// DOES hold a song and still cannot be read is a different thing, and swallowing
+// it is the same failure as silently ignoring a Rock Band package: the operator
+// sees nothing appear and concludes the server is broken.
+//
+// The known cause is an archive whose entries use BACKSLASH separators, which
+// some Windows tools still write. Measured 2026-09-06: Go's zip filesystem
+// surfaces a directory for such an entry but no readable file underneath it, so
+// the chart is never found. Re-zipping with any modern tool fixes it.
+var ErrUnreadableArchive = errors.New("scan: archive contains a song.ini or a chart but no song folder could be read from it; if it was made by an old Windows tool it may use backslash path separators - re-zipping it will fix that")
+
 // rbPackageSuffixes are the console-package shapes seen in the wild. `_rb3con`
 // is a SUFFIX, not an extension - those files usually have no extension at all,
 // so matching on filepath.Ext alone would miss the most common one.
@@ -80,6 +97,7 @@ func OpenContainer(p string) (fs.FS, io.Closer, error) {
 	var (
 		fsys   fs.FS
 		closer io.Closer
+		raw    []string // entry names EXACTLY as stored, before any fs view
 	)
 	switch strings.ToLower(filepath.Ext(p)) {
 	case ".zip":
@@ -87,11 +105,17 @@ func OpenContainer(p string) (fs.FS, io.Closer, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("scan: open zip: %w", err)
 		}
+		for _, f := range r.File {
+			raw = append(raw, f.Name)
+		}
 		fsys, closer = r, r
 	case ".7z":
 		r, err := sevenzip.OpenReader(p)
 		if err != nil {
 			return nil, nil, fmt.Errorf("scan: open 7z: %w", err)
+		}
+		for _, f := range r.File {
+			raw = append(raw, f.Name)
 		}
 		fsys, closer = r, r
 	default:
@@ -100,10 +124,41 @@ func OpenContainer(p string) (fs.FS, io.Closer, error) {
 
 	root, err := songRoot(fsys)
 	if err != nil {
+		// Before reporting "no chart", ask whether the archive plainly contains
+		// a song anyway. If it does, this is an archive we failed to READ, not
+		// an archive of something else, and the two deserve different answers.
+		if errors.Is(err, ErrNoChart) && looksLikeASong(raw) {
+			err = ErrUnreadableArchive
+		}
 		closer.Close()
 		return nil, nil, err
 	}
 	return root, closer, nil
+}
+
+// looksLikeASong reports whether any entry name in the archive is a song.ini or
+// a chart file.
+//
+// It takes the RAW stored names rather than an fs.FS on purpose, and the first
+// attempt at this got it wrong: walking the filesystem view inherits exactly the
+// blindness this check exists to detect. The backslash case is the proof - the
+// fs view shows a directory with nothing readable under it, so an fs.WalkDir
+// finds no song.ini and concludes, wrongly, that the silence was justified.
+//
+// Both separators are handled because the whole point is names the fs view will
+// not parse.
+func looksLikeASong(rawNames []string) bool {
+	for _, n := range rawNames {
+		base := strings.ToLower(n)
+		if i := strings.LastIndexAny(base, `/\`); i >= 0 {
+			base = base[i+1:]
+		}
+		switch base {
+		case "song.ini", "notes.mid", "notes.midi", "notes.chart", "notes.txt":
+			return true
+		}
+	}
+	return false
 }
 
 // songRoot finds the directory holding the chart, descending through the

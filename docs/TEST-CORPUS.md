@@ -513,3 +513,48 @@ Three caveats, stated rather than buried:
   direct registry pull, to avoid putting a registry credential on a throwaway host. The image id
   is identical either way, so what ran is the published image; only its transport differed. The
   multi-arch manifest itself was separately confirmed to carry both `amd64` and `arm64`.
+
+## Hostile archives — 2026-09-06, probed rather than reasoned about
+
+The oracle runs above validate songs that are *supposed* to work. Archive ingest also
+has to survive files that are not: an operator's library is downloaded from the
+internet, so the reader is attacker-facing.
+
+None of these behaviours were asserted from reading the standard library. A throwaway
+`probe_test.go` was written that simply *printed* what happened for each hostile shape,
+the output was read, and only then were tests written against what was observed. The
+probe was deleted; what it found is pinned in `internal/scan/hostile_test.go`.
+
+| Shape fed in | What actually happened | Now pinned as |
+| --- | --- | --- |
+| `../../../../etc/passwd`, `Song/../../escape.txt`, `/etc/shadow` alongside a real song | all three dropped by `fs.ValidPath`; produced `.sng` held only `song.ogg`, `notes.mid`, `album.png` | traversal never reaches the served archive |
+| truncated / non-zip bytes with a `.zip` name | reported cleanly, walk continued, the good song beside it still found | one bad file does not abandon a scan |
+| zip of unrelated files (photos) | `ErrNoChart`, silently skipped | quiet, so real problems are not buried |
+| empty zip | `ErrNoChart` | not a song, not a problem |
+| zip containing a `.sng` | `ErrNoChart` | not descended into |
+| **zip with backslash separators (`Song\song.ini`)** | **`rootNames` empty, `rootDirs` = `[Song]`, `ErrNoChart` → silently ignored** | **`ErrUnreadableArchive`, reported** |
+
+The last row is a real defect, and only the probe found it — a legitimate song
+disappearing from a library with no message, the same class of failure as silently
+skipping a `_rb3con`. The reasoning behind the fix, and why the first attempt at it was
+wrong, is in [ADR-003](ADR-003-archive-ingest.md).
+
+### Red-proofed, not just green
+
+Each of these tests was confirmed to fail when the behaviour it guards is removed —
+a test that has never been red proves nothing:
+
+| Mutation applied to the source | Test that failed |
+| --- | --- |
+| `looksLikeASong` → always `false` | `TestAnArchiveThatVisiblyHoldsASongIsNeverSilentlyIgnored` |
+| `looksLikeASong` → always `true` | `TestAnArchiveOfNonSongFilesIsStillIgnoredQuietly`, `TestAnEmptyArchiveIsNotASong` |
+| `WalkLibrary` swallowing every container error, not just `ErrNoChart` | `TestACorruptArchiveIsReportedAndTheWalkContinues`, `TestAnArchiveThatVisiblyHoldsASongIsNeverSilentlyIgnored` |
+
+Both directions of `looksLikeASong` matter, which is why both were mutated: too strict
+and songs vanish, too loose and every holiday-photos zip becomes a problem entry.
+
+`TestTraversalEntriesNeverReachTheServedArchive` is deliberately **not** red-proofed,
+and it is honest to say why: the behaviour it pins belongs to Go's `archive/zip`, not to
+this codebase, so there is no line here to mutate. Its value is not that it catches our
+regressions — it is that it fails loudly if a toolchain upgrade ever changes a filter we
+now depend on for a security property.

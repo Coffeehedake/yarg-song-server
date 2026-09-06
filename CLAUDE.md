@@ -49,7 +49,7 @@ Then, by subject:
   song; it had raised no issue at all, and the run was written up as passing a standard it failed.
   If you find yourself reading a JSON field to decide whether something was caught, the answer is
   that it was not caught.
-- **Packing is DETERMINISTIC. Never make `PackDir` depend on anything but the folder.** The `.sng`
+- **Packing is DETERMINISTIC. Never make `PackFS` depend on anything but the files it is given.** The `.sng`
   header mask is derived from the package hash (`sng.MaskKeyFor`), not drawn from `crypto/rand`.
   It is stored in plaintext in the header, so randomising it protects nothing and costs the strong
   `ETag`, the `Range` resume across a cache eviction, and "two machines syncing one server get the
@@ -59,6 +59,22 @@ Then, by subject:
 - **A test can lock a defect in.** `TestWriteUsesAFreshMask` required two packs of one folder to
   differ, and it was the reason the random mask looked correct. Before adding a test that asserts
   two runs must *not* agree, ask what would depend on them agreeing.
+- **Probe before you assert, especially about code you did not write.** The hostile-archive
+  tests exist because a throwaway `probe_test.go` *printed* what `archive/zip` actually does
+  with traversal entries, corrupt files and odd separators. Reasoning would have produced four
+  correct assertions and missed the fifth: a zip with **backslash** separators surfaces a
+  directory with nothing readable under it, so a real song was silently ignored. Write the
+  probe, read the output, then write the test, then delete the probe.
+- **A filesystem view cannot detect its own blind spot.** The first fix for that defect asked
+  "does this archive look like a song?" by walking the `fs.FS` — the same view that is blind to
+  those entries. It inherited exactly the blindness it existed to catch. The check reads the RAW
+  stored entry names for that reason, and the failing test is what said so; do not "simplify" it
+  back onto the `fs.FS`.
+- **Silence is a decision, and it needs a rule.** "No chart in a zip" is deliberately quiet
+  because libraries are full of archives that are not songs. That same silence is unacceptable
+  when the archive visibly holds a song, which is why `ErrUnreadableArchive` exists and is
+  reported. Both directions are pinned; changing one without the other buries either real
+  problems or real songs.
 - **Comparing counts and totals is not comparing bytes.** Two machines each reported 22 archives
   and 229,515 bytes and were 16 files apart. Any claim of the form "identical" must come from
   hashing every file; a summary line cannot support it. The same applies to a second request that

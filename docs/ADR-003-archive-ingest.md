@@ -100,3 +100,45 @@ operator would have no way to discover that had happened.
 One wrapper folder is expected and descended through — `Song.zip` containing `Song/` is
 how songs are actually distributed — up to a bounded depth, because an unbounded descent
 on a hostile archive is a denial of service.
+
+## Hostile archives, and the one defect that probing found
+
+An operator's library is full of files downloaded from the internet, so the archive
+reader is attacker-facing. The behaviours below were **measured** — a throwaway test
+that printed what actually happens — before anything was asserted about them. Each is
+now pinned in `internal/scan/hostile_test.go`, because we depend on them and none of
+them are ours to control.
+
+**Path traversal never reaches the served archive.** Entries named `../../etc/passwd`,
+`Song/../../escape.txt` and `/etc/shadow` are dropped by Go's zip filesystem, which
+refuses any name failing `fs.ValidPath`. We never extract to disk, so classic zip-slip
+does not apply, but the entry names we *emit* are attacker-influenced and reach every
+client. The test asserts both halves: the hostile names are absent from the produced
+`.sng`, and the legitimate files are still all present — a defence that also dropped the
+real content would be a different bug.
+
+**A corrupt archive is reported and the walk continues.** One truncated `.zip` must not
+abandon a scan of ten thousand songs.
+
+**An archive that visibly holds a song is never silently ignored.** This is the defect
+probing found. Some Windows tools write zip entries with **backslash** separators
+(`Song\song.ini`). Go's zip filesystem surfaces a directory for those but nothing
+readable underneath, so the chart is never found; because "no chart in a zip" is
+deliberately silent — libraries are full of archives that are not songs — a perfectly
+good song disappeared with no message at all. That is the same failure this ADR already
+rejected for `_rb3con`, arrived at from the other direction.
+
+So `OpenContainer` now checks the **raw stored entry names** for a chart or `song.ini`
+before concluding the silence was justified, and reports `ErrUnreadableArchive` when one
+is visibly there. The first attempt at this walked the `fs.FS` view and was wrong for the
+obvious-in-hindsight reason: that view is exactly what is blind to these entries, so it
+inherited the blindness it existed to detect. The failing test is what said so.
+
+We do not *read* backslash entries — that would mean second-guessing the archive's own
+name encoding, where a wrong guess re-introduces traversal through a separator Go does not
+treat as one. The operator is told the archive is unreadable and can re-zip it. Refusing
+loudly is the whole of the fix; reading it is a separate decision with a worse risk
+profile.
+
+The counterpart is pinned too: an archive of genuinely unrelated files stays silent. If
+every holiday-photos zip became a problem entry, the real problems would be buried.

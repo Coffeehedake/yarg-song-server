@@ -45,7 +45,8 @@ Three things there are not decoration:
 - **`chown 65532`.** The image is distroless and runs as `nonroot`, uid 65532.
   `/data` holds the on-demand pack cache and must be writable by that uid or the
   server starts fine and then fails the first time somebody asks for a song that
-  is stored as a loose folder. `/songs` stays root-owned and is mounted `:ro`,
+  is stored as anything but a `.sng` — a loose folder, a `.zip` or a `.7z`, all of
+  which are packed on demand. `/songs` stays root-owned and is mounted `:ro`,
   because the server never writes to the library and should not be able to.
 - **`/mnt/cache/...`, not `/mnt/user/...`.** An absolute pool path, not the shfs
   union. This host has a documented history of SQLite-on-FUSE corruption, and

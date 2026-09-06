@@ -127,9 +127,10 @@ missing the entire library.
 
 ## `GET /song/{chart_hash}.sng`
 
-The package bytes, always as `.sng`. A song stored as a loose folder is packed on demand and
-the archive is cached; packing copies the chart byte for byte, so the song's identity is
-unchanged by it.
+The package bytes, always as `.sng`. A song stored as anything else — a loose folder, a
+`.zip` or a `.7z` — is packed on demand and the archive is cached; packing copies the chart
+byte for byte, so the song's identity is unchanged by it. The three shapes pack to the same
+bytes, so re-zipping a library does not change what a client downloads.
 
 - `ETag` is the package hash — a hash of the content, so it is the same on every server
   holding the same package and survives a rescan, a restart and a cache wipe.
