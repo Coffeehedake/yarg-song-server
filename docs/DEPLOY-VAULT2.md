@@ -196,3 +196,32 @@ container's output: **20 accepted, 2 refused**, the same two songs.
 Worth stating plainly because it is the standard this project holds: the last
 row of that table is an identity established by hashing every file, not by
 arguing that identical inputs must give identical results.
+
+## Re-deployed 2026-09-06 on `423902b`, with archive ingest
+
+The library on the host was replaced with the 23-case corpus, which includes
+`23-zipped.zip` — a song delivered as an archive rather than a folder — and the
+pack cache was wiped so nothing served afterwards was a leftover of the previous
+image.
+
+```
+library indexed songs=23 distinct_charts=23 duplicate_packages=0 problems=0 took=9ms
+listening addr=:8080 songs=/songs data=/data version=423902b
+```
+
+| Check | Result |
+|---|---|
+| `/version` | `423902b` |
+| `/healthz` | 200 |
+| The archive-sourced song in the catalog | `name="Zipped"`, `source_path="23-zipped.zip"`, **0 issues** |
+| `yarg-sync` from an empty folder | 23 downloaded, 0 failed, 238,215 bytes in 399 ms |
+| Every archive vs the locally built server | **23 / 23 identical** |
+
+That last row is the container-independence property crossing a build platform:
+the song the **linux/amd64 container** ingested from inside a `.zip` is
+byte-identical to the one a **windows/amd64** build produced from the loose
+folder. Nothing about the container it arrived in, or the machine that packed
+it, reaches the bytes a client receives.
+
+The host's stored registry credential was still valid, so no fresh login was
+needed.
