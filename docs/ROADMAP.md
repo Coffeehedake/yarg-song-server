@@ -397,6 +397,12 @@ and exercises the whole server end-to-end.
       `docker save` on vault2 and `docker load` on the Pi rather than a direct registry pull, to
       avoid putting a registry credential on a throwaway host — the image id is identical either
       way, so what ran is the published image; only its transport differed.
+
+      **The one-shot shape is deliberate, not a shortcut.** The Pi is a *verification target*,
+      not a development or deployment one: development happens on Docker, and a Pi is picked up
+      periodically to confirm the arm64 build still runs on real ARM silicon. So there is no
+      maintained Pi to keep current, and no Pi-shaped work waiting on hardware — each arm64
+      claim is dated, and re-measured rather than inherited.
 - [x] **The exit criterion, with a second client** — done 2026-09-06. YARG was installed on
       r7-desktop by copying ENG-1's portable install, and both machines synced from one server and
       were scanned by unmodified YARG: **20 accepted, 2 refused on each, the same two songs for the
@@ -434,6 +440,29 @@ and exercises the whole server end-to-end.
       songs with `problems=1`, naming the file and saying how to fix it, in the log and in
       `/api/v1/library` both. The previous image reported `problems=0` and said nothing. Probe
       removed, library restored to 23 clean cases. See `docs/DEPLOY-VAULT2.md`.
+- [x] **Measure what this costs at real library sizes** — done 2026-09-06, `cmd/mkscale`
+      and [`docs/SCALE.md`](SCALE.md). Every number in this repository until now came from
+      23 songs and 238 KB. Now: **index is linear**, 0.594 / 0.583 / 0.569 ms per song at
+      1,000 / 10,000 / 31,109 songs, and memory fits **13 MB + 6.5 KB per song** across the
+      whole range.
+
+      Those constants extrapolate, and one of them is a constraint on goal #1: **a
+      100,000-song library needs ~665 MB resident**, so a 1 GB Pi 3B+ could not hold it
+      while serving from it and a 4 GB Pi could. The catalog is in memory by design
+      (ADR-002); this is the number that says where that design runs out.
+
+      On the byte axis — 200 songs of 5 MB audio, 1.07 GB — **resident memory stayed at
+      16.5 MB while serving 1.17 GB**, so packs stream rather than being assembled in
+      memory, which the code was written to do and nothing had measured. With the cache
+      bound set to 100 MB against that 1.17 GB library, **all 200 songs were still
+      delivered and the cache never exceeded 102 MB** — the `pack_cache_max` property
+      re-measured under 11x pressure rather than trusted.
+
+      The library is generated, not downloaded: community charts carry copyrighted audio,
+      and a corpus that cannot be rebuilt on another machine is not a corpus. **What this
+      does not close:** the songs are uniform, so a real library's *variety* is untested,
+      and the oracle has never run at scale — that is the measurement most likely to find a
+      YARG rejection category the scanner misses, and it needs real charts.
 
 **Resolved, and worth remembering for the response rather than the event:** on 2026-09-05 a
 Defender machine-learning verdict (`Trojan:Win32/Bearfoos.A!ml`) quarantined `cmd/yarg-sync`

@@ -150,8 +150,13 @@ Three things in that table, in order of importance:
   YARG was installed on r7-desktop and both machines were scanned: 20 accepted,
   2 refused on each, the same two songs. Doing it is what found the determinism
   defect above — see `docs/TEST-CORPUS.md`, fourth oracle run.
-- One library, 22 songs, 224 KB. Nothing here says anything about a real
-  collection's size or scan time.
+- ~~**One library, 22 songs, 224 KB.**~~ **Partly closed 2026-09-06.** Index time is
+  linear at 0.57-0.59 ms/song and memory fits `13 MB + 6.5 KB/song`, measured at 1,000 /
+  10,000 / 31,109 songs; packing streams, with resident memory flat at 16.5 MB while
+  serving 1.17 GB, and the cache bound held at 11x oversubscription. See
+  `docs/SCALE.md`. **Still open:** every song in that experiment is synthetic, so a real
+  library's *variety* is untested, and the oracle has never run at scale - which is the
+  measurement most likely to find a rejection category we do not flag.
 
 ## Re-deployed 2026-09-06 on `c623dae`, and what it proved beyond the fix
 

@@ -20,6 +20,11 @@ config.local.*
 
 # song fixtures are large and often copyrighted - never commit them
 /testdata/songs/
+# generated libraries: mkcorpus writes /corpus, mkscale writes /scale-corpus by
+# default, and a scale run is tens of thousands of files. Committing one by
+# accident is the kind of mistake that is easier to prevent than to undo.
+/corpus/
+/scale-corpus/
 *.sng
 # ...except the reference archives, which are ours, tiny, and the only thing
 # that proves the reader agrees with the reference encoder rather than with our

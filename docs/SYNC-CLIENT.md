@@ -128,6 +128,14 @@ If it recurs *and persists across a re-test*:
   solution for an unsigned executable that strangers download. Note that a
   self-signed certificate does *not* help here — it does nothing for an ML
   verdict.
+
+  **The signing identity is decided: FatalException.** This is a personal
+  project and is signed as one; it is never signed as Juniper Design Group,
+  whose certificate would attach a company's name and liability to a personal
+  release. What is still open is which *kind* of certificate — the options
+  differ mainly in how quickly SmartScreen reputation accrues, and some require
+  a registered legal entity rather than an individual, which is the question to
+  settle before pricing anything.
 - It is not a CI problem in any case. The runner is Linux; `release` and the
   container image are unaffected.
 
