@@ -36,9 +36,19 @@ their contributing guide tells contributors to ask.
 ## What we searched before asking
 
 Nothing found in their issues proposes loading songs from a remote server. The nearest is
-**#860, "[FR] Built in Web Server for Song Queing/Search from external device"** — open,
-and a *control plane* (search and queue from a phone) rather than a content source. Worth
+**[#860, "[FR] Built in Web Server for Song Queing/Search from external device"][i860]** —
+a *control plane* (search and queue from a phone) rather than a content source. Worth
 citing so it is clear we looked, and worth not conflating with what we are proposing.
+
+**But it is not merely adjacent, and that is worth saying in the post.** #860 has been open
+since August 2024, unlabelled, with a comment pointing at a second Discord proposal that
+adds up/down votes on the queue — so there is demand and nobody has built it. The reason
+nobody has is in the request's own words: *"whilst YARG is running"*. Nothing outside the
+game can reach a running client. **A remote song source is the thing that could** — the same
+channel that fetches songs can carry a queue. So this proposal is not novel work competing
+for their attention; it is the missing half of a request they already have.
+
+[i860]: https://github.com/YARC-Official/YARG/issues/860
 
 Also searched and not found: any issue or PR about shared libraries, syncing songs between
 machines, or a network song source. `#1030 "Add support for user-supplied song sources"` is
@@ -88,6 +98,12 @@ Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 > find out later it was never going to fit. And I'm not asking for anything you've ruled
 > out: no CON decryption, no touching `songcache.bin`, and no distributing copyrighted
 > audio. The server serves what the operator already has.
+>
+> One more thing, in case it makes the idea more interesting rather than less: the same
+> channel would carry a **queue**. #860 has been open since 2024 asking for search-and-queue
+> from a phone while YARG is running, and as far as I can tell it's unbuilt because nothing
+> outside the game can reach a running client. A remote source would be the thing that
+> could. I'm not proposing that part now — just noting the two are the same plumbing.
 >
 > One thing I noticed while reading `YARG.Core`: `SongEntry` is abstract, but
 > `ActualLocation`, `SortBasedLocation` and `GetLastWriteTime()` all assume a local path.

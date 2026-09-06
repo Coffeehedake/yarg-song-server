@@ -512,6 +512,12 @@ post:
   local path; *a song entry whose bytes are not on disk* is a general capability rather than a
   feature about our server, and may be an easier thing for upstream to want.
 
+**A second payoff, which strengthens the case upstream.** The same client-to-server channel
+would carry a **queue**, which is what upstream's open issue [#860][i860] has been asking for
+since August 2024 — search and queue from a phone while YARG is running. That request is
+unbuilt because nothing can reach the running game; a remote song source is the thing that
+could. See "Party mode" under Phase 4.
+
 **Exit criterion:** the fork can browse and play from a server without a sync step, and a
 discussion thread exists upstream.
 
@@ -525,6 +531,36 @@ The point at which the server stops being one feature and becomes a platform.
 - Config UI in the server app, so a user turns on only what they want.
 - Candidate modules: multi-user libraries and permissions, playlists/setlists shared across
   clients, scores and leaderboards, library health reporting.
+
+### Party mode: a web UI for search and queueing from a phone
+
+Upstream has an **open feature request for exactly this** — [#860][i860], filed August 2024,
+still open and unlabelled, with a comment pointing at a second Discord proposal that adds
+up/down votes on the queue. So there is demand, and nobody has built it.
+
+**Half of it is ours already and half of it is not, and the split is worth being precise
+about** rather than filing this as "just add a UI":
+
+- **The browse-and-search half needs no new capability.** `/api/v1/songs` already does free
+  text across name, artist, album, genre, subgenre, charter, source and playlist, with
+  twelve sort attributes, ordering and paging, and it answers a 10,000-song catalog in
+  ~140 ms. A phone-friendly page over that API is presentation work on an API that exists.
+- **The queueing half needs the game.** The request says *"whilst YARG is running"*, and
+  that is the whole difficulty: this server has no channel into a running client, and
+  polling a folder is not one. A queue can live here as server-side state, but something in
+  the game has to read it.
+
+**That second half is the same work as Phase 3, seen from the other end** — and that is the
+useful realisation, not a coincidence to note in passing. A client that can talk to a server
+for songs can read a queue from the same server over the same channel. It means the remote
+source has two payoffs rather than one, and it means this project would be answering an open
+request of upstream's rather than proposing something novel.
+
+Order follows from that: **build the web UI when the server is otherwise idle** — it is
+useful on its own for picking songs from the couch, and it needs nothing from anyone — but
+do not promise the queue until Phase 3 has a channel to carry it.
+
+[i860]: https://github.com/YARC-Official/YARG/issues/860
 
 ---
 
