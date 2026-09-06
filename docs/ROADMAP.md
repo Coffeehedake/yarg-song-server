@@ -421,6 +421,19 @@ and exercises the whole server end-to-end.
       servers built for different operating systems by different toolchains agree, so **the mask
       derivation is not platform-dependent** — which it had to be, and which nothing had shown.
       Unmodified YARG on the container's output: 20 accepted, 2 refused, the same two.
+- [x] **Deploy the hardening and measure it on the real server** — done 2026-09-06. vault2
+      re-pulled onto `077f36e`, pack cache wiped, all 23 songs re-packed by the new binary:
+      **byte-for-byte identical to the `423902b` cache**, and the 23 files a `yarg-sync` then
+      received hashed to the same set as the 23 packs on the server. Every earlier determinism
+      result compared machines or architectures at a *fixed* commit; this one holds **across a
+      code change**, which is the case an `ETag` and a `Range` resume actually meet, since a
+      server is upgraded far more often than it changes CPU.
+
+      **And the defect was reproduced on the deployment before being declared fixed.** A probe
+      archive with backslash separators was dropped into the host library: the server indexed 23
+      songs with `problems=1`, naming the file and saying how to fix it, in the log and in
+      `/api/v1/library` both. The previous image reported `problems=0` and said nothing. Probe
+      removed, library restored to 23 clean cases. See `docs/DEPLOY-VAULT2.md`.
 
 **Resolved, and worth remembering for the response rather than the event:** on 2026-09-05 a
 Defender machine-learning verdict (`Trojan:Win32/Bearfoos.A!ml`) quarantined `cmd/yarg-sync`

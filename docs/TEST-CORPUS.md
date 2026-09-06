@@ -558,3 +558,30 @@ and it is honest to say why: the behaviour it pins belongs to Go's `archive/zip`
 this codebase, so there is no line here to mutate. Its value is not that it catches our
 regressions — it is that it fails loudly if a toolchain upgrade ever changes a filter we
 now depend on for a security property.
+
+## Sixth oracle-adjacent run — 2026-09-06, the fix observed on the deployment
+
+Two properties were measured on the vault2 container after it was upgraded to `077f36e`,
+because neither is reachable from a unit test.
+
+**Determinism now holds across a code change.** Every earlier determinism result compared
+machines, operating systems or architectures at a *fixed* commit. Here the pack cache was
+hashed under `423902b`, wiped, and re-packed by the `077f36e` binary: **23 archives,
+byte-for-byte identical**. A `yarg-sync` from ENG-1 then delivered 23 files totalling 238,215
+bytes, and the set of client-side SHA-256s matched the set of server-side pack SHA-256s
+exactly. That is the property an `ETag` and a `Range` resume actually rely on in practice,
+since a server is upgraded far more often than it changes CPU.
+
+**The silently-ignored song was reproduced on the deployment and observed being reported.** A
+probe archive holding `song.ini`, `notes.mid` and `song.ogg` under `Backslash Song\` was
+placed in the host library. The server indexed 23 songs with **`problems=1`**, naming the file
+and saying what to do about it, in the log and in `/api/v1/library` both. Under the previous
+image the same file gave `problems=0` and no mention anywhere. The probe was removed and the
+library restored to 23 clean cases.
+
+Building that probe turned out to demonstrate the defect twice over. Python's `zipfile`
+rewrites `os.sep` to `/` inside `ZipInfo.__init__`, so the obvious construction silently
+produces a forward slash and tests nothing; and `namelist()` normalises backslashes on read,
+so a correctly-built probe still *looks* wrong. Counting `0x5C` bytes in the file is the only
+honest check. **Both the writer and the reader hide the thing under test** — the same shape as
+the original defect, where an `fs.FS` view of an archive is not the archive.

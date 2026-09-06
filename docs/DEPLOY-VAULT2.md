@@ -226,3 +226,80 @@ it, reaches the bytes a client receives.
 
 The host's stored registry credential was still valid, so no fresh login was
 needed.
+
+## Re-deployed 2026-09-06 on `077f36e`, and the hostile-archive fix measured on the real thing
+
+Pipeline 2278 published `077f36e` (archive-ingest hardening). Two things were worth
+measuring here that a test cannot reach: whether a code change altered the bytes a client
+receives, and whether the new "this archive is unreadable" report actually arrives where an
+operator would see it.
+
+**`latest` was confirmed to be the commit before it was run**, not assumed:
+
+```bash
+docker pull …:latest
+docker pull …:077f36eb        # note EIGHT characters - CI tags with CI_COMMIT_SHORT_SHA
+docker image inspect …:077f36eb --format '{{.Id}}'   # same image id as :latest
+```
+
+That the tag is eight hex characters and the git short sha is seven is a small trap: a
+`:077f36e` pull fails with `manifest unknown`, which reads like a missing image rather than a
+mistyped tag. `GET /api/v4/projects/53/registry/repositories/14/tags` lists what exists.
+
+### Nothing about a code change reached the bytes
+
+The pack cache was hashed **before** the upgrade, wiped, and hashed again after the new
+binary had re-packed all 23 songs:
+
+```bash
+sha256sum *.sng | sort -k2 > /tmp/packs-423902b.txt   # before
+# … pull, rm -f, rm -rf data/packs, docker run …
+sha256sum *.sng | sort -k2 > /tmp/packs-077f36e.txt   # after
+diff /tmp/packs-423902b.txt /tmp/packs-077f36e.txt    # no output
+```
+
+| Check | Result |
+|---|---|
+| `/version` | `077f36e` |
+| `/healthz` | 200 |
+| Index | 23 songs, 23 distinct charts, **0 problems**, 9 ms |
+| 23 archives re-packed on a wiped cache, vs the `423902b` cache | **byte-for-byte identical** |
+| `yarg-sync` from ENG-1 over Tailscale | 23 downloaded, 0 failed, 238,215 bytes in 312 ms |
+| The 23 files the client received, hashed, vs the 23 packs on the server | **identical set** |
+
+The determinism property now holds **across a code change**, which is a different claim from
+the ones already recorded — those compared machines, operating systems and architectures at a
+fixed commit. Byte-stability across upgrades is what a client's `ETag` and `Range` resume
+actually depend on in practice, since a server gets upgraded far more often than it changes
+CPU.
+
+### The silently-ignored song, reproduced and then observed being reported
+
+`077f36e` exists because a zip written with **backslash** separators used to disappear from a
+library with no message. A probe archive was built to be exactly that shape — `song.ini`,
+`notes.mid` and `song.ogg` under `Backslash Song\`, written with the separator stored
+verbatim — dropped into the host's library, and the server restarted.
+
+Building the probe is itself instructive. Python's `zipfile` rewrites `os.sep` to `/` in
+`ZipInfo.__init__`, so `ZipInfo("Backslash Song\\song.ini")` silently produces a *forward*
+slash and the probe proves nothing; the name has to be assigned after construction. And
+`namelist()` normalises backslashes when reading back, so the file looks wrong even when it is
+right — the only honest check is to count `0x5C` bytes in the file itself. **Both the writer
+and the reader hide the thing being tested**, which is the same shape as the defect: a
+convenient view of an archive is not the archive.
+
+```
+level=INFO  msg="library indexed" songs=23 distinct_charts=23 duplicate_packages=0 problems=1
+level=WARN  msg="could not index" path=24-backslash.zip
+            err="scan: archive contains a song.ini or a chart but no song folder could be read
+                 from it; if it was made by an old Windows tool it may use backslash path
+                 separators - re-zipping it will fix that"
+```
+
+It appears in `/api/v1/library` under `problems` as well as in the log, so an operator with no
+shell on the host still sees it. Before this commit the same file produced `problems=0` and no
+mention anywhere.
+
+The probe was removed afterwards and the library restored to the 23-case corpus — a permanent
+`problems=1` would make every future index report ambiguous. `0 problems`, `restarts=0`,
+health 200 at the end.
