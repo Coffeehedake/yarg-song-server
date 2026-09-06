@@ -314,10 +314,14 @@ and exercises the whole server end-to-end.
       Until that is measured, "unmodified YARG just sees files" is a claim, not a result.
 - [ ] Ship it on the Pi alongside the server and run the exit criterion for real.
 
-**Known, documented, not a defect:** Windows Defender quarantines `cmd/yarg-sync` builds as
-`Trojan:Win32/Bearfoos.A!ml` — a machine-learning false positive on the shape of a small unsigned
-Go HTTP downloader. It blocks Windows developer builds, not CI, not the container image, and not
-the server binary. A code-signing certificate is the real fix. Details in `docs/SYNC-CLIENT.md`.
+**Resolved, and worth remembering for the response rather than the event:** on 2026-09-05 a
+Defender machine-learning verdict (`Trojan:Win32/Bearfoos.A!ml`) quarantined `cmd/yarg-sync`
+builds for about a minute, then stopped reproducing within the hour with nothing changed on the
+machine — verified across three forced relinks and three distinct binary hashes, zero new
+detections, same signature version, no exclusion added. Acting on it immediately would have left
+a permanent Defender exclusion behind for a problem that had already evaporated. If it returns,
+re-measure before doing anything structural; the escalation is Microsoft's false-positive form
+and code signing, never an exclusion. Details in `docs/SYNC-CLIENT.md`.
 
 **Exit criterion:** a Pi on the LAN serves a shared library; two machines running stock YARG both
 see the same songs without either one being modified.

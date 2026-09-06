@@ -8,12 +8,13 @@
 // httpapi.Server, library.Build and packcache -- the same code the binary runs
 // -- so a change to either side that breaks the pair fails here.
 //
-// It deliberately does NOT shell out to the built binaries. Windows Defender
-// classifies cmd/yarg-sync as Trojan:Win32/Bearfoos.A!ml (a machine-learning
-// false positive on small Go HTTP downloaders, measured on ENG-1 2026-09-05),
-// so a test that exec'd the binary would be red on the primary development
-// machine for a reason that has nothing to do with this project's code. Test
-// binaries are not flagged. See docs/SYNC-CLIENT.md.
+// It deliberately does NOT shell out to the built binaries. Exercising the
+// client in-process keeps the suite independent of whatever a virus scanner
+// makes of a freshly linked executable on any given day -- on 2026-09-05 a
+// Defender machine-learning verdict quarantined cmd/yarg-sync builds for about
+// a minute before the classifier revised itself, which would have made a
+// shell-out test red for a reason having nothing to do with this code.
+// See docs/SYNC-CLIENT.md.
 package e2e
 
 import (

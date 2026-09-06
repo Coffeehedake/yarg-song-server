@@ -38,13 +38,18 @@ Then, by subject:
   it is more sensible.
 - Chart-file priority order (`notes.mid` → `notes.midi` → `notes.chart` → `notes.txt`) is
   load-bearing. Hashing the wrong file in a folder that has two produces a wrong identity silently.
-- **`yarg-sync` cannot be built on ENG-1 while Defender is on.** `go build ./cmd/yarg-sync` dies
-  with *"the file contains a virus or potentially unwanted software"*: Defender quarantines it as
-  `Trojan:Win32/Bearfoos.A!ml`, a machine-learning false positive on the shape of a small unsigned
-  Go HTTP downloader. `go test` binaries are **not** flagged, and the server binary is not flagged.
-  Do not disable Defender and do not add exclusions (the account is not admin anyway). Exercise
-  the client through `internal/e2e` instead of executing it; CI is Linux and unaffected. Full
-  detail and the escalation path are in `docs/SYNC-CLIENT.md`.
+- **A Defender false positive on `cmd/yarg-sync` came and went on 2026-09-05.** For about a minute
+  `go build ./cmd/yarg-sync` died with *"the file contains a virus or potentially unwanted
+  software"* — `Trojan:Win32/Bearfoos.A!ml`, a machine-learning verdict on the shape of a small
+  unsigned Go HTTP downloader. **It stopped reproducing roughly forty minutes later with no
+  change to the machine**: same signature version, no exclusion added, three forced-relink builds
+  and three distinct binary hashes all built, survived and executed with zero new detections. The
+  verdict is cloud-delivered and was revised upstream.
+  **The lesson is the response, not the detection.** An `!ml` verdict is provisional. Re-measure
+  before doing anything structural: never add a Defender exclusion, never allow-list a threat ID,
+  and never suggest disabling protection to get a build through. If it recurs and persists,
+  submit the binary to Microsoft's false-positive form and sign the release artifact — those fix
+  it for players too. Detail in `docs/SYNC-CLIENT.md`.
 
 ## Two things that only look broken on ENG-1
 

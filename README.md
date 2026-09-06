@@ -102,10 +102,12 @@ the bytes that arrived, so a truncated or substituted file fails closed rather t
 Full behaviour, including the deterministic answer when two packages share a chart, is in
 [`docs/SYNC-CLIENT.md`](docs/SYNC-CLIENT.md).
 
-> **Windows:** Defender currently quarantines the unsigned `yarg-sync` binary as
-> `Trojan:Win32/Bearfoos.A!ml`. It is a machine-learning false positive on the shape of a small
-> Go HTTP downloader — the same one that hits many unsigned Go tools — and a code-signing
-> certificate is the real fix. The document above has the details and the escalation path.
+> **Windows:** an unsigned Go binary that downloads files can trip a machine-learning malware
+> verdict. Defender did exactly that to `yarg-sync` on 2026-09-05 — `Trojan:Win32/Bearfoos.A!ml`
+> — and then stopped on its own within the hour once the classifier was revised upstream. If you
+> hit it, re-test before doing anything drastic, and please don't add an antivirus exclusion or
+> turn protection off to run this. Signing the release binary is the real fix and is on the list.
+> Details and the escalation path are in the document above.
 
 ### Configuration
 

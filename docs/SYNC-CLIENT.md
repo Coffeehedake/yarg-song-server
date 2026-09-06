@@ -74,37 +74,59 @@ wants one copy, and the server refuses to guess: `GET /song/{hash}.sng` answers
 package hash, which is arbitrary but *deterministic*: two machines syncing the
 same server get the same bytes, which is what makes a shared library shared.
 
-## Windows Defender flags the binary (false positive)
+## Windows Defender flagged the binary once, then stopped (false positive)
 
-Measured on ENG-1, 2026-09-05: Defender quarantines `cmd/yarg-sync` builds as
+On 2026-09-05 between 20:26 and 20:27, four Defender detections fired on ENG-1
+against `cmd/yarg-sync` builds:
 
 ```
 Trojan:Win32/Bearfoos.A!ml      (ThreatID 2147731250)
 ```
 
-`go build ./cmd/yarg-sync` fails with *"the file contains a virus or potentially
-unwanted software"* before it can link.
+`go build ./cmd/yarg-sync` failed with *"the file contains a virus or
+potentially unwanted software"* before it could link, twice; the finished binary
+was quarantined twice more.
 
-This is a machine-learning heuristic (`!ml`) firing on the shape of the program,
-not on anything in it: a small, unsigned, statically linked Go executable that
-makes HTTP requests and writes files to disk is what a downloader-dropper looks
-like to a classifier. It is a well-known false positive for Go binaries. The
-server binary, which does not download anything, is not flagged.
+**By 21:10 the same day it no longer reproduced, with nothing changed on the
+machine.** Measured rather than assumed:
 
-Notes for whoever hits this next:
+| Test | Result |
+|---|---|
+| 3 × `go clean -cache` then build to `bin\`, then execute | built, survived, ran |
+| 3 × build with a different `-ldflags` version string (3 distinct SHA-256s) | built, survived, ran |
+| New detections across all six | **0** |
+| Defender signature version before and after | identical (`1.459.64.0`) |
+| Exclusions added | **none** |
 
-- **It is not a CI problem.** The runner is Linux; `release` and the container
-  image build fine. Only a Windows developer build hits it.
-- **Test binaries are not flagged**, which is why `internal/e2e` exercises the
-  client in-process instead of executing the built binary. A test that shelled
-  out would be red on the primary development machine for a reason that has
-  nothing to do with this code.
-- **The real fix is a code-signing certificate** for the Windows release
-  artifact. Until then, players who download `yarg-sync-windows-amd64.exe`
-  should expect the same warning, and the README says so.
-- Do not "fix" this by telling anyone to disable Defender. Submitting the
-  binary to Microsoft's false-positive form is the correct escalation, and
-  signing is the correct solution.
+Three distinct hashes ruling it out means this was not a per-file verdict cached
+clean — the classifier's answer itself changed. `!ml` verdicts are
+cloud-delivered and get revised upstream; this one was, within the hour.
+
+### What to do if it comes back
+
+**Re-measure first.** The detection above would have justified a permanent
+Defender exclusion if anyone had acted on it immediately, and that exclusion
+would still be there now, weakening the machine for a problem that had already
+evaporated. An `!ml` verdict is provisional by construction.
+
+If it recurs *and persists across a re-test*:
+
+- **Do not add a Defender exclusion**, do not allow-list the threat ID (that
+  allows the whole `Bearfoos.A!ml` family machine-wide, including true
+  positives), and never suggest disabling protection to get a build through.
+- **Submit the binary to Microsoft's false-positive form.** Free, and it fixes
+  the verdict for every player who downloads a release, not just for us.
+- **Sign the release artifact.** A code-signing certificate is the actual
+  solution for an unsigned executable that strangers download. Note that a
+  self-signed certificate does *not* help here — it does nothing for an ML
+  verdict.
+- It is not a CI problem in any case. The runner is Linux; `release` and the
+  container image are unaffected.
+
+`internal/e2e` still exercises the client in-process rather than executing the
+built binary. That was originally a workaround for this detection; it is worth
+keeping on its own merits, since it makes the suite independent of whatever any
+scanner thinks of a freshly linked executable on any given day.
 
 ## How this is verified
 
