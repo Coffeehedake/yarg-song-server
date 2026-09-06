@@ -2,10 +2,23 @@
 
 The server speaks one wire format for songs: `.sng`, whatever shape a song was found in on
 disk. That is the design commitment in ADR-001 — an unmodified YARG reads a `.sng` natively,
-so the sync client of Phase 2b can write ordinary files into an ordinary songs folder and the
-game needs no change at all.
+so a client can write ordinary files into an ordinary songs folder and the game needs no
+change at all.
 
 Everything below is v1 and unversioned only in the sense that `/api/v1` is the version.
+
+**This API has a first-party consumer.** `yarg-sync` (`cmd/yarg-sync`, documented in
+[`SYNC-CLIENT.md`](SYNC-CLIENT.md)) is built against it, and `internal/e2e` runs the real
+client against the real handler on every pipeline. Three things below are load-bearing for
+it rather than incidental, so changing them breaks a shipped binary:
+
+- **`POST /api/v1/have`** is how the client takes inventory in one round trip, and its
+  empty-list form is how `-prune` learns the server's full set.
+- **300 Multiple Choices** on a shared chart hash. The client relies on the server *not*
+  choosing, and resolves it deterministically itself so that two machines syncing the same
+  library end up byte-identical.
+- **`ETag` as the package hash, and `Range`.** Identity is re-derived from the received
+  bytes client-side, so a substituted or truncated response fails closed.
 
 ## Endpoints
 
