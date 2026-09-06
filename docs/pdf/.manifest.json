@@ -7,11 +7,12 @@
     "docs/ADR-003-archive-ingest.md": "07edb93d8403ea1edc76dc888644c7b23baabb1b5e062cc2d44882a3ef64c618",
     "docs/API.md": "5511a703feb478246f17b6fd7da152e8855eab6d38c35fa7405040c0ea21703b",
     "docs/DEPLOY-VAULT2.md": "d18ec1a57fa2a228730cc0e13c1c6bf07e05c7ff7baf9c972620e086aa98da25",
-    "docs/ROADMAP.md": "6973a93366bd2085f94f35a1483dff034e5692ab687fcb683fe0a040099984e8",
+    "docs/ROADMAP.md": "f667a96513b12f34fc449f47675cd9810d8b3f4b2768e2d8be046f9816a90456",
     "docs/SCALE.md": "1bc91a4b45177c426df8e9cf39ef499f96de2b21fe49c9fb8a5c1c9ea46a00a9",
     "docs/SOURCES.md": "ae8f29dc86ef0df75a7dbca575ef59a4c9c73f8cfa4c44b5a003facaf1627ad5",
-    "docs/SYNC-CLIENT.md": "aa1a98ed70cb04cc03bd346fb01ef99abf62d3caa7c1f855b488bb3c84c59ec4",
+    "docs/SYNC-CLIENT.md": "8e172cd857c7258974d20632035359195ee9e163460258472c032f282388b8dc",
     "docs/TEST-CORPUS.md": "f565bd8f64c2351f093aa2806f03606c8c77f2aa6d123a4b5c0a782e54f2525b",
+    "docs/UPSTREAM.md": "81499d4bb2a1f9ec6879680c6270d95c4a41d8bd0481fb009bc9071e38feba0b",
     "docs/research/chart-preparsing.md": "5bbb0183f6b574ed54a215e48f7b3069aeedde551d7579438c68f270f5ec6e92",
     "docs/research/yarg-song-formats.md": "650bf169a65356c832ed474dd7293183e0649b2a09c11340b8a0949d5bb3e900"
   }

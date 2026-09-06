@@ -484,10 +484,33 @@ Only now does the `yarg/` fork get touched. This is the upstream-facing work.
 
 - Add an HTTP song source alongside local folders — browse, stream, cache.
 - Touches YARG's song cache, so it must be designed with upstream in mind rather than bolted on.
-- Upstream posture: `CONTRIBUTING.md` says nothing about networking or remote sources in any of
-  its six tiers. That is an absence, not an endorsement — **open a discussion with YARC before
-  building the PR**, and frame it as a content source, not a new game mode.
 - PRs target `dev`. Never `master`.
+
+**Decided 2026-09-06: build it in the fork now, and approach upstream in parallel. Their answer
+shapes this work; it does not block it.** That is a deliberate choice rather than impatience —
+their own contributing guide invites experimentation on undecided features and says large
+progress can promote a tier, so a working implementation is a better opening than a proposal.
+
+**Reconnaissance done 2026-09-06**, recorded in [`UPSTREAM.md`](UPSTREAM.md) with the draft
+post:
+
+- **Their `CONTRIBUTING.md` sorts every feature into six tiers, and the tier decides whether a
+  PR is even read.** A remote song source matches none of the published examples, so *which
+  tier* is the first question — and asking it on Discord before building is what their guide
+  explicitly tells contributors to do.
+- **Nothing upstream proposes this.** Searched their issues: the nearest is **#860**, a built-in
+  web server for search and queueing from a phone — a *control plane*, not a content source, and
+  worth not conflating with this. `#1030 "user-supplied song sources"` is about source **icons**.
+- **Two of our three permanent non-goals are things upstream has independently ruled out.** CON
+  Decryption is in their Out of Scope list, verbatim: *"Do NOT PR these features. Your PR will
+  immediately be denied."* We are not asking them for anything they have already refused, and
+  saying so is worth a sentence in the opening post.
+- **The ask is smaller than it sounds.** The server already hands out plain `.sng` that
+  unmodified YARG reads, so this is not "support our protocol to play our songs" — it is "fetch
+  from a URL instead of needing a separate sync tool". The seam underneath is that `SongEntry`
+  is abstract but `ActualLocation`, `SortBasedLocation` and `GetLastWriteTime()` all assume a
+  local path; *a song entry whose bytes are not on disk* is a general capability rather than a
+  feature about our server, and may be an easier thing for upstream to want.
 
 **Exit criterion:** the fork can browse and play from a server without a sync step, and a
 discussion thread exists upstream.

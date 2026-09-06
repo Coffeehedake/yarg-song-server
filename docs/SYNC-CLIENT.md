@@ -132,10 +132,37 @@ If it recurs *and persists across a re-test*:
   **The signing identity is decided: FatalException.** This is a personal
   project and is signed as one; it is never signed as Juniper Design Group,
   whose certificate would attach a company's name and liability to a personal
-  release. What is still open is which *kind* of certificate — the options
-  differ mainly in how quickly SmartScreen reputation accrues, and some require
-  a registered legal entity rather than an individual, which is the question to
-  settle before pricing anything.
+  release.
+
+  **FatalException is a brand, not a registered legal entity, and that settles
+  the certificate question more than price does.** Organization-validated and
+  EV certificates validate an organization; with no entity to validate, the
+  certificate is issued to the *individual* instead. Two consequences, both
+  worth knowing before anything is bought:
+
+  - **The publisher string Windows shows will be the developer's validated
+    legal name, not "FatalException".** Individual-validated certificates carry
+    the person. That does not change what this project is *branded* as — the
+    docs and PDFs stay FatalException — but a player clicking through SmartScreen
+    sees a person's name, and it is better to decide that is acceptable now than
+    to discover it after paying.
+  - Microsoft's own guidance points individual developers at **Azure Artifact
+    Signing** (formerly Trusted Signing), which explicitly supports individuals
+    but **only in the USA and Canada** — which covers us — at roughly $10/month.
+    Outside those countries, or if the individual tier is unsuitable, an OV
+    certificate from a commercial CA is the documented fallback at roughly
+    $150–300/year. Prices and eligibility both move; re-check them at the point
+    of purchase rather than trusting this paragraph.
+
+  A **self-signed certificate does not help** and is worth ruling out explicitly:
+  it does nothing for an ML verdict and nothing for SmartScreen, because neither
+  trusts it.
+
+  **Owning a domain does not change any of this.** `badassium.com` is a fine
+  identity for the project and domain control does matter to some validation
+  flows, but a domain is not a legal entity: it does not make an
+  organization-validated certificate available, and it cannot appear as the
+  publisher in place of a person's name.
 - It is not a CI problem in any case. The runner is Linux; `release` and the
   container image are unaffected.
 
