@@ -149,6 +149,21 @@ container-image:
     # networking gives buildkit the same view the daemon has.
     - docker buildx inspect "$BUILDX_BUILDER" >/dev/null 2>&1 || docker buildx create --name "$BUILDX_BUILDER" --driver docker-container --driver-opt network=host --bootstrap
     - docker buildx use "$BUILDX_BUILDER"
+    # VERIFY BEFORE PUBLISHING. The first version of this job pushed first and
+    # checked afterwards, which meant a failed check left the image in the
+    # registry anyway - and on the default branch `latest` had already moved to
+    # it. Publishing something and then finding out it was wrong is not a
+    # verification step, it is a rollback problem.
+    #
+    # The check is LOCAL rather than against the registry, and that is not a
+    # workaround either. The GitLab-CE container resolves through Docker's
+    # embedded DNS and cannot resolve registry.badassium.com at all - only the
+    # host can, which is why the push works and an imagetools inspect does not.
+    # Asking the registry would prove what a manifest CLAIMS; this proves what
+    # the image CONTAINS, which is what decides whether it runs on a Pi.
+    #
+    # It builds each platform with --load, so the push below is a cache hit.
+    - ./ci/verify-multiarch.sh
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
     - |
       VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo "$CI_COMMIT_SHORT_SHA")"
@@ -163,17 +178,6 @@ container-image:
         "$@" \
         --push \
         .
-    # Exit 0 from buildx is NOT evidence the image is really multi-arch, and an
-    # amd64 binary under an arm64 manifest entry would pass every check that
-    # only reads exit codes - and then fail to start on the Pi.
-    #
-    # This verifies LOCALLY rather than against the registry, and that is not a
-    # workaround. The GitLab-CE container resolves through Docker's embedded DNS
-    # and cannot resolve registry.badassium.com at all - only the host can, which
-    # is why the push works and an imagetools inspect does not. Asking the
-    # registry would prove what a manifest CLAIMS; this proves what the image
-    # CONTAINS, which is what decides whether it runs on a Pi.
-    - ./ci/verify-multiarch.sh
   after_script:
     - docker logout "$CI_REGISTRY" 2>/dev/null || true
     # Remove the builder rather than leaving it behind. buildx's own state lives
