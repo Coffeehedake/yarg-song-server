@@ -34,6 +34,13 @@ config.local.*
 *.con
 *_rb3con
 
+# Arbiter's archived handoffs. They are plaintext working notes, they mention
+# internal hostnames and infrastructure, and this repo is mirrored publicly to
+# GitHub -- so a stray `git add -A` would publish them. None has ever been
+# tracked; this makes that deliberate rather than lucky. Delete the folder
+# freely, nothing reads it back.
+/.arbiter/
+
 # editors / os
 .vscode/
 .idea/
