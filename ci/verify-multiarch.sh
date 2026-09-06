@@ -72,7 +72,7 @@ check_platform() {
     docker rmi "$tag" >/dev/null 2>&1 || true
 }
 
-check_platform linux/amd64 amd64 3e00
+check_platform linux/amd64 amd64 b700   # DELIBERATELY WRONG - red proof
 check_platform linux/arm64 arm64 b700
 
 if [ "$fail" -ne 0 ]; then
