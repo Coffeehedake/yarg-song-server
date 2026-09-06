@@ -317,7 +317,19 @@ and exercises the whole server end-to-end.
       not flagged at all, and `PreparseUltraStar` skipped note derivation whenever `#TITLE` was
       missing, so a chart reported zero parts for a song that plays. Both fixed and red-proofed;
       write-up in `docs/TEST-CORPUS.md`.
-- [ ] Ship it on the Pi alongside the server and run the exit criterion for real.
+- [x] **Run the server as a container, off the development machine** — done 2026-09-05 on vault2.
+      The published image had never actually been executed before this; CI only ever checked the
+      image config's architecture and the binary's ELF machine type, which are checks on bytes.
+      It now runs: 8.6 MB distroless, indexed 22 songs in 7 ms, `version=827e0fe`. `yarg-sync`
+      from ENG-1 over Tailscale pulled 22/22 in 341 ms, byte-identical to the localhost run, and
+      a second sync transferred nothing. **Unmodified YARG on the result: 20 accepted, 2 refused**
+      — the same two, both flagged by our scanner. Write-up in `docs/DEPLOY-VAULT2.md`.
+- [ ] **Execute the arm64 image on real ARM hardware.** Still unmeasured, and the reason the Pi
+      goal is not closed: `plzpi` is unreachable and there is no Pi on the tailnet at all. The
+      arm64 binary is verified by ELF machine type only. Until something runs it, "portable to
+      Raspberry Pi" is a claim.
+- [ ] **The exit criterion needs a second client.** Only ENG-1 has YARG; r7 has no YARG, no
+      settings directory and no Go. The server half and one client are done.
 
 **Resolved, and worth remembering for the response rather than the event:** on 2026-09-05 a
 Defender machine-learning verdict (`Trojan:Win32/Bearfoos.A!ml`) quarantined `cmd/yarg-sync`
