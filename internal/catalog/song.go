@@ -194,10 +194,22 @@ const (
 	// the file is invisible to the player.
 	IssueNoMetadataSection = "no_metadata_section"
 
+	// IssueNoNotes: the chart parsed cleanly and contains no playable notes on
+	// any instrument at any difficulty. YARG rejects it - "No notes found" in
+	// its badsongs report, measured against 13-mid-beats-chart on 2026-09-05,
+	// a notes.mid holding a beat track and nothing else.
+	//
+	// Only ever raised when PartsDerived is true. Zero difficulties on a chart
+	// we failed to parse means "not determined", and reporting that as "no
+	// notes" would be asserting something we did not measure.
+	IssueNoNotes = "no_notes"
+
 	// IssueUltraStarNoTitle: an UltraStar notes.txt with no #TITLE tag. Unlike
 	// every other format, UltraStar takes its title from the chart rather than
-	// song.ini, and YARG refuses the song outright when it is missing -
-	// "Name metadata not provided".
+	// song.ini. As a LOOSE FOLDER YARG refuses it - "Name metadata not
+	// provided". Packed into a .sng it PLAYS, because the packer writes the
+	// name into the archive's metadata section from song.ini. Both measured
+	// against the oracle; the second is why this is a note and not a refusal.
 	IssueUltraStarNoTitle = "ultrastar_no_title"
 )
 
@@ -244,6 +256,29 @@ type Parts struct {
 	HarmonyVocals PartValues `json:"harmony_vocals"`
 
 	BandDifficulty PartValues `json:"band_difficulty"`
+}
+
+// AnyPlayableNotes reports whether any instrument carries at least one
+// difficulty.
+//
+// BandDifficulty is deliberately excluded: it is a band-wide rating, not an
+// instrument anyone plays, so a song carrying only that would still be a song
+// with nothing to play. It is listed here explicitly rather than skipped
+// silently, because a future part added to the struct and forgotten here would
+// make this quietly answer the wrong question.
+func (p *Parts) AnyPlayableNotes() bool {
+	for _, v := range []PartValues{
+		p.FiveFretGuitar, p.FiveFretBass, p.FiveFretRhythm, p.FiveFretCoopGuitar,
+		p.SixFretGuitar, p.SixFretBass, p.SixFretRhythm, p.SixFretCoopGuitar,
+		p.FourLaneDrums, p.ProDrums, p.FiveLaneDrums, p.EliteDrums,
+		p.ProGuitar17Fret, p.ProGuitar22Fret, p.ProBass17Fret, p.ProBass22Fret,
+		p.ProKeys, p.Keys, p.LeadVocals, p.HarmonyVocals,
+	} {
+		if v.Difficulties != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // NewParts returns Parts with every slot marked unknown rather than zero, so

@@ -69,8 +69,19 @@ func PreparseUltraStar(data []byte) (*Result, *UltraStar, error) {
 
 	r := newResult()
 	if !us.HasTitle {
-		r.note("UltraStar chart has no #TITLE; YARG refuses such a chart outright")
-		return r, us, nil
+		// This used to return here without deriving any part, on the belief
+		// that YARG refuses a title-less UltraStar chart outright and so its
+		// contents did not matter. The oracle disproved that on 2026-09-05:
+		// packed into a .sng the song PLAYS, because the packer writes the
+		// name into the archive metadata from song.ini. Returning early made
+		// 21-ultrastar-no-title report zero parts while its byte-identical
+		// twin 20-ultrastar reported vocals - the only difference between the
+		// two files is the #TITLE line.
+		//
+		// What a chart CONTAINS does not depend on whether it is titled. The
+		// title is a metadata question, raised as an issue by the caller, and
+		// note derivation carries on below regardless.
+		r.note("UltraStar chart has no #TITLE; YARG refuses it as a loose folder, but plays it once packed, because the name then comes from the archive metadata")
 	}
 
 	// Vocals only, always at Expert - UltraStar has no difficulty tiers.

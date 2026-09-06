@@ -38,6 +38,16 @@ Then, by subject:
   it is more sensible.
 - Chart-file priority order (`notes.mid` → `notes.midi` → `notes.chart` → `notes.txt`) is
   load-bearing. Hashing the wrong file in a folder that has two produces a wrong identity silently.
+- **What a chart CONTAINS never depends on its metadata.** A preparser that skips deriving notes
+  because a title is missing, a format is odd, or the song "will be rejected anyway" is wrong even
+  when the rejection prediction is right — and on 2026-09-05 it was not right. `PreparseUltraStar`
+  returned early on a missing `#TITLE`, so `21-ultrastar-no-title` reported zero parts while its
+  byte-identical twin reported vocals. Keep parsing; raise an issue separately.
+- **A green must come from the thing being tested, not from the tester noticing something.** The
+  second oracle run recorded "no part carries any difficulty" as though the scanner had flagged a
+  song; it had raised no issue at all, and the run was written up as passing a standard it failed.
+  If you find yourself reading a JSON field to decide whether something was caught, the answer is
+  that it was not caught.
 - **A Defender false positive on `cmd/yarg-sync` came and went on 2026-09-05.** For about a minute
   `go build ./cmd/yarg-sync` died with *"the file contains a virus or potentially unwanted
   software"* — `Trojan:Win32/Bearfoos.A!ml`, a machine-learning verdict on the shape of a small

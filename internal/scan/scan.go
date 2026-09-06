@@ -138,6 +138,24 @@ func scan(fsys fs.FS, names []string, ini *songini.File) (*catalog.Song, error) 
 			Detail: "no recognised audio stem; YARG rejects a chart with no accompanying audio",
 		})
 	}
+
+	// A chart with nothing to play is refused too - "No notes found". Found by
+	// the oracle on 2026-09-05, not by a unit test: YARG rejected
+	// 13-mid-beats-chart (a notes.mid carrying a beat track and no note
+	// tracks) while this scanner reported it clean, which broke the standard
+	// this project holds itself to - every song YARG rejects should be one we
+	// independently flag.
+	//
+	// The PartsDerived guard is load-bearing rather than defensive. Zero
+	// difficulties on a chart we could not parse means "not determined", and
+	// the catalog documents that distinction on the field itself; calling that
+	// "no notes" would report a conclusion we never reached.
+	if s.PartsDerived && !s.Parts.AnyPlayableNotes() {
+		s.Issues = append(s.Issues, catalog.Issue{
+			Code:   catalog.IssueNoNotes,
+			Detail: "chart parsed but contains no playable notes on any instrument; YARG rejects it with \"No notes found\"",
+		})
+	}
 	return s, nil
 }
 

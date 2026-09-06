@@ -286,10 +286,65 @@ func buildTestSNG(t *testing.T, meta [][2]string, files [][2]string) []byte {
 	return b.Bytes()
 }
 
-// The three cases below are not hypotheticals: each was produced by generating
+// The four cases below are not hypotheticals: each was produced by generating
 // a corpus with cmd/mkcorpus, scanning it with a real YARG v0.15.0 install, and
 // reading YARG's own badsongs report and song cache. They are the only findings
 // in this package that came from an oracle rather than from our own reasoning.
+
+// TestNoNotesIsFlaggedBecauseYARGRejectsIt covers the fourth oracle finding,
+// 2026-09-05: YARG refused 13-mid-beats-chart with "No notes found" while this
+// scanner reported it clean. A chart can parse perfectly and still contain
+// nothing anyone can play.
+func TestNoNotesIsFlaggedBecauseYARGRejectsIt(t *testing.T) {
+	f := fstest.MapFS{
+		"song.ini":    {Data: []byte(sampleINI)},
+		"notes.chart": {Data: []byte("[Song]\n{\n  Resolution = 192\n}\n")},
+		"song.ogg":    {Data: []byte("audio")}, // present, so only no_notes can fire
+	}
+	s, err := ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.PartsDerived {
+		t.Fatal("parts were not derived from a chart that parses; the guard below would be vacuous")
+	}
+	if !hasIssue(s.Issues, catalog.IssueNoNotes) {
+		t.Fatalf("note-less chart not flagged; YARG reports \"No notes found\". issues=%+v", s.Issues)
+	}
+	if hasIssue(s.Issues, catalog.IssueNoAudio) {
+		t.Fatalf("no_audio fired on a song that has audio. issues=%+v", s.Issues)
+	}
+	// Flagged, never dropped - same reasoning as the audio case.
+	if s.ChartHash == "" {
+		t.Fatal("song was dropped rather than flagged")
+	}
+}
+
+// TestNoNotesIsNotClaimedWhenPartsWereNeverDerived is the guard, tested rather
+// than trusted. A chart we could not parse has zero difficulties for a reason
+// that is not "there are no notes", and saying otherwise would report a
+// conclusion we never reached. A file named notes.mid that is not a real MIDI
+// leaves PartsDerived false.
+func TestNoNotesIsNotClaimedWhenPartsWereNeverDerived(t *testing.T) {
+	f := fstest.MapFS{
+		"song.ini":  {Data: []byte(sampleINI)},
+		"notes.mid": {Data: []byte("this is not a standard MIDI file")},
+		"song.ogg":  {Data: []byte("audio")},
+	}
+	s, err := ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.PartsDerived {
+		t.Fatal("parts reported as derived from a file that is not a MIDI; this test proves nothing now")
+	}
+	if hasIssue(s.Issues, catalog.IssueNoNotes) {
+		t.Fatalf("claimed \"no notes\" about a chart that was never parsed. issues=%+v", s.Issues)
+	}
+	if len(s.PartsNotes) == 0 {
+		t.Fatal("the unparseable chart was not recorded in PartsNotes")
+	}
+}
 
 func TestNoAudioIsFlaggedBecauseYARGRejectsIt(t *testing.T) {
 	f := fstest.MapFS{

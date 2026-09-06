@@ -310,8 +310,13 @@ and exercises the whole server end-to-end.
       and `packcache` against the real client. Stubs prove one side's logic; only this catches
       the two sides disagreeing about the wire. All five tests were red-proofed by breaking the
       code they cover.
-- [ ] Run it against the oracle: a real YARG install pointed at a folder `yarg-sync` filled.
-      Until that is measured, "unmodified YARG just sees files" is a claim, not a result.
+- [x] **Run it against the oracle** — done 2026-09-05. YARG v0.15.0 pointed at a folder
+      `yarg-sync` filled: **20 of 22 accepted**, the two refusals being the two our scanner flags.
+      "Unmodified YARG just sees files" is now a measured result rather than a claim. The run
+      found the fifth oracle finding and two real defects — a `notes.mid` with no note tracks was
+      not flagged at all, and `PreparseUltraStar` skipped note derivation whenever `#TITLE` was
+      missing, so a chart reported zero parts for a song that plays. Both fixed and red-proofed;
+      write-up in `docs/TEST-CORPUS.md`.
 - [ ] Ship it on the Pi alongside the server and run the exit criterion for real.
 
 **Resolved, and worth remembering for the response rather than the event:** on 2026-09-05 a

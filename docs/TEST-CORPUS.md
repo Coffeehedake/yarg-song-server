@@ -213,11 +213,17 @@ The two refusals, and our own independent verdict on the same archive:
 
 | Archive | YARG said | Our scanner said |
 |---|---|---|
-| `30334065…` "Mid Beats Chart" | `No notes found` | `parts_derived: true`, no part carries any difficulty |
+| `30334065…` "Mid Beats Chart" | `No notes found` | **nothing — no issue at all** |
 | `4ec68053…` "No Audio" | `No audio accompanying the chart file` | issue `no_audio`, no stems |
 
-So the standard holds on the served archives as it does on the folders: **every song YARG
-rejects is one this scanner independently flags.**
+> **This section originally claimed the standard held, and it did not.** The row above used to
+> read *"`parts_derived: true`, no part carries any difficulty"* — which is an observation
+> somebody made by reading the JSON, not an issue the scanner raised. The scanner emitted **no
+> issue whatsoever** for `30334065…`. Reading a field by eye and recording it as though the
+> software had flagged it turned a miss into a pass, and the conclusion drawn from it — "the
+> standard holds" — was false for one of the two songs it was about. Corrected on the third run
+> below, where the gap was found and closed. The lesson is narrower than "check your work":
+> **a green must come from the thing being tested, not from the tester noticing something.**
 
 ### What this run turned up: packing gives an untitled UltraStar chart a title
 
@@ -228,11 +234,115 @@ not provided"). Our scanner flags it `ultrastar_no_title`.
 
 As a **`.sng` produced by this server**, YARG accepted it. That is not a packing bug: in a `.sng`
 the metadata lives in the archive's header section, and `PackDir` fills that section from
-`song.ini`, so the song genuinely has a title. Our scanner reports no issue for the archive,
-which agrees with the client in both forms.
+`song.ini`, so the song genuinely has a title — scanning the archive shows its name resolved to
+"Has A Name In song.ini".
+
+**Correction, measured 2026-09-05 on the third run:** this paragraph used to end *"Our scanner
+reports no issue for the archive, which agrees with the client in both forms."* It does not.
+Serving the packed archives and reading `/api/v1/songs` returns `ultrastar_no_title` on the
+archive as well, because the `notes.txt` inside it still has no `#TITLE`. That is a caveat on a
+song YARG plays, not a claim that YARG refuses it, and the issue text now says so in both
+directions. Worth keeping rather than suppressing: the chart really is missing a tag, and a
+player repacking it elsewhere would meet the folder behaviour again.
 
 It is worth writing down anyway, because it means one sentence people will reasonably assume is
 not quite true: **the server does not always serve exactly what the folder was.** For this one
 format, repacking makes a song playable that was not. Nothing to fix; something to know before
 the Phase 2b sync client starts writing archives into a player's songs folder and a song appears
 that the player could not previously play.
+
+---
+
+## Third oracle run — 2026-09-05, against a folder `yarg-sync` filled
+
+The first run scanned loose folders. The second scanned archives downloaded by hand from the
+running server. This one is the Phase 2b exit criterion itself: **the real sync client filled an
+ordinary songs folder, and an unmodified YARG was pointed at it.** Nothing between the server and
+the game was done by hand.
+
+```powershell
+.\bin\yarg-song-server.exe -songs $env:USERPROFILE\yarg-test\corpus -data .\data -listen 127.0.0.1:8099
+.\bin\yarg-sync.exe -server http://127.0.0.1:8099 -songs $env:USERPROFILE\yarg-test\phase2b\synced
+# point YARG's SongFolders at that folder, delete songcache.bin, launch, wait ~45s,
+# then read badsongs.txt beside it
+```
+
+| Step | Outcome |
+|---|---|
+| Index the corpus | 22 songs, 22 distinct charts, 0 problems |
+| `yarg-sync` from an empty folder | 22 downloaded, 0 failed, 229,515 bytes in 505 ms |
+| Every archive verified by re-derived identity | 22 / 22 |
+| **YARG scans the synced folder** | **20 accepted, 2 refused** |
+
+The refusals were the same two, for the same reasons, at the paths the client wrote:
+
+```
+C:\Users\ENG2\yarg-test\phase2b\synced\30334065…sng   No notes found
+C:\Users\ENG2\yarg-test\phase2b\synced\4ec68053…sng   No audio accompanying the chart file
+```
+
+**So the Phase 2b claim is now measured rather than asserted: an unmodified YARG plays from a
+folder this client filled, and it does so with no change to the game.**
+
+### The fifth thing the oracle found, and the fourth defect
+
+`13-mid-beats-chart` is a `notes.mid` carrying a beat track and no note tracks. YARG refuses it —
+`No notes found`. **Our scanner reported it clean.** Not "flagged with a different code": no
+issue at all. That breaks the standard this project exists to hold, and it had been recorded as a
+pass on the previous run (see the correction above).
+
+Chasing it turned up a second, deeper defect. Two corpus cases are byte-identical apart from one
+line:
+
+| | `20-ultrastar` | `21-ultrastar-no-title` |
+|---|---|---|
+| `#TITLE` line | present | **absent** |
+| every other byte | identical | identical |
+| difficulties we derived | 8 | **0** |
+
+`PreparseUltraStar` returned early without deriving any part when `#TITLE` was missing, on the
+belief — written into the code and into a test — that YARG refuses such a chart outright, so its
+contents did not matter. **The second oracle run had already disproved that belief** (packed, the
+song plays) without anyone noticing that a function elsewhere still depended on it. So the server
+reported a song with no playable parts, for a song that plays.
+
+That also made the obvious fix for the first defect wrong. A blanket "zero difficulties means no
+notes" rule would have flagged `21-ultrastar-no-title`, which YARG accepts — a false positive
+created by building on a known-bad number.
+
+Both are fixed:
+
+- `PreparseUltraStar` derives notes regardless of the title. What a chart *contains* does not
+  depend on whether it is titled. The missing tag is recorded as a note, and the title question
+  stays where it belongs, in the metadata layer.
+- A new issue, `no_notes`, is raised when a chart parses cleanly and no instrument carries any
+  difficulty. It is guarded on `PartsDerived`, because zero difficulties on a chart we *failed*
+  to parse means "not determined" — the catalog already documents that distinction on the field
+  itself, and claiming "no notes" there would report a conclusion never reached.
+- `ultrastar_no_title`'s text asserted that YARG "refuses the song". It now states both measured
+  behaviours: refused as a loose folder, played once packed.
+
+Each change was red-proofed before its green was believed. Removing the `no_notes` check failed
+`TestNoNotesIsFlaggedBecauseYARGRejectsIt` and nothing else; dropping the `PartsDerived` guard
+failed `TestNoNotesIsNotClaimedWhenPartsWereNeverDerived` and nothing else; restoring the
+UltraStar early return failed both UltraStar tests and nothing else.
+
+After the fix, the corpus reads:
+
+| Corpus case | Difficulties | Issues | YARG |
+|---|---|---|---|
+| `13-mid-beats-chart` | 0 | **`no_notes`** | refused |
+| `19-no-audio` | 8 | `no_audio` | refused |
+| `21-ultrastar-no-title` | **8** (was 0) | `ultrastar_no_title` | accepted |
+| the other 19 | 8 or 16 | none, or a metadata caveat | accepted |
+
+**The two songs YARG refuses are exactly the two this scanner flags as refusals.** Song identity
+was re-checked and is unchanged by all of this — `SHA1(chart bytes)` does not move because our
+derivation improved.
+
+### What is still not measured
+
+One real YARG version, on one machine, against a corpus we wrote ourselves. The corpus is
+adversarial by design, but it is still ours: it cannot contain the case nobody thought of. A
+larger body of real community charts would test different things, and the licensing constraints
+on where those may come from are in the section above.

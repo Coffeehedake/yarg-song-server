@@ -32,10 +32,18 @@ func TestUltraStarMetadataComesFromTheChart(t *testing.T) {
 	}
 }
 
-// This is the exact failure YARG reported on our corpus: it refuses an
-// UltraStar chart with no TITLE, and the title comes from the .txt rather than
-// from song.ini.
-func TestUltraStarWithoutTitleIsRejectable(t *testing.T) {
+// TestUltraStarWithoutTitleStillHasItsNotes replaces an earlier test that
+// asserted the opposite.
+//
+// That test required that NO vocals part be reported for a title-less chart,
+// on the belief that YARG refuses such a song outright so its contents were
+// moot. The oracle disproved the belief on 2026-09-05: packed into a .sng the
+// song plays, because the packer writes the name into the archive metadata
+// from song.ini. The test was not wrong about YARG's behaviour on a loose
+// folder; it was wrong to conclude that a refused song has no notes.
+//
+// What a chart CONTAINS does not depend on whether it is titled.
+func TestUltraStarWithoutTitleStillHasItsNotes(t *testing.T) {
 	r, us, err := PreparseUltraStar([]byte("#ARTIST:Someone\n#BPM:120\n: 0 4 0 x\nE\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -43,11 +51,39 @@ func TestUltraStarWithoutTitleIsRejectable(t *testing.T) {
 	if us.HasTitle {
 		t.Fatal("HasTitle true with no TITLE tag")
 	}
-	if r.Has(LeadVocals) {
-		t.Fatal("a vocals part was reported for a chart YARG refuses")
+	if !r.Has(LeadVocals) {
+		t.Fatal("no vocals part reported for a title-less chart that has note lines; " +
+			"it plays once packed, and reporting zero parts made it look empty")
 	}
 	if len(r.Notes) == 0 {
-		t.Fatal("the rejection reason was not recorded")
+		t.Fatal("the missing-title caveat was not recorded")
+	}
+}
+
+// TestUltraStarTitleDoesNotChangeDerivedParts is the property the bug above
+// violated, stated directly: two charts that differ ONLY by their #TITLE line
+// must derive identical parts.
+//
+// This is the shape of the corpus pair that exposed it — 20-ultrastar and
+// 21-ultrastar-no-title are byte-identical apart from that one line, and the
+// server reported vocals for one and nothing for the other.
+func TestUltraStarTitleDoesNotChangeDerivedParts(t *testing.T) {
+	const body = "#ARTIST:Corpus Artist\n#ALBUM:Corpus Album\n#BPM:120\n#GAP:0\n#MP3:song.ogg\n: 0 4 0 Hel~\n: 4 4 2 lo\n- 8\nE\n"
+
+	titled, _, err := PreparseUltraStar([]byte("#VERSION:1.0.0\n#TITLE:A Real Title\n" + body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	untitled, _, err := PreparseUltraStar([]byte("#VERSION:1.0.0\n" + body))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []Part{LeadVocals, HarmonyVocals} {
+		if got, want := untitled.Difficulties[p], titled.Difficulties[p]; got != want {
+			t.Errorf("%v: untitled chart derived %v, titled twin derived %v; "+
+				"the only difference between these two inputs is a #TITLE line", p, got, want)
+		}
 	}
 }
 

@@ -133,13 +133,17 @@ func applyDrumOverrides(res *chart.Result, ini *songini.File) {
 // values in place would put a different title in our catalog from the one the
 // player sees, which is the same class of bug as the headerless-song.ini case.
 //
-// A chart with no TITLE is refused outright by YARG, so it is flagged rather
-// than served as if it were playable.
+// A chart with no TITLE is flagged, because its title behaviour differs
+// between the two forms this server deals in - see the issue detail.
 func applyUltraStarMetadata(s *catalog.Song, us *chart.UltraStar) {
 	if !us.HasTitle {
 		s.Issues = append(s.Issues, catalog.Issue{
-			Code:   catalog.IssueUltraStarNoTitle,
-			Detail: "UltraStar chart has no #TITLE; YARG refuses the song with \"Name metadata not provided\"",
+			Code: catalog.IssueUltraStarNoTitle,
+			// Both halves measured against a real YARG install, 2026-09-05.
+			// The earlier wording asserted only the first half as though it
+			// settled the matter, which made this server look wrong about a
+			// song the game happily plays.
+			Detail: "UltraStar chart has no #TITLE; YARG refuses it as a loose folder (\"Name metadata not provided\") but plays it once packed, because the .sng metadata section carries the name from song.ini",
 		})
 		return
 	}
