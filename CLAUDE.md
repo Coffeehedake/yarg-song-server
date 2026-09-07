@@ -219,7 +219,14 @@ Get-Content "$env:USERPROFILE\AppData\LocalLow\YARC\YARG\release\badsongs.txt"
 ```
 
 `badsongs.txt` is YARG's verdict on every song it refused. The standard to hold: **every song
-YARG rejects should be one this scanner independently flags.** That is true as of the 23-case
+YARG rejects should be one this scanner independently flags.**
+
+**Say WHICH YARG.** The oracle is the installed release, **v0.15.0**; the fork is built on
+**`dev`**, and on 2026-09-07 they were measured disagreeing about a real song — `dev` refuses
+a `song.ini` with no `song_length` and calls it chart corruption, v0.15.0 accepts it. So an
+oracle run says "held against v0.15.0" and nothing more. To ask the same question of `dev`,
+run `Editor.ScanFolderProbe.Run` in the fork with `YARG_SCAN_FOLDER` set. Details and the A/B
+are in `docs/TEST-CORPUS.md`. That is true as of the 23-case
 corpus, most recently on 2026-09-06 (21 accepted, 2 refused, and exactly those two flagged by us);
 if a change breaks it, the change is wrong or the reason is worth writing down.
 

@@ -118,7 +118,8 @@ Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 > of needing a separate tool.
 >
 > I read through `YARG.Core` and the Unity side before writing this, so I can ask something
-> more specific than "would you like this feature". Five questions, smallest first:
+> more specific than "would you like this feature". Five questions, smallest first — plus one
+> thing I ran into that may be a bug rather than a request:
 >
 > **1. Would you take `SngFile.TryLoadFromStream(Stream, bool)` on its own?**
 > `TryLoadFromFile` opens the `FileStream` itself, but everything after the first few lines
@@ -148,7 +149,20 @@ Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 > HTTPS from the server, or make it an opt-in per host? I'd rather match whatever you'd
 > want than pick one and find out later.
 >
-> **5. Which tier does a remote song source fall into, and is anyone already on it?**
+> **5. Is `dev` meant to refuse a song whose `song.ini` has no `song_length`?**
+> Not part of the above — I hit it while testing and it looks like it might be a regression,
+> so I'd rather mention it than not. Same song both times, chart copied byte for byte, 3 MB
+> ogg, the two folders differing by exactly one line of `song.ini`:
+>
+> - v0.15.0: both accepted, no `badsongs.txt` at all
+> - `dev` (`3673672`): the one without `song_length` refused, *"Corruption of either the ini
+>   file or chart/mid file"*
+>
+> If that's deliberate, no problem — but the message points at the chart, which sent me
+> looking in the wrong place for a while, and plenty of community charts leave `song_length`
+> out. Happy to open an issue with the two folders if it's useful.
+>
+> **6. Which tier does a remote song source fall into, and is anyone already on it?**
 > It doesn't match any of the CONTRIBUTING examples and I couldn't find an issue for it — the
 > closest is #860, which is search/queue from a phone rather than a source of songs. Happy to
 > stay out of the way if someone's already working on it.

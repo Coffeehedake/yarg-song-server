@@ -834,3 +834,70 @@ about the subject either way.
 locally-built `yarg-song-server` on `127.0.0.1`, so it costs nothing and touches no
 deployment. The generated audio is zero-filled, so unlike the real corpus this one is safe to
 commit if it ever needs to be.
+
+
+## The oracle is a different YARG from the one the fork is built on
+
+Found 2026-09-07, by accident, while checking that the fork's song-server mirror produces
+songs YARG will actually scan. It is recorded here because it undermines a method this
+project has been relying on, not because of the bug itself.
+
+### What was measured
+
+Faith No More — "Easy" from the real corpus. Two folders, the **chart copied byte for byte**
+(94 KB `notes.mid`) and the same 3 MB `song.ogg`, differing by exactly one line of
+`song.ini`:
+
+```
+song_length = 190676
+```
+
+| | with `song_length` | without `song_length` |
+|---|---|---|
+| **YARG v0.15.0** — the oracle | accepted | **accepted**, no `badsongs.txt` written at all |
+| **YARG `dev` `3673672`** — what the fork is built on | accepted | **refused**: *"Corruption of either the ini file or chart/mid file"* |
+| our scanner | indexed | indexed, **not flagged** |
+
+Isolated by bisecting six synthetic variants that differed only in which `song.ini` keys were
+present, then confirmed on the real song above so the result could not be blamed on synthetic
+audio. `song_length` is the only variable.
+
+Current `dev` refuses a song for omitting an **optional** metadata key, and attributes it to
+chart corruption — which is not what happened and would send anyone debugging it to the wrong
+file.
+
+### Why this matters more than the bug
+
+**The standard has been validated against a build the fork does not use.** Every oracle run in
+this document ran YARG **v0.15.0**; the fork is built on **`dev`**, thousands of commits later.
+Where the two disagree, the oracle cannot see it — so "the standard held" means *held against
+v0.15.0*, and says nothing about the YARG a contribution would land in.
+
+Against `dev`, the standard is **violated** for this class of song: `dev` refuses it and our
+scanner passes it silently.
+
+That does **not** mean the scanner should start flagging a missing `song_length`. Whether
+`dev`'s behaviour is a deliberate tightening or a regression is unknown, and building to match
+an unreleased behaviour that might be reverted would be worse than the gap. **Ask upstream
+first** — it is a question in `docs/UPSTREAM.md`.
+
+### How the two builds are run
+
+- **v0.15.0** — `scripts/oracle.ps1 -Library <folder>`, the installed release build.
+- **`dev`** — `Editor.ScanFolderProbe.Run` in the fork, batchmode, `YARG_SCAN_FOLDER` set to
+  the library. It runs `CacheHandler.RunScan` into throwaway cache and badsongs paths and
+  prints the verdict for every song. Committed in the fork at `38bec7b`.
+
+Running both over the same folder is now the only honest way to say what "YARG does" — and
+the answer has to name which YARG.
+
+### The control that stopped a wrong conclusion being written down
+
+The mirror's own smoke test failed first, with **5 of 23** mirrored songs refused. The obvious
+reading — *the mirror produces archives YARG will not take* — was wrong, and it had an equally
+plausible rival that nothing measured could distinguish: that the same songs would be refused
+as loose folders too.
+
+`ScanFolderProbe` exists to settle exactly that, and it did: **the loose folders were refused
+identically, same songs, same message.** `.sng` and loose folder behave the same, which is the
+property the entire remote-library design rests on, and it survived the scare.
