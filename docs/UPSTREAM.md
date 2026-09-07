@@ -62,53 +62,98 @@ demonstrated on two machines, two operating systems and two CPU architectures. S
 not asking upstream to support a protocol in order to play our songs. They already can.
 
 What a player cannot do today is get those songs **without running a separate sync tool**.
-So the upstream ask is narrow: a way for YARG to discover and fetch songs from a URL. And
-there may be a smaller version of it still — `SongEntry` is abstract, but
-`ActualLocation`, `SortBasedLocation` and `GetLastWriteTime()` all assume a local path, so
-the general capability underneath is *a song entry whose bytes do not come from the local
-filesystem*. That is a capability rather than a feature about our server, and it may be an
-easier thing for them to want.
+So the upstream ask is narrow: a way for YARG to discover and fetch songs from a URL.
 
-**This is reconnaissance, not a design.** The real design belongs in an ADR once we know
-which tier this sits in and whether anyone upstream is already on it.
+### The ask got smaller once the code was read
+
+The paragraph that used to sit here said the seam was that `SongEntry` is abstract while
+`ActualLocation`, `SortBasedLocation` and `GetLastWriteTime()` assume a local path. True,
+and not useful — it names a symptom, and anyone who maintains YARG.Core would know that
+already. [`ADR-004`](ADR-004-remote-song-source.md) replaced it with what the code actually
+says, and the ask that falls out is much smaller and much more concrete:
+
+- **`SngFile` has exactly one loader**, `TryLoadFromFile(string, bool)`
+  (`IO/SngHandler/SngFile.cs:100`), and it opens a `FileStream` itself. There is no
+  stream-taking overload — but the method is **already stream-oriented after its first
+  handful of lines**: it wraps the file in either `YARGSongFileStream` or the raw
+  `FileStream`, assigns `tracker.Stream`, and everything after that reads only from that
+  stream. So `TryLoadFromStream` is an extract-method, not a redesign. `FixedArray` already
+  reads from streams (`ReadRemainder(Stream)`, `Read(Stream, long, bool)`).
+- **`SngEntry`, `UnpackedIniEntry` and their base `IniSubEntry` are all `internal`** with
+  private constructors, so nobody outside the assembly can add an entry type. Anything at
+  the entry level has to happen inside YARG.Core, by them or with them.
+- **One source seam already exists and does not go far enough**:
+  `protected abstract FixedArray<byte>? GetChartData(string filename)`
+  (`SongEntry.IniBase.cs:82`). `LoadChart()` is genuinely source-agnostic on top of it;
+  everything else is not — `SngEntry` reaches for `SngFile.TryLoadFromFile(_location, …)` at
+  **seven** sites and the local filesystem at nine more.
+- **YARG.Core contains no networking at all** — zero matches for
+  `HttpClient|System.Net|UnityWebRequest` across the library. So the right place for a fetch
+  is the Unity layer, which already networks, and **we are not asking them to put an
+  `HttpClient` in YARG.Core.** Saying that out loud is worth a sentence, because it is the
+  objection a maintainer would reach for first.
+
+So the post below asks for **two small things** rather than for a feature: `TryLoadFromStream`,
+which is useful on its own and has no remote-library baggage, and — separately, lower
+confidence — whether a materialise-before-load hook on `IniSubEntry` is the kind of thing they
+would ever want.
+
+**Everything above was measured against `yarg` `3673672` / `YARG.Core` `028969a` on
+2026-09-07**, and should be re-checked before the post goes out if that is much later. Citing a
+line number that has moved is a bad first impression in a channel full of people who know the
+file.
 
 ## Draft: the Discord post
 
 Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 
-> Hey folks — I've been building a self-hosted song server for YARG and wanted to ask
-> about it here before going any further, per CONTRIBUTING.
+> Hey folks — I've been building a self-hosted song server for YARG and wanted to ask here
+> before going further, per CONTRIBUTING.
 >
-> The short version: it's a small Go server that indexes a song folder and hands out plain
-> `.sng` files. Nothing about it is a game modification — unmodified YARG reads what it
-> serves, and I've had that running on two machines and two CPU architectures. Right now a
-> little sync client pulls songs into a folder and YARG scans them like any other folder.
+> The short version: a small Go server that indexes a song folder and hands out plain `.sng`
+> files. It is not a game modification — **unmodified YARG already reads everything it
+> serves**, and I've had that running across two machines, two OSes and two CPU
+> architectures. Today a little sync client pulls songs into a folder and YARG scans it like
+> any other folder. The obvious next step is YARG pointing at a server URL directly, instead
+> of needing a separate tool.
 >
-> What I'd like to ask about is the obvious next step: YARG being able to point at a
-> server URL and browse/fetch from it directly, instead of needing a separate tool. Two
-> questions:
+> I read through `YARG.Core` before writing this, so I can ask something more specific than
+> "would you like this feature". Three questions, smallest first:
 >
-> 1. Which tier does that fall into? It doesn't look like any of the examples in
-> CONTRIBUTING, and I couldn't find an existing issue for it — the closest is #860, which
-> is search/queue from a phone rather than a source of songs.
-> 2. Is anyone already working on it? Happy to stay out of the way if so.
+> **1. Would you take `SngFile.TryLoadFromStream(Stream, bool)` on its own?**
+> `TryLoadFromFile` opens the `FileStream` itself, but everything after the first few lines
+> already works purely off `tracker.Stream` — so this looks like an extract-method rather
+> than a redesign, and `FixedArray` already has stream readers. It's useful for anything that
+> has `.sng` bytes without a path on disk, remote or not. If that's welcome I'd happily open
+> that PR by itself and leave everything below for later.
 >
-> To be clear on where I stand: I'm building it in my fork either way, so this isn't a
-> request for anyone to do work — I'd just rather build it in a shape you'd consider than
-> find out later it was never going to fit. And I'm not asking for anything you've ruled
-> out: no CON decryption, no touching `songcache.bin`, and no distributing copyrighted
-> audio. The server serves what the operator already has.
+> **2. Is a "materialise before load" hook on `IniSubEntry` something you'd ever want?**
+> Lower confidence on this one. `GetChartData` is already an abstract seam and `LoadChart` is
+> source-agnostic on top of it, but the other loaders go through
+> `SngFile.TryLoadFromFile(_location, …)` — seven call sites in `SngEntry` — so a one-line
+> hook the load methods call first, defaulting to a no-op, seems less invasive than abstracting
+> `_location`. Very open to being told that's the wrong shape.
 >
-> One more thing, in case it makes the idea more interesting rather than less: the same
-> channel would carry a **queue**. #860 has been open since 2024 asking for search-and-queue
-> from a phone while YARG is running, and as far as I can tell it's unbuilt because nothing
-> outside the game can reach a running client. A remote source would be the thing that
-> could. I'm not proposing that part now — just noting the two are the same plumbing.
+> **3. Which tier does a remote song source fall into, and is anyone already on it?**
+> It doesn't match any of the CONTRIBUTING examples and I couldn't find an issue for it — the
+> closest is #860, which is search/queue from a phone rather than a source of songs. Happy to
+> stay out of the way if someone's already working on it.
 >
-> One thing I noticed while reading `YARG.Core`: `SongEntry` is abstract, but
-> `ActualLocation`, `SortBasedLocation` and `GetLastWriteTime()` all assume a local path.
-> If a remote source is ever interesting to you, that's probably the seam — a song entry
-> whose bytes aren't on disk. Curious whether that's been considered.
+> To be explicit about what I'm *not* asking for: **no `HttpClient` in `YARG.Core`.** There's
+> no networking in the library at all right now and I don't think this needs to change that —
+> the fetching belongs in the Unity layer, which already networks. Also no CON decryption, no
+> touching `songcache.bin`, and no distributing copyrighted audio. The server serves what the
+> operator already has.
+>
+> I'm building it in my fork either way, so this isn't a request for anyone to do work. I'd
+> just rather build it in a shape you'd consider than find out later it was never going to
+> fit.
+>
+> One thing in case it makes this more interesting rather than less: the same channel would
+> carry a **queue**. #860 has been open since 2024 asking for search-and-queue from a phone
+> while YARG is running, and as far as I can tell it's unbuilt because nothing outside the
+> game can reach a running client. A remote source is the thing that could. Not proposing that
+> part now — just noting the two are the same plumbing.
 >
 > Everything's LGPL-3.0-or-later, same as YARG:
 > <https://github.com/Coffeehedake/yarg-song-server>
@@ -126,6 +171,11 @@ LGPL-3.0, and its last push matches the last push to origin, so the mirror is li
 than a stale snapshot from months ago.
 
 ### What to do with the answer
+
+**Question 1 is the one that matters most, and it is deliberately separable.** A yes to
+`TryLoadFromStream` is a merged PR and a working relationship with upstream regardless of what
+happens to the rest; a no to everything else costs nothing we were counting on, because
+[`ADR-004`](ADR-004-remote-song-source.md) increment 1 needs no YARG.Core change at all.
 
 - **In-Development or someone is on it** — stop, and offer what we have to whoever is.
 - **Planned or Eligible** — design toward a PR from the start, and target `dev`.
