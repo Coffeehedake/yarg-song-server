@@ -118,7 +118,7 @@ Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 > of needing a separate tool.
 >
 > I read through `YARG.Core` and the Unity side before writing this, so I can ask something
-> more specific than "would you like this feature". Four questions, smallest first:
+> more specific than "would you like this feature". Five questions, smallest first:
 >
 > **1. Would you take `SngFile.TryLoadFromStream(Stream, bool)` on its own?**
 > `TryLoadFromFile` opens the `FileStream` itself, but everything after the first few lines
@@ -140,7 +140,15 @@ Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 > I'd be adding is a second producer for that same shape of folder. If that pattern is fine,
 > most of this needs nothing from `YARG.Core` at all.
 >
-> **4. Which tier does a remote song source fall into, and is anyone already on it?**
+> **4. What should a release build do about plain HTTP?**
+> `insecureHttpOption` is `NotAllowed`, and a song server on someone's LAN is plain HTTP — so
+> the feature simply doesn't work in a release build as things stand. I've set it to
+> `DevelopmentOnly` in my fork to get the thing testable, which ships nothing weaker to
+> players, but that's postponing the question rather than answering it. Relax it, require
+> HTTPS from the server, or make it an opt-in per host? I'd rather match whatever you'd
+> want than pick one and find out later.
+>
+> **5. Which tier does a remote song source fall into, and is anyone already on it?**
 > It doesn't match any of the CONTRIBUTING examples and I couldn't find an issue for it — the
 > closest is #860, which is search/queue from a phone rather than a source of songs. Happy to
 > stay out of the way if someone's already working on it.

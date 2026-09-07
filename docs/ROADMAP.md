@@ -653,8 +653,23 @@ The upstream ask gets much smaller as a result: not "support remote libraries" b
 `SngFile.TryLoadFromStream`, and consider a materialise hook on `IniSubEntry`" — both small,
 both useful on their own, neither dragging networking into the library.
 
+**Increment 1 shipped 2026-09-07** — `yarg` `6a05002` on `dev`. The game mirrors a server's
+library into `PathHelper.ServerLibraryPath` and appends it to the scan list beside
+`PathHelper.SetlistPath`; **zero YARG.Core changes**, as the ADR predicted. Verified against
+vault2 from batchmode, not merely compiled: 23 songs, 238,215 bytes, every chart hash checked
+with YARG.Core's own `SngFile`/`HashWrapper`, second run downloaded nothing. That byte count is
+identical to what four concurrent `yarg-sync` clients pulled from the same server, so the C#
+and Go clients agree exactly.
+
+One thing the ADR did not predict, found by running it: **Unity's `insecureHttpOption` defaults
+to `NotAllowed` and a LAN song server is plain HTTP**, so the first smoke test failed outright.
+Set to `DevelopmentOnly` — enough to develop and test, nothing weaker shipped to players — and
+what a release build should do is now question 4 in the Discord post rather than a default
+quietly changed in a fork.
+
 **Exit criterion:** the fork can browse and play from a server without a sync step, and a
-discussion thread exists upstream.
+discussion thread exists upstream. **Half met:** it can play from a server without a separate
+tool; the discussion thread is still waiting on Jay to post.
 
 ---
 

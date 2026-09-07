@@ -1,6 +1,7 @@
 # ADR-004: how a YARG client reaches a remote library
 
-**Status:** proposed, 2026-09-07. Nothing here is built.
+**Status:** increment 1 **built and verified** 2026-09-07 (`yarg` `6a05002` on `dev`).
+Increments 2 and 3 remain proposals.
 **Constrained by [ADR-001](ADR-001-server-architecture.md). Informed by [UPSTREAM.md](UPSTREAM.md).**
 
 Measured against `yarg` at `3673672` (branch `dev`) with the `YARG.Core` submodule at
@@ -161,6 +162,53 @@ of folder — which makes this a much smaller thing to ask about than "support r
 libraries", and a much smaller thing to review.
 
 **What it costs the player:** the whole library on disk, and a sync that runs before play.
+
+#### Built, and measured against a real server
+
+`yarg` `6a05002`. `PathHelper.ServerLibraryPath`, `SongServerSync.Sync(url, dest)`, a hidden
+`SongServerUrl` setting and a **Sync From Song Server** button in the Songs tab. Nothing in
+YARG.Core was touched, exactly as this ADR predicted.
+
+`Assets/Editor/SongServerSyncSmokeTest.cs` runs a real sync over a real network from batchmode
+and exits non-zero on any failure. Against the vault2 deployment:
+
+```
+server=23 had=0 downloaded=23 failed=0 unmanaged=0 bytes=238215
+PASS - 23 songs mirrored and verified, second run downloaded nothing
+```
+
+**238,215 bytes is byte-for-byte what four concurrent `yarg-sync` clients pulled from the same
+server**, so the C# client and the Go one agree exactly — a cross-check neither could give on
+its own. Every file's chart hash is verified against the name it was served under, using
+YARG.Core's own `SngFile` and `HashWrapper`; that is SHA-1 over the chart bytes, precisely what
+the scanner computes, so a file that passes is a file the scanner will agree with. Idempotence
+is asserted rather than assumed, because it is the property that makes this safe to run on
+every launch.
+
+**It never deletes.** Only `<40 hex>.sng` is ours; everything else is counted and left alone.
+There is no prune.
+
+#### The constraint this ADR missed: Unity blocks plain HTTP
+
+The first smoke test failed with `InvalidOperationException: Insecure connection not allowed`.
+Unity's `insecureHttpOption` defaults to `NotAllowed`, and **a song server on a LAN is plain
+HTTP — that is the normal case, not an edge case.** Nothing in the six findings above predicted
+this, because it is a Player Setting rather than an API.
+
+Changed to `DevelopmentOnly` rather than `AlwaysAllowed`: that unblocks the editor and
+development builds and ships nothing weaker to players. **What a release build should do is a
+real open question** — relax the setting, require HTTPS from the server, or ask the player to
+opt in per host — and it is now a question for upstream rather than a default quietly changed
+in a fork.
+
+#### Gaps, stated rather than discovered later
+
+- A **300 Multiple Choices** response (one chart hash served by several packages) is recorded as
+  a failure rather than resolved. Choosing is the client's job and it is not this increment's.
+- `SongServerUrl` is a **hidden setting** edited in `settings.json`. There is no
+  `AbstractSetting<string>` visual in this project except the IPv4 one, so a URL row means a new
+  setting type *and* a new prefab. The working half landed first; the row can follow without
+  changing anything under it.
 
 ### Increment 2 — fetch a song when it is played.
 
