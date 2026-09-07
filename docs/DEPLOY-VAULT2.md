@@ -308,3 +308,50 @@ mention anywhere.
 The probe was removed afterwards and the library restored to the 23-case corpus — a permanent
 `problems=1` would make every future index report ambiguous. `0 problems`, `restarts=0`,
 health 200 at the end.
+
+## Re-deployed 2026-09-07 on `64b42af`, and the first test with real concurrent clients
+
+`64b42af` is the build that stopped the server 404-ing songs that exist (see
+[ADR-002](ADR-002-v1-store.md), "Concurrency"). Deployed the same way: confirm the tag is the
+commit by image id, wipe the pack cache, recreate.
+
+**Take the eight-character tag from `git rev-parse`, do not type it from memory.** The image
+tag is `CI_COMMIT_SHORT_SHA` — eight characters — and the git short sha is seven. Guessing the
+eighth produced `64b42af7` and a `manifest unknown`, which reads like a missing image rather
+than a typo. The sha is `64b42af1b368…`, so the tag is `64b42af1`, and its image id matched
+`:latest` exactly.
+
+| Check | Result |
+|---|---|
+| `/version` | `64b42af` |
+| `/healthz` | 200, `restarts=0` |
+| Index | 23 songs, 23 distinct charts, **0 problems**, 15 ms |
+| 23 archives re-packed on a wiped cache, vs the `077f36e` cache | **byte-for-byte identical** |
+
+That is determinism holding across a **second** code change, on top of the machines,
+operating systems and architectures already covered.
+
+### Four real clients at once, over the network
+
+Every concurrency measurement until now used goroutines against an in-process test server.
+Four `yarg-sync` processes were run simultaneously from ENG-1 against the vault2 container
+over Tailscale:
+
+| Client | Result |
+|---|---|
+| 1 | 23 downloaded, 0 failed, 238,215 bytes, 456 ms |
+| 2 | 23 downloaded, 0 failed, 238,215 bytes, 448 ms |
+| 3 | 23 downloaded, 0 failed, 238,215 bytes, 483 ms |
+| 4 | 23 downloaded, 0 failed, 238,215 bytes, 449 ms |
+
+**Every file byte-identical across all four clients**, compared by SHA-256 per filename rather
+than by count or total. Four simultaneous clients cost about 40 ms each against the ~410 ms a
+single client took earlier, so nothing here is serialising badly.
+
+**What this run does NOT test, stated because it would be easy to read it as more than it
+is:** this deployment's cache bound is 2 GB against a 238 KB library, so **nothing is ever
+evicted** and the defect `64b42af` fixes could not fire here even on the old build. This
+exercises the concurrent *serve* path over a real network; the eviction race is covered by
+`internal/httpapi/concurrency_test.go`, which has to bound the cache to a single archive to
+provoke it at all. A Pi with a small SD card and a large library is where the two conditions
+meet, and that combination is still unmeasured on real hardware.
