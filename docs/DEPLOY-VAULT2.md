@@ -355,3 +355,52 @@ exercises the concurrent *serve* path over a real network; the eviction race is 
 `internal/httpapi/concurrency_test.go`, which has to bound the cache to a single archive to
 provoke it at all. A Pi with a small SD card and a large library is where the two conditions
 meet, and that combination is still unmeasured on real hardware.
+
+## Upgrade to `a5f98c4`, 2026-09-07 — the pack-cache race and the chart checks
+
+Pipeline 2295. Two changes worth deploying: the eviction race in `packcache` that answered
+**500 for a song that exists** on Linux (see `docs/ADR-002-v1-store.md`), and the two new
+chart issues, `chart_unreadable` and `chart_truncated`.
+
+`:latest` was confirmed to BE the commit before anything was recreated, by image id rather
+than by trust:
+
+```bash
+docker pull -q …:latest
+docker pull -q …:a5f98c41     # EIGHT characters; CI tags with CI_COMMIT_SHORT_SHA
+docker image inspect …:latest    --format '{{.Id}}'   # sha256:b2bc48bb…
+docker image inspect …:a5f98c41  --format '{{.Id}}'   # sha256:b2bc48bb…  same
+```
+
+The container was pinned to `:a5f98c41` rather than `:latest`, so `/version` and the running
+image agree even after the next pipeline publishes.
+
+### Determinism held across a fourth code change
+
+The pack cache was hashed before the upgrade, wiped, and every song re-fetched so the new
+binary re-packed all 23:
+
+```
+archives before: 23  after: 23
+BYTES IDENTICAL across the code change
+```
+
+That is the fourth code change this has been checked across, and the check is cheap enough
+that there is no reason to stop doing it.
+
+| Check | Result |
+|---|---|
+| `/version` | `a5f98c4` |
+| `/api/v1/library` | 23 songs, 23 distinct charts, **`problems: null`** |
+| Browse page `GET /` | 200, 9,365 bytes |
+| `GET /nope` | 404 — the catch-all trap has not come back |
+| Pack cache after re-fetch | 23 archives, byte-identical to before |
+
+**What this does NOT verify, and it is the important one:** the defect this upgrade exists to
+fix cannot fire on this deployment. The bound here is 2 GB against a 225 KB library, so
+nothing is ever evicted, and the rename-then-open window only opens when eviction runs
+concurrently with packing. The fix is covered by
+`TestEvictionNeverStealsAnArchiveBeforeItsPackerCanOpenIt`, which has to bound the cache to a
+single archive to provoke it at all. **A green deployment here is not evidence about the
+race.** The place the two conditions actually meet is a Pi with a small card and a large
+library, and that is still unmeasured on real hardware.
