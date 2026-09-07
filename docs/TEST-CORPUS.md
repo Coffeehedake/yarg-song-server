@@ -788,3 +788,49 @@ the socket-exhausted load harness, and the Windows rename-while-open reasoning. 
 consistent enough to state as a rule: **when a measurement surprises you, suspect the instrument
 before the subject** — and when the instrument is fixed, re-read the result, because it may have
 been wrong in both directions at once.
+
+
+## A library with a duplicate package, for testing 300 Multiple Choices
+
+The 23-case corpus and the 270-song real library both have `duplicate_packages: 0`, so
+nothing in either exercises the one response the client cannot handle by ignoring: **300
+Multiple Choices**, returned when several packages share a chart hash. It has to be built on
+purpose.
+
+Two folders with **byte-identical** `notes.chart` and different audio give the same chart hash
+and different package hashes, which is the whole condition:
+
+```powershell
+$root = 'C:\dev\_incoming\dupe-test'
+$chart = "[Song]`n{`n  Resolution = 192`n  Name = `"Dupe`"`n}`n[ExpertSingle]`n{`n  768 = N 0 0`n}`n"
+foreach ($n in @('pack-a','pack-b')) {
+    $d = Join-Path $root $n
+    New-Item -ItemType Directory -Path $d -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $d 'notes.chart'), $chart)   # identical in both
+    Set-Content (Join-Path $d 'song.ini') "[Song]`nname = Dupe Song`ncharter = $n`n"
+    $bytes = if ($n -eq 'pack-a') { 4096 } else { 8192 }            # different audio
+    [IO.File]::WriteAllBytes((Join-Path $d 'song.ogg'), (New-Object byte[] $bytes))
+}
+```
+
+`/api/v1/library` then reports `songs: 3, distinct_charts: 2`, and
+`GET /song/<shared hash>.sng` answers **300**.
+
+**The audio sizes are the point.** They are what lets a test check *which* package arrived
+rather than only that one did — a pass that proves "no failure" would be satisfied by picking
+either. Measured 2026-09-07 against the fork's mirror:
+
+| | |
+|---|---|
+| package hashes | `66727430…` (pack-b), `7b87f002…` (pack-a) |
+| smallest, so the one the rule selects | pack-b |
+| what the client downloaded | `charter: pack-b`, `song.ogg: 8192` |
+
+Read back with the server's own `internal/sng` package rather than a third-party tool —
+SngCli threw on the archive, and an unexplained failure in the instrument is not evidence
+about the subject either way.
+
+**Neither the corpus nor the server needs to be the live one.** This runs against a
+locally-built `yarg-song-server` on `127.0.0.1`, so it costs nothing and touches no
+deployment. The generated audio is zero-filled, so unlike the real corpus this one is safe to
+commit if it ever needs to be.

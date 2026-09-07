@@ -203,8 +203,13 @@ in a fork.
 
 #### Gaps, stated rather than discovered later
 
-- A **300 Multiple Choices** response (one chart hash served by several packages) is recorded as
-  a failure rather than resolved. Choosing is the client's job and it is not this increment's.
+- ~~A **300 Multiple Choices** response is recorded as a failure rather than resolved.~~
+  **Closed in `yarg` `ff1ca96`.** The client now picks the smallest package hash ordinally,
+  matching `yarg-sync`. The rule itself does not matter; that it is total and deterministic
+  does — two clients choosing differently would be a difference nobody would look for until
+  two people compared scores on what they believed was the same song. Measured against a
+  library with a real duplicate, checking *which* package arrived rather than only that one
+  did; see `docs/TEST-CORPUS.md`.
 - `SongServerUrl` is a **hidden setting** edited in `settings.json`. There is no
   `AbstractSetting<string>` visual in this project except the IPv4 one, so a URL row means a new
   setting type *and* a new prefab. The working half landed first; the row can follow without
