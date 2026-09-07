@@ -341,9 +341,125 @@ func TestNoNotesIsNotClaimedWhenPartsWereNeverDerived(t *testing.T) {
 	if hasIssue(s.Issues, catalog.IssueNoNotes) {
 		t.Fatalf("claimed \"no notes\" about a chart that was never parsed. issues=%+v", s.Issues)
 	}
-	if len(s.PartsNotes) == 0 {
-		t.Fatal("the unparseable chart was not recorded in PartsNotes")
+	// It must still be REPORTED, and as its own thing. This assertion used to
+	// require only a PartsNote, which is exactly what let a plain text file
+	// named notes.mid be served as a healthy song until the oracle caught it:
+	// the scanner detected the problem and then said nothing an operator or a
+	// client would see.
+	if !hasIssue(s.Issues, catalog.IssueChartUnreadable) {
+		t.Fatalf("an unreadable chart was not flagged; YARG refuses it as corrupt. issues=%+v", s.Issues)
 	}
+	if s.ChartHash == "" {
+		t.Fatal("song was dropped rather than flagged")
+	}
+}
+
+// TestATruncatedChartIsFlaggedEvenThoughItStillReportsParts is the case a
+// magic-byte check would have missed, and the reason the check is about chunk
+// lengths instead.
+//
+// A real chart cut in half keeps a valid MThd header and several COMPLETE MTrk
+// chunks. It preparses cleanly, reports genuine instruments, and looks perfect.
+// Measured on 2026-09-07 against a nine-track file cut to a third and to 90%:
+// parts found, no note, no issue, indexed as healthy - while YARG refuses it
+// with "Corruption of either the ini file or chart/mid file".
+//
+// The only thing such a file cannot hide is a chunk header promising more bytes
+// than remain, so that is what is checked.
+func TestATruncatedChartIsFlaggedEvenThoughItStillReportsParts(t *testing.T) {
+	whole := multiTrackMIDI(t, 9)
+	cut := whole[:len(whole)/3]
+
+	f := fstest.MapFS{
+		"song.ini":  {Data: []byte(sampleINI)},
+		"notes.mid": {Data: cut},
+		"song.ogg":  {Data: []byte("audio")},
+	}
+	s, err := ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.PartsDerived {
+		t.Fatal("the truncated chart did not parse at all; this test is meant to cover the case where it DOES")
+	}
+	if !s.Parts.AnyPlayableNotes() {
+		t.Fatal("the truncated chart reported no playable notes, so no_notes would have caught it and this test proves nothing")
+	}
+	if !hasIssue(s.Issues, catalog.IssueChartTruncated) {
+		t.Fatalf("a truncated chart was not flagged. issues=%+v", s.Issues)
+	}
+
+	// The whole file must NOT be flagged. A check that fires on healthy charts
+	// is worse than no check: it would flag most of a real library.
+	f["notes.mid"] = &fstest.MapFile{Data: whole}
+	ok, err := ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasIssue(ok.Issues, catalog.IssueChartTruncated) {
+		t.Fatalf("an intact chart was flagged as truncated. issues=%+v", ok.Issues)
+	}
+	if !ok.Parts.AnyPlayableNotes() {
+		t.Fatal("the intact chart reported no parts; the fixture is wrong")
+	}
+}
+
+// TestACutOnAChunkBoundaryIsNotDetected states the limit of the check out loud,
+// as a test rather than as a comment nobody re-reads.
+//
+// A chart truncated exactly where one MTrk ends and the next begins is
+// byte-for-byte a valid chart with fewer tracks. Nothing short of the original
+// can tell them apart, and no amount of parsing changes that. Written down
+// because a validation that implies more coverage than it has is how this
+// project shipped the "eviction costs a re-pack and never data" sentence that
+// was false when written.
+func TestACutOnAChunkBoundaryIsNotDetected(t *testing.T) {
+	f := fstest.MapFS{
+		"song.ini":  {Data: []byte(sampleINI)},
+		"notes.mid": {Data: multiTrackMIDI(t, 3)}, // a whole file, three tracks
+		"song.ogg":  {Data: []byte("audio")},
+	}
+	s, err := ScanDir(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasIssue(s.Issues, catalog.IssueChartTruncated) {
+		t.Fatal("a chart with three complete tracks was called truncated")
+	}
+	// A nine-track chart cut after its third track produces exactly these
+	// bytes. That is the point: it is not detectable, and pretending otherwise
+	// would be the dishonest version of this feature.
+}
+
+// multiTrackMIDI builds an SMF with n named, note-carrying tracks. It is
+// deliberately shaped like a real chart - several tracks, many events - because
+// the defect being covered only appears in files big enough to survive being
+// cut.
+func multiTrackMIDI(t *testing.T, n int) []byte {
+	t.Helper()
+	names := []string{"PART GUITAR", "PART BASS", "PART DRUMS", "PART KEYS", "PART VOCALS", "BEAT", "EVENTS", "VENUE", "PART RHYTHM"}
+	var out []byte
+	out = append(out, []byte("MThd")...)
+	out = binary.BigEndian.AppendUint32(out, 6)
+	out = binary.BigEndian.AppendUint16(out, 1)
+	out = binary.BigEndian.AppendUint16(out, uint16(n))
+	out = binary.BigEndian.AppendUint16(out, 480)
+	for i := 0; i < n; i++ {
+		name := names[i%len(names)]
+		var trk []byte
+		trk = append(trk, 0x00, 0xFF, 0x03, byte(len(name)))
+		trk = append(trk, []byte(name)...)
+		for r := 0; r < 300; r++ {
+			for _, note := range []byte{60, 72, 84, 96} {
+				trk = append(trk, 0x00, 0x90, note, 0x64, 0x10, 0x80, note, 0x00)
+			}
+		}
+		trk = append(trk, 0x00, 0xFF, 0x2F, 0x00)
+		out = append(out, []byte("MTrk")...)
+		out = binary.BigEndian.AppendUint32(out, uint32(len(trk)))
+		out = append(out, trk...)
+	}
+	return out
 }
 
 func TestNoAudioIsFlaggedBecauseYARGRejectsIt(t *testing.T) {

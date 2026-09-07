@@ -7,11 +7,12 @@ import (
 
 // PreparseMIDI establishes which parts and difficulties a notes.mid contains.
 func PreparseMIDI(data []byte) (*Result, error) {
-	tracks, err := scanMIDI(data)
+	tracks, truncated, err := scanMIDI(data)
 	if err != nil {
 		return nil, err
 	}
 	r := newResult()
+	r.Truncated = truncated
 
 	// Duplicate track names happen in real files. Merging by name rather than
 	// letting the last one win means a stray second PART GUITAR adds to the

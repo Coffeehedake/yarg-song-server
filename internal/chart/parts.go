@@ -84,6 +84,17 @@ type Result struct {
 	// Notes records anything the preparser noticed but could not resolve, for
 	// a human reading a catalog entry. Not an error channel.
 	Notes []string
+
+	// Truncated means the chart FILE ends inside a chunk it declared - it says
+	// it is longer than it is. Set only by the MIDI preparser, which is the
+	// only one of the three formats that states its own lengths.
+	//
+	// This is a fact about the file, not about the parts: a truncated chart
+	// still reports every instrument it managed to read, and those readings
+	// are correct as far as they go. A caller deciding whether to SERVE the
+	// song should treat this as disqualifying; a caller displaying what is in
+	// it should not.
+	Truncated bool
 }
 
 func newResult() *Result {

@@ -689,13 +689,81 @@ ships; what it makes does not.
 | `04-chart-is-not-a-chart` | Corruption of either the ini file or chart/mid file |
 
 `03` is a MIDI cut to a third of its length. `04` is a plain text file named `notes.mid`. **Our
-scanner indexes both as perfectly good songs and reports no issue at all**, because it never
-parses the chart — it only hashes it. Song identity is `SHA1(chart bytes)` by design, and this
-project has deliberately not reimplemented YARG's parser. The consequence, unnoticed until now,
-is that we cannot tell a chart from a shopping list, and will happily serve one to a client that
-then refuses it.
+scanner indexed both as perfectly good songs and reported no issue at all**, and served them to
+a client that then refuses them.
 
 That is the standard this project holds, violated, and found by the corpus on its first run.
+
+### The diagnosis in the paragraph above was wrong, and being wrong about it mattered
+
+It said the scanner "never parses the chart, it only hashes it" and so "cannot tell a chart from
+a shopping list". Measured on 2026-09-07 with a probe that printed every issue on eleven damaged
+shapes, which is what should have been done before writing a cause down at all:
+
+| Shape | What the scanner actually did, before any fix |
+|---|---|
+| plain text named `notes.mid` | **parsed it, failed, and recorded a note** — then indexed it with no issue |
+| empty `notes.mid` | same |
+| `notes.chart` holding a shopping list | **already flagged**, `no_notes` |
+| nine-track `.mid` cut to a third | parsed, **found real instruments**, no note, no issue |
+
+So the scanner *does* preparse every chart — `applyPreparse` has called `PreparseMIDI` /
+`PreparseChart` since Phase 1. Two things were true instead, and they need different fixes:
+
+1. **For a chart it cannot read at all, it detected the problem and then said nothing an
+   operator or a client would see.** The failure became a cosmetic `parts_note`, not an issue.
+   *Detecting something and reporting nothing is indistinguishable from not detecting it.*
+2. **For a truncated chart, nothing detected anything** — and this is the case the proposed
+   `MThd`-magic check would have missed, exactly as the previous entry warned. A real chart cut
+   in half keeps a valid header and several **complete** `MTrk` chunks, so it preparses cleanly
+   and reports genuine instruments. It looks perfect.
+
+The `.chart` half of the proposed check turned out to be unnecessary: a `.chart` that is not a
+chart yields no sections, so `no_notes` already catches it. **Half of the fix that was about to
+be written was already there, and the half that mattered was not the half that had been
+designed.**
+
+### The fix, and what it does not cover
+
+- **`chart_unreadable`** — the preparse failed. Was a note; is now an issue.
+- **`chart_truncated`** — the file ends inside a chunk it declared. This is the only evidence of
+  truncation that survives in a real chart: the file contradicting its own chunk lengths.
+
+It does **not** catch a cut landing exactly on a chunk boundary. Such a file is byte-for-byte a
+valid chart with fewer tracks, and nothing short of the original could tell them apart. That is
+stated as a test, `TestACutOnAChunkBoundaryIsNotDetected`, rather than as a comment nobody
+re-reads.
+
+### False positives: measured, not hoped
+
+A check that fires on healthy charts is worse than no check, because it would flag most of a
+real library. Run over all **270 songs** in the real corpus at `C:\dev\_incoming\YARG`:
+
+```
+songs=270 flagged_by_new_checks=2
+  FLAGGED broken/03-chart-truncated        chart_truncated
+  FLAGGED broken/04-chart-is-not-a-chart   chart_unreadable
+```
+
+The only two flagged are the two that were damaged on purpose. Zero healthy songs tripped either
+check.
+
+### Run 8 — the standard held
+
+Re-run of the same 16 cases after the fix:
+
+| | |
+|---|---:|
+| Songs indexed | 14 |
+| YARG refused | 6 |
+| We flagged | 7 |
+| **YARG refused, we PASSED** | **0** |
+| We flagged, YARG accepted | 1 |
+
+> `STANDARD HELD: every song YARG refused was one we independently flagged.`
+
+The one in the other column is unchanged and is the allowed direction: `07-no-song-ini` is
+flagged by us and loaded by YARG.
 
 The one in the other column is fine: `07-no-song-ini` is flagged by us and loaded by YARG. A
 scanner is allowed to be stricter than a refusal.

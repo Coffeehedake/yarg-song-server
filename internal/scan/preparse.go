@@ -60,13 +60,32 @@ func applyPreparse(s *catalog.Song, raw []byte, format catalog.ChartFormat, ini 
 		return
 	}
 	if err != nil {
+		// A chart we cannot read is a REJECTION, not a footnote.
+		//
+		// This used to add a note and move on, which left the song indexed and
+		// offered as playable with nothing flagged. The oracle caught it on
+		// 2026-09-07: a plain text file named notes.mid was served as a healthy
+		// song and YARG refused it - the standard this project holds itself to,
+		// violated, and by a case the scanner had actually DETECTED and then
+		// declined to act on. Detecting something and reporting nothing is
+		// indistinguishable from not detecting it.
+		detail := "chart could not be parsed: " + err.Error()
 		if errors.Is(err, chart.ErrNotSMF) {
-			s.PartsNotes = append(s.PartsNotes,
-				"chart file is not a standard MIDI file despite its name; instrument availability is unknown")
-			return
+			detail = "chart file is not a standard MIDI file despite its name; YARG refuses it as a corrupt chart"
 		}
-		s.PartsNotes = append(s.PartsNotes, "chart could not be preparsed: "+err.Error())
+		s.Issues = append(s.Issues, catalog.Issue{
+			Code:   catalog.IssueChartUnreadable,
+			Detail: detail,
+		})
 		return
+	}
+
+	if res.Truncated {
+		s.Issues = append(s.Issues, catalog.Issue{
+			Code: catalog.IssueChartTruncated,
+			Detail: "chart file ends inside a chunk it declared, so it is incomplete; " +
+				"YARG refuses it as a corrupt chart. The parts below are what could still be read and are not the whole song",
+		})
 	}
 
 	applyDrumOverrides(res, ini)

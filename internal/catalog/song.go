@@ -204,6 +204,31 @@ const (
 	// notes" would be asserting something we did not measure.
 	IssueNoNotes = "no_notes"
 
+	// IssueChartUnreadable: the chart file could not be parsed at all - a
+	// notes.mid that is not a standard MIDI file, or an empty one. YARG
+	// refuses these with "Corruption of either the ini file or chart/mid
+	// file", measured 2026-09-07 against a plain text file named notes.mid.
+	//
+	// This is separate from IssueNoNotes on purpose. "We read the chart and it
+	// has nothing to play" and "we could not read the chart" are different
+	// statements, and the second must never be reported as the first - the
+	// PartsDerived guard on IssueNoNotes exists precisely so it is not.
+	IssueChartUnreadable = "chart_unreadable"
+
+	// IssueChartTruncated: the chart file ends inside a chunk it declared. It
+	// says it is longer than it is.
+	//
+	// This one matters more than it sounds. A real nine-track chart cut to a
+	// third still has a valid header and several complete tracks, so it
+	// preparses cleanly and reports real instruments - measured 2026-09-07:
+	// parts found, no note, no issue, indexed as perfectly healthy while YARG
+	// refuses it. A magic-byte check would not have caught it; only the file
+	// contradicting its own chunk lengths does.
+	//
+	// It does NOT catch a cut landing exactly on a chunk boundary, which is
+	// indistinguishable from a chart with fewer tracks.
+	IssueChartTruncated = "chart_truncated"
+
 	// IssueUltraStarNoTitle: an UltraStar notes.txt with no #TITLE tag. Unlike
 	// every other format, UltraStar takes its title from the chart rather than
 	// song.ini. As a LOOSE FOLDER YARG refuses it - "Name metadata not

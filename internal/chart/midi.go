@@ -61,25 +61,42 @@ type midiTrackData struct {
 // ErrNotSMF means the file does not begin with an MThd chunk.
 var ErrNotSMF = errors.New("chart: not a standard MIDI file")
 
-// scanMIDI walks an SMF and returns one entry per track.
-func scanMIDI(data []byte) ([]midiTrackData, error) {
+// scanMIDI walks an SMF and returns one entry per track, and whether the FILE
+// itself ended inside a chunk it had declared.
+//
+// That second return is the only evidence of truncation that survives a real
+// chart. A chart cut in half still has a valid MThd header and several complete
+// MTrk chunks, so it preparses cleanly and reports real instruments - measured
+// 2026-09-07 on a nine-track file cut to a third and to 90%: parts found, no
+// note, no issue, indexed as healthy. YARG refuses both with "Corruption of
+// either the ini file or chart/mid file". The one thing the file cannot hide is
+// a chunk header promising more bytes than remain.
+//
+// It does NOT catch a cut that lands exactly on a chunk boundary. Such a file
+// is indistinguishable from one with fewer tracks, and nothing short of
+// comparing it against the original could tell them apart. Said plainly here
+// because a check that implies more coverage than it has is worse than none.
+func scanMIDI(data []byte) ([]midiTrackData, bool, error) {
 	if len(data) < 14 || string(data[0:4]) != "MThd" {
-		return nil, ErrNotSMF
+		return nil, false, ErrNotSMF
 	}
 	headerLen := binary.BigEndian.Uint32(data[4:8])
 	pos := 8 + int(headerLen)
 	if pos > len(data) || headerLen < 6 {
-		return nil, fmt.Errorf("chart: bad MThd length %d", headerLen)
+		return nil, false, fmt.Errorf("chart: bad MThd length %d", headerLen)
 	}
 
 	var out []midiTrackData
+	truncated := false
 	for pos+8 <= len(data) {
 		chunkID := string(data[pos : pos+4])
 		chunkLen := int(binary.BigEndian.Uint32(data[pos+4 : pos+8]))
 		pos += 8
 		if chunkLen < 0 || pos+chunkLen > len(data) {
-			// A truncated final chunk is common in the wild; take what is there
-			// rather than discarding a whole file for a missing tail.
+			// Take what is there rather than discarding a whole file for a
+			// missing tail - but RECORD it. This is the file saying it should
+			// have been longer than it is.
+			truncated = true
 			chunkLen = len(data) - pos
 		}
 		body := data[pos : pos+chunkLen]
@@ -90,7 +107,7 @@ func scanMIDI(data []byte) ([]midiTrackData, error) {
 		}
 		out = append(out, scanTrack(body))
 	}
-	return out, nil
+	return out, truncated, nil
 }
 
 func scanTrack(b []byte) midiTrackData {
