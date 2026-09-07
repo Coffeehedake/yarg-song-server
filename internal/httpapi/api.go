@@ -30,16 +30,26 @@ import (
 
 // Server holds what the handlers need.
 type Server struct {
-	Store   *library.Store
-	Packs   *packcache.Cache
-	Version string
-	Log     *slog.Logger
+	Store *library.Store
+	Packs *packcache.Cache
+	// BrowseUI serves the phone-friendly catalog page at "/". It exposes
+	// nothing the API does not already serve unauthenticated, so it defaults on;
+	// an operator who wants the API and no page can turn it off.
+	BrowseUI bool
+	Version  string
+	Log      *slog.Logger
 }
 
 // Handler builds the router.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
+	// The browse page, when it is enabled. "{$}" is an exact match on the root -
+	// a bare "/" in Go's ServeMux is a catch-all and would swallow every 404 the
+	// API depends on.
+	if s.BrowseUI {
+		mux.HandleFunc("GET /{$}", s.browse)
+	}
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /version", s.versionInfo)
 	mux.HandleFunc("GET /api/v1/library", s.libraryInfo)

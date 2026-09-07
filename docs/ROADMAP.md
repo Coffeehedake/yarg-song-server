@@ -585,6 +585,18 @@ Order follows from that: **build the web UI when the server is otherwise idle** 
 useful on its own for picking songs from the couch, and it needs nothing from anyone — but
 do not promise the queue until Phase 3 has a channel to carry it.
 
+**The browse half shipped 2026-09-07.** `GET /` serves a phone-friendly page: search, the
+twelve sort attributes read from `/api/v1/library` so the page cannot drift from the server,
+and a per-song panel with metadata, parts, the scanner's issues and a download link. Embedded
+in the binary — no CDN, no build step — because a Pi at a party has no internet to fetch a
+stylesheet from. On by default (`browse_ui`); it exposes nothing the API did not already.
+
+Registered as `GET /{$}`, and that detail is load-bearing: a bare `GET /` in Go's ServeMux is
+a catch-all that would answer every unmatched path with the page and a 200, turning every
+documented 404 into HTML a sync client would try to parse as a `.sng`. Red-proofed.
+
+**Still no queue, deliberately**, and no UI hinting at one.
+
 [i860]: https://github.com/YARC-Official/YARG/issues/860
 
 ---

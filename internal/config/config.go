@@ -29,6 +29,8 @@ type Config struct {
 	// PackCacheMax bounds the on-demand pack cache in bytes. Zero means
 	// unbounded, which an operator may choose but which is not the default.
 	PackCacheMax int64
+	// BrowseUI serves a phone-friendly catalog page at "/".
+	BrowseUI bool
 }
 
 // Defaults are what the server does when told nothing.
@@ -50,6 +52,12 @@ func Defaults() Config {
 		Songs:        "./songs",
 		Data:         "./data",
 		PackCacheMax: 2 << 30, // 2 GiB
+		// On by default. The page shows only what /api/v1/songs already serves
+		// to anyone who can reach the port, so enabling it grants no access that
+		// was not already there - the decision that matters is the one ADR-001
+		// already made, that this server is read-only and must not be exposed
+		// publicly. An operator who wants the API without a page sets it false.
+		BrowseUI: true,
 	}
 }
 
@@ -112,11 +120,33 @@ func Apply(c *Config, r io.Reader) error {
 				return fmt.Errorf("line %d: pack_cache_max: %w", line, err)
 			}
 			c.PackCacheMax = n
+		case "browse_ui":
+			b, err := parseBool(value)
+			if err != nil {
+				return fmt.Errorf("line %d: browse_ui: %w", line, err)
+			}
+			c.BrowseUI = b
 		default:
-			return fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max", line, key)
+			return fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max, browse_ui", line, key)
 		}
 	}
 	return sc.Err()
+}
+
+// parseBool accepts the spellings a person actually writes in a settings file.
+//
+// strconv.ParseBool alone would reject "yes" and "on", which is the sort of
+// pedantry that makes an operator edit a file three times. Anything it does not
+// recognise is still an error rather than a guess - "maybe" must not silently
+// become false.
+func parseBool(s string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "t", "true", "y", "yes", "on":
+		return true, nil
+	case "0", "f", "false", "n", "no", "off":
+		return false, nil
+	}
+	return false, fmt.Errorf("%q is not a yes/no value", s)
 }
 
 // parseSize reads a byte count, optionally with a K/M/G/T suffix, binary units.
@@ -196,4 +226,11 @@ const Example = `# yarg-song-server configuration.
 # out of 22.
 # Raise it if you have the disk; set 0 only if you mean it.
 # pack_cache_max = 2G
+
+# Serve a phone-friendly page listing the library at "/".
+#
+# On by default. It shows only what /api/v1/songs already serves to anyone who
+# can reach this port, so turning it on grants no access that was not already
+# there. Set it to no if you want the API and nothing else.
+# browse_ui = yes
 `

@@ -45,10 +45,28 @@ Rules:
   mirrored branch, and do not touch it on GitHub afterwards.
 - `yarg/` additionally carries an `upstream` remote pointing at `YARC-Official/YARG`.
   **Upstream PRs target `dev`, never `master`** — upstream will refuse `master` PRs outright.
-- **`yarg/` is not cloned locally yet, on purpose.** The fork is fully imported on Vault2
-  (21 branches, ~350 MB with LFS) with its default branch set to `dev`, and nothing touches the
-  client until Phase 3. The clone command is in `yarg-song-server/docs/ROADMAP.md` under
-  Phase 0.
+- **`yarg/` IS now cloned** (2026-09-07), at `dev`, with `upstream` pointing at
+  `YARC-Official/YARG`, submodules initialised and LFS pulled — 4,815 files, 0.25 GB. The
+  `YARG.Core` submodule sits at upstream `028969a`.
+
+  **YARG.Core builds and tests without Unity.** It is `netstandard2.1` with a plain
+  `Microsoft.NET.Sdk` csproj, so `dotnet build YARG.Core.sln` and
+  `dotnet test YARG.Core.UnitTests` both work — which matters because the Phase 3 seam
+  (`SongEntry`) lives in YARG.Core, not in the Unity project. That required the **.NET 10
+  SDK**: the unit-test and benchmark projects target `net10.0`, and ENG-1 had only 8.0.424.
+  10.0.400 is now installed side by side in `C:\Program Files\dotnet`.
+
+  **Baseline, measured rather than assumed: 547 tests, ~543 pass, 1–2 fail, 2 skipped.** The
+  failure is `PossibleInstrumentsForSong_SixFretIncludesFiveFretInstruments` (expects 8
+  instruments, gets 9) and it is **upstream's**, not ours — the submodule is upstream code
+  verbatim at `028969a`. The two skips are `FullScan()` and `QuickScan()`, which want a real
+  song library; those are worth revisiting, since this project has one. Do not report "YARG.Core
+  is green" as a baseline; it is not, and a new failure would hide in that assumption.
+
+  **The Unity Editor is NOT installed, and is not needed yet.** `ProjectSettings/ProjectVersion.txt`
+  pins **6000.3.5f2**; installing it means Unity Hub, several GB, and a signed-in Unity account,
+  so it needs Jay. It is only required for the game project itself — scenes, UI, play mode — not
+  for the library where the interesting work starts.
 - **You do not need a GitHub credential for either repo, and should not go looking for one.**
   GitLab owns the mirror credential and pushes for us. Measured 2026-09-06: mirror 10 on
   project 53 last succeeded at `20:42:42`, the same minute as that push to origin, with an

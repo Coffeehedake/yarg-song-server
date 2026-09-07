@@ -44,6 +44,8 @@ func main() {
 	flag.StringVar(&flagged.Listen, "listen", def.Listen, "address to listen on")
 	flag.StringVar(&flagged.Songs, "songs", def.Songs, "path to the song library")
 	flag.StringVar(&flagged.Data, "data", def.Data, "path for catalog and server state")
+	flag.BoolVar(&flagged.BrowseUI, "browse-ui", def.BrowseUI,
+		"serve a phone-friendly page listing the library at \"/\"")
 	flag.Int64Var(&flagged.PackCacheMax, "pack-cache-max", def.PackCacheMax,
 		"bound the on-demand pack cache, in bytes; 0 means unbounded")
 	flag.Parse()
@@ -136,6 +138,9 @@ func resolve(configPath string, flagged config.Config, given map[string]bool) (c
 	if given["pack-cache-max"] {
 		cfg.PackCacheMax = flagged.PackCacheMax
 	}
+	if given["browse-ui"] {
+		cfg.BrowseUI = flagged.BrowseUI
+	}
 	return cfg, nil
 }
 
@@ -221,10 +226,20 @@ func run(opt config.Config, log *slog.Logger) error {
 	}
 
 	api := &httpapi.Server{
-		Store:   library.NewStore(ix),
-		Packs:   packs,
-		Version: version,
-		Log:     log,
+		Store:    library.NewStore(ix),
+		Packs:    packs,
+		Version:  version,
+		Log:      log,
+		BrowseUI: opt.BrowseUI,
+	}
+	// Say which of the two shapes this server is, once, at start. An operator
+	// who cannot find the page needs to know whether it is off or whether they
+	// are on the wrong port, and guessing between those costs more than a line
+	// of log.
+	if opt.BrowseUI {
+		log.Info("browse page enabled", "at", "/")
+	} else {
+		log.Info("browse page disabled", "enable_with", "--browse-ui")
 	}
 
 	srv := &http.Server{

@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Songs</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#171a21; --panel-2:#1e222b; --line:#2a2f3a;
+  --ink:#e8eaf0; --ink-dim:#9aa3b2; --ink-faint:#6b7385;
+  --accent:#7cc4ff; --warn:#f2b45c; --tap:56px;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#f6f7f9; --panel:#fff; --panel-2:#eef0f4; --line:#d9dde5;
+    --ink:#151821; --ink-dim:#5a6273; --ink-faint:#858d9d; --accent:#1668b8;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+header{position:sticky;top:0;z-index:5;background:var(--bg);
+  padding:10px 12px calc(10px + env(safe-area-inset-bottom,0)) 12px;border-bottom:1px solid var(--line)}
+.row{display:flex;gap:8px;align-items:center}
+.row + .row{margin-top:8px}
+input,select,button{font:inherit;color:var(--ink);background:var(--panel);
+  border:1px solid var(--line);border-radius:10px;padding:0 12px;height:var(--tap);min-width:0}
+input[type=search]{flex:1;-webkit-appearance:none}
+select{flex:1;-webkit-appearance:none;appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--ink-dim) 50%),linear-gradient(135deg,var(--ink-dim) 50%,transparent 50%);
+  background-position:calc(100% - 18px) 24px,calc(100% - 12px) 24px;background-size:6px 6px;background-repeat:no-repeat;padding-right:34px}
+button{background:var(--panel-2);cursor:pointer;white-space:nowrap;padding:0 14px}
+button:active{filter:brightness(1.25)}
+#count{color:var(--ink-dim);font-size:13px;padding:6px 12px 0}
+ul{list-style:none;margin:0;padding:0 8px 96px}
+li{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin:8px 0;overflow:hidden}
+.hd{display:flex;gap:10px;align-items:center;padding:12px;cursor:pointer;min-height:var(--tap)}
+.art{width:44px;height:44px;border-radius:8px;background:var(--panel-2);flex:none;
+  display:grid;place-items:center;color:var(--ink-faint);font-size:18px}
+.tt{min-width:0;flex:1}
+.nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub{color:var(--ink-dim);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.len{color:var(--ink-faint);font-size:13px;font-variant-numeric:tabular-nums;flex:none}
+.body{display:none;padding:0 12px 12px;border-top:1px solid var(--line)}
+li.open .body{display:block}
+dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:10px 0 0;font-size:14px}
+dt{color:var(--ink-faint)}
+dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.parts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.part{background:var(--panel-2);border:1px solid var(--line);border-radius:999px;
+  padding:3px 10px;font-size:12px;color:var(--ink-dim)}
+.part b{color:var(--ink);font-weight:600}
+.issue{margin-top:10px;border-left:3px solid var(--warn);background:var(--panel-2);
+  padding:8px 10px;border-radius:0 8px 8px 0;font-size:13px}
+.issue code{color:var(--warn)}
+.acts{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.acts a,.acts button{height:44px;display:inline-flex;align-items:center;border-radius:10px;
+  text-decoration:none;padding:0 14px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink)}
+.hash{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--ink-faint)}
+#more{display:block;width:calc(100% - 16px);margin:8px;height:var(--tap)}
+.msg{padding:32px 16px;text-align:center;color:var(--ink-dim)}
+.err{color:var(--warn)}
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <input id="q" type="search" placeholder="Search songs, artists, albums…" autocomplete="off" enterkeyhint="search">
+  </div>
+  <div class="row">
+    <select id="sort" aria-label="Sort by"></select>
+    <button id="order" aria-label="Toggle sort direction">A→Z</button>
+  </div>
+</header>
+<div id="count"></div>
+<ul id="list"></ul>
+<button id="more" hidden>Load more</button>
+<div id="msg" class="msg">Loading…</div>
+
+<script>
+"use strict";
+const PAGE = 50;
+const el = (id) => document.getElementById(id);
+const list = el("list"), msg = el("msg"), more = el("more"), count = el("count");
+let offset = 0, total = null, busy = false, asc = true, seq = 0;
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => (
+  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function mmss(ms){
+  if (!ms || ms <= 0) return "";
+  const t = Math.round(ms/1000);
+  return Math.floor(t/60) + ":" + String(t%60).padStart(2,"0");
+}
+
+// The server owns the vocabulary of sort attributes. Reading them from
+// /api/v1/library rather than hardcoding a list means this page cannot drift
+// from the server it is served by - a new attribute appears here for free, and
+// a removed one cannot linger as a 400.
+async function loadSortOptions(){
+  try {
+    const lib = await (await fetch("api/v1/library")).json();
+    const sel = el("sort");
+    for (const a of (lib.sort_attributes || ["name"])) {
+      const o = document.createElement("option");
+      o.value = a;
+      o.textContent = a.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      sel.appendChild(o);
+    }
+  } catch (_) {
+    el("sort").innerHTML = '<option value="name">Name</option>';
+  }
+}
+
+function query(){
+  const p = new URLSearchParams();
+  p.set("limit", PAGE);
+  p.set("offset", offset);
+  p.set("sort", el("sort").value || "name");
+  p.set("order", asc ? "asc" : "desc");
+  const q = el("q").value.trim();
+  if (q) p.set("q", q);
+  return "api/v1/songs?" + p.toString();
+}
+
+function partChips(s){
+  const out = [];
+  for (const [name, p] of Object.entries(s.parts || {})) {
+    // difficulties is a bitfield; 0 means the part is not in the chart at all.
+    if (!p || !p.difficulties) continue;
+    const label = name.replace(/_/g," ");
+    out.push('<span class="part">' + esc(label) +
+      (p.intensity >= 0 ? ' <b>' + p.intensity + '</b>' : '') + '</span>');
+  }
+  return out.length ? '<div class="parts">' + out.join("") + '</div>' : "";
+}
+
+function card(s){
+  const li = document.createElement("li");
+  const name = s.name || s.source_path || "(untitled)";
+  const sub = [s.artist, s.album].filter(Boolean).join(" — ");
+  const rows = [
+    ["Artist", s.artist], ["Album", s.album], ["Year", s.year],
+    ["Genre", s.genre], ["Charter", s.charter], ["Source", s.source],
+    ["Playlist", s.playlist], ["Chart", s.chart_file], ["Found at", s.source_path],
+  ].filter(([, v]) => v !== undefined && v !== null && v !== "");
+
+  li.innerHTML =
+    '<div class="hd"><div class="art">' + (s.assets && s.assets.album_art ? "♪" : "·") + '</div>' +
+      '<div class="tt"><div class="nm">' + esc(name) + '</div>' +
+      '<div class="sub">' + esc(sub || " ") + '</div></div>' +
+      '<div class="len">' + mmss(s.song_length_ms) + '</div></div>' +
+    '<div class="body">' +
+      '<dl>' + rows.map(([k,v]) => "<dt>" + esc(k) + "</dt><dd>" + esc(v) + "</dd>").join("") + '</dl>' +
+      partChips(s) +
+      (s.parts_derived && (s.parts_notes||[]).length
+        ? '<div class="issue">' + (s.parts_notes||[]).map(n => esc(n)).join("<br>") + '</div>' : "") +
+      (s.issues||[]).map(i =>
+        '<div class="issue"><code>' + esc(i.code) + '</code> — ' + esc(i.detail) + '</div>').join("") +
+      '<div class="acts">' +
+        '<a href="song/' + encodeURIComponent(s.chart_hash) + '.sng" download>Download .sng</a>' +
+      '</div>' +
+      '<div class="acts hash">' + esc(s.chart_hash) + '</div>' +
+    '</div>';
+  li.querySelector(".hd").addEventListener("click", () => li.classList.toggle("open"));
+  return li;
+}
+
+async function load(reset){
+  if (busy) return;
+  busy = true;
+  const mine = ++seq;
+  if (reset) { offset = 0; total = null; list.innerHTML = ""; msg.textContent = "Loading…"; msg.className = "msg"; msg.hidden = false; }
+  more.hidden = true;
+  try {
+    const r = await fetch(query());
+    if (!r.ok) throw new Error("server said " + r.status);
+    const page = await r.json();
+    // A slower earlier request must not overwrite a newer one's results.
+    if (mine !== seq) return;
+    const songs = page.songs || [];
+    total = page.total ?? total;
+    for (const s of songs) list.appendChild(card(s));
+    offset += songs.length;
+    msg.hidden = list.children.length > 0;
+    if (!list.children.length) { msg.textContent = "Nothing matches."; msg.hidden = false; }
+    more.hidden = songs.length < PAGE;
+    count.textContent = total != null
+      ? offset + " of " + total + (el("q").value.trim() ? " matching" : "")
+      : offset + " shown";
+  } catch (e) {
+    if (mine !== seq) return;
+    msg.textContent = "Could not reach the server: " + e.message;
+    msg.className = "msg err";
+    msg.hidden = false;
+  } finally {
+    busy = false;
+  }
+}
+
+let debounce;
+el("q").addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(() => load(true), 200); });
+el("sort").addEventListener("change", () => load(true));
+el("order").addEventListener("click", () => {
+  asc = !asc;
+  el("order").textContent = asc ? "A→Z" : "Z→A";
+  load(true);
+});
+more.addEventListener("click", () => load(false));
+
+loadSortOptions().then(() => load(true));
+</script>
+</body>
+</html>

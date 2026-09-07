@@ -156,3 +156,42 @@ func TestExampleIsValidAndInert(t *testing.T) {
 		}
 	}
 }
+
+func TestBrowseUIAcceptsTheSpellingsPeopleActuallyWrite(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want bool
+	}{
+		{"yes", true}, {"true", true}, {"on", true}, {"1", true}, {"Y", true},
+		{"no", false}, {"false", false}, {"off", false}, {"0", false}, {"N", false},
+	} {
+		c := Defaults()
+		// Start from the opposite of what we expect, so a parser that silently
+		// did nothing would fail rather than pass by luck.
+		c.BrowseUI = !tc.want
+		if err := Apply(&c, strings.NewReader("browse_ui = "+tc.in)); err != nil {
+			t.Fatalf("browse_ui = %s: %v", tc.in, err)
+		}
+		if c.BrowseUI != tc.want {
+			t.Errorf("browse_ui = %s gave %v, want %v", tc.in, c.BrowseUI, tc.want)
+		}
+	}
+}
+
+func TestABrowseUIValueThatIsNeitherYesNorNoIsAnError(t *testing.T) {
+	// "maybe" must not quietly become false. An operator who wrote something
+	// the parser does not understand has expressed an intent it should not guess
+	// at - the same reasoning as pack_cache_max refusing a negative.
+	for _, bad := range []string{"maybe", "", "2", "sure"} {
+		c := Defaults()
+		if err := Apply(&c, strings.NewReader("browse_ui = "+bad)); err == nil {
+			t.Errorf("browse_ui = %q was accepted, want an error", bad)
+		}
+	}
+}
+
+func TestBrowseUIDefaultsOn(t *testing.T) {
+	if !Defaults().BrowseUI {
+		t.Error("browse_ui defaults off; it is meant to default on")
+	}
+}

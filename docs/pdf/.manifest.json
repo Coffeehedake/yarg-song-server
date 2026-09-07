@@ -5,15 +5,15 @@
     "docs/ADR-001-server-architecture.md": "efac771cc5499c44def053278310b39e882e6463fd37a2723104e28f72c74596",
     "docs/ADR-002-v1-store.md": "72ecc7608341e808cf2d0019c1b854a35a15d153e61276b472c2afc523b12987",
     "docs/ADR-003-archive-ingest.md": "07edb93d8403ea1edc76dc888644c7b23baabb1b5e062cc2d44882a3ef64c618",
-    "docs/API.md": "5511a703feb478246f17b6fd7da152e8855eab6d38c35fa7405040c0ea21703b",
+    "docs/API.md": "353af55dd23889c84556edccf150d003d6b05a0c3073b87bc70e69195ea67f66",
     "docs/DEPLOY-VAULT2.md": "28a47aa3ab728156be60d599201252379be1894b48d8775fe8eeeeb3b69ea615",
-    "docs/ROADMAP.md": "c29c90f7817c5e248bca7908daffe7db283b9264086ba4179ea21e59993f3df0",
+    "docs/ROADMAP.md": "54fb9651edba0fe1563f6cf1b0558d385f29c6001c7401d51f854c7faed61649",
     "docs/SCALE.md": "895434d40c7f22dec5114a073f3edd798e2db752b6e361b6a0c5e1109cbf77b2",
     "docs/SOURCES.md": "ae8f29dc86ef0df75a7dbca575ef59a4c9c73f8cfa4c44b5a003facaf1627ad5",
     "docs/SYNC-CLIENT.md": "8e172cd857c7258974d20632035359195ee9e163460258472c032f282388b8dc",
     "docs/TEST-CORPUS.md": "f565bd8f64c2351f093aa2806f03606c8c77f2aa6d123a4b5c0a782e54f2525b",
     "docs/UPSTREAM.md": "2bcafc7b0a2330e2515edd9e65d6dcf49705087c82f38aed5f39869eda18e2a7",
-    "docs/WORKSPACE.md": "8ef707537dbceec680cd12600786d8ab7a65d6cf62a99fd656cdbfe92a2adedc",
+    "docs/WORKSPACE.md": "d2e4d2a4509c19fb274a7cb1e8bd92d0ace7b683b69a0339b2ebc0627732c8f2",
     "docs/research/chart-preparsing.md": "5bbb0183f6b574ed54a215e48f7b3069aeedde551d7579438c68f270f5ec6e92",
     "docs/research/yarg-song-formats.md": "650bf169a65356c832ed474dd7293183e0649b2a09c11340b8a0949d5bb3e900"
   }

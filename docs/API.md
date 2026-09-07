@@ -29,6 +29,7 @@ it rather than incidental, so changing them breaks a shipped binary:
 
 | Method | Path | What it is for |
 |---|---|---|
+| `GET` | `/` | The browse page, when `browse_ui` is on. |
 | `GET` | `/healthz` | Liveness. Returns `ok`. |
 | `GET` | `/version` | The build's version string. |
 | `GET` | `/api/v1/library` | What was indexed, and what could not be. |
@@ -149,3 +150,29 @@ server is currently read-only and unauthenticated: run it on a LAN, not on the i
 Settings are a flag or a `key = value` line in `./yarg-song-server.conf`, same name for both, flag
 wins; `--write-config` prints a commented example. An unknown setting in that file is an error
 rather than a warning, on the same reasoning as the unknown-field rule on `POST /api/v1/have`.
+
+## `GET /`
+
+A phone-friendly page listing the library: search, the same twelve sort attributes the API
+offers, and a per-song panel with metadata, parts, any issues the scanner flagged, and a
+download link. It is served from the binary — no CDN, no build step, nothing external — because
+the deployment this is aimed at is a Pi on a LAN at a party, where a page that needs the
+internet fails exactly when it is wanted.
+
+**It reads the sort attributes from `/api/v1/library` rather than hardcoding them**, so the
+page cannot drift from the server that served it.
+
+On by default; `browse_ui = no`, or `--browse-ui=false`, turns it off. It exposes nothing
+`/api/v1/songs` does not already serve unauthenticated to anyone who can reach the port — the
+decision that matters is the one in [ADR-001](ADR-001-server-architecture.md), that this server
+is read-only and must not be exposed publicly.
+
+**It is registered as `GET /{$}`, an exact match on the root.** A bare `GET /` in Go's
+ServeMux is a catch-all: it would answer every unmatched path with this page and a 200,
+turning every 404 documented above into an HTML page that a sync client would try to parse as
+a `.sng`. `TestBrowsePageOnAndOff` pins that, and fails if the pattern is ever loosened.
+
+**What it deliberately does not have is a queue.** Upstream's open request
+[#860](https://github.com/YARC-Official/YARG/issues/860) asks for search *and queueing* from a
+phone while YARG is running; queueing needs something inside the running game to read a queue,
+which is Phase 3 work. A button that cannot work is worse than no button, so there is not one.

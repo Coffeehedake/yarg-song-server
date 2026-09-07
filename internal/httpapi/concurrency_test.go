@@ -287,3 +287,30 @@ func TestEvictionUnderLoadNeverLosesASongOrChangesItsBytes(t *testing.T) {
 			total, clients*songs*rounds, transport, failures)
 	}
 }
+
+// browseServer is newTestServerWithPacks with the browse page switched on. It
+// lives here beside the other helpers rather than in web_test.go so there is one
+// place that knows how to stand a Server up.
+func browseServer(t *testing.T, on bool) *httptest.Server {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, "song")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, "song.ini"), "[Song]\nname = One\nartist = A\n")
+	mustWrite(t, filepath.Join(dir, "notes.chart"), chartFor("browse"))
+	mustWrite(t, filepath.Join(dir, "song.ogg"), "audio")
+	ix, err := library.Build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packs, err := packcache.New(filepath.Join(t.TempDir(), "packs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := &Server{Store: library.NewStore(ix), Packs: packs, Version: "test", BrowseUI: on}
+	srv := httptest.NewServer(api.Handler())
+	t.Cleanup(srv.Close)
+	return srv
+}
