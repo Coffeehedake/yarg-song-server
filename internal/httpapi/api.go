@@ -266,24 +266,34 @@ func (s *Server) songFile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	path := entry.Path
+	// A packed song is opened BY the cache, not opened from a path the cache
+	// handed back. Those are not the same thing under concurrency: eviction can
+	// remove an archive between a path being returned and the caller opening
+	// it, and this handler then answered 404 "no longer where the index says it
+	// is" for a song that was perfectly present. Measured, and the reasoning is
+	// in packcache.Open.
+	//
+	// A .sng in the library is served from its own path, where the only way it
+	// can vanish is that someone really did move it - which is what the 404
+	// below actually means.
+	var f *os.File
+	var err error
 	if entry.Kind.NeedsPacking() {
-		packed, err := s.Packs.Path(entry.Song.PackageHash, entry.Path)
+		f, err = s.Packs.Open(entry.Song.PackageHash, entry.Path)
 		if err != nil {
 			s.logError("pack song", err, "chart_hash", hash)
 			writeError(w, http.StatusInternalServerError, "could not pack this song")
 			return
 		}
-		path = packed
-	}
-
-	f, err := os.Open(path)
-	if err != nil {
-		// The library moved under us. Say so rather than serving a 500 with no
-		// explanation - the fix is a rescan and the operator needs to know.
-		s.logError("open song", err, "chart_hash", hash)
-		writeError(w, http.StatusNotFound, "this song is no longer where the index says it is; rescan")
-		return
+	} else {
+		f, err = os.Open(entry.Path)
+		if err != nil {
+			// The library moved under us. Say so rather than serving a 500 with
+			// no explanation - the fix is a rescan and the operator needs to know.
+			s.logError("open song", err, "chart_hash", hash)
+			writeError(w, http.StatusNotFound, "this song is no longer where the index says it is; rescan")
+			return
+		}
 	}
 	defer f.Close()
 

@@ -468,6 +468,26 @@ and exercises the whole server end-to-end.
       does not close:** the songs are uniform, so a real library's *variety* is untested,
       and the oracle has never run at scale — that is the measurement most likely to find a
       YARG rejection category the scanner misses, and it needs real charts.
+- [x] **Measure what several clients at once do — and fix what it found** — done 2026-09-07.
+      Every measurement before this was serial, while the whole point of the project is a
+      server on a LAN with more than one client. The probe found a **real defect**: the song
+      handler asked the pack cache for a *path* and opened it as a second step, so an evicting
+      goroutine could remove the archive in between and the server answered **404 "this song is
+      no longer where the index says it is; rescan"** for a song that was present. Measured at
+      64 clients over a 40-song library bounded to two archives: **2, 1 and 0 spurious 404s
+      across three runs of 2,560 requests** — rare enough never to be met by hand, constant on
+      a busy server, and it points the operator at a library that is fine.
+
+      `packcache.Open` now returns an **open file**, so there is never a moment where the
+      caller holds a name but not a handle. Two properties held under the same pressure: the
+      thundering herd collapses (64 concurrent requests for one cold song → one pack, one
+      archive, 64 identical responses), and **eviction costs a re-pack and never data** —
+      7,680 requests against a cache bounded to a *single* archive returned byte-identical
+      archives, zero mismatches. One promise was corrected: `pack_cache_max` is enforced after
+      each insert, so it is a **high-water target rather than a hard cap**, overshooting by
+      one to three archives as concurrency rises. Details in
+      [`ADR-002`](ADR-002-v1-store.md); the instrument mistakes are in
+      [`SCALE.md`](SCALE.md).
 
 **Resolved, and worth remembering for the response rather than the event:** on 2026-09-05 a
 Defender machine-learning verdict (`Trojan:Win32/Bearfoos.A!ml`) quarantined `cmd/yarg-sync`

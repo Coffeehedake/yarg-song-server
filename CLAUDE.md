@@ -85,6 +85,21 @@ Then, by subject:
   when the archive visibly holds a song, which is why `ErrUnreadableArchive` exists and is
   reported. Both directions are pinned; changing one without the other buries either real
   problems or real songs.
+- **Never hand out a path where a handle will do.** The song handler asked the pack cache for
+  a path and opened it as a second step; eviction could remove the archive in between, and the
+  server answered 404 "no longer where the index says it is" for a song that was present. A
+  path is a claim about the past. `packcache.Open` returns an open file for that reason.
+- **Tune a regression test against the defect, or it is decoration.** The first version of the
+  eviction test passed on the broken code. Two archives and one pass caught it one run in
+  three; one archive and three rounds catches it every time. Reintroduce the defect and watch
+  the test go red *before* believing it guards anything.
+- **A failing measurement is not automatically a failing system.** Three times in one session
+  the instrument was the problem: a probe comparing every archive's length to song 0's in a
+  library of deliberately different sizes; a load harness using `http.Get` until the machine
+  ran out of sockets, whose `status=0` responses were briefly written up as a second defect in
+  the pack cache; and a Windows rename-while-open fix argued from share flags that broke every
+  request the moment it ran. Check the instrument before the subject, and record the
+  correction rather than quietly deleting it.
 - **Comparing counts and totals is not comparing bytes.** Two machines each reported 22 archives
   and 229,515 bytes and were 16 files apart. Any claim of the form "identical" must come from
   hashing every file; a summary line cannot support it. The same applies to a second request that

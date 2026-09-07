@@ -42,6 +42,7 @@
 package packcache
 
 import (
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -130,8 +131,30 @@ func (c *Cache) Dir() string { return c.dir }
 // MaxBytes is the configured bound; zero means unbounded.
 func (c *Cache) MaxBytes() int64 { return c.maxBytes }
 
-// Path returns the path of a packed archive for srcDir, packing it if this is
-// the first request.
+// Open returns an OPEN archive for src, packing it if this is the first
+// request. The caller owns the file and must close it.
+//
+// It hands back an open file rather than a path deliberately, and the reason is
+// a measured defect rather than a preference. Eviction runs concurrently with
+// serving; a caller that received a *path* had to open it as a second step, and
+// in the window between those two an evicting goroutine could remove the
+// archive. The caller then got ENOENT for a song that exists, and the server
+// answered 404 "this song is no longer where the index says it is; rescan" -
+// confidently wrong, and pointing the operator at a library that was fine.
+//
+// Measured 2026-09-07 on Windows, 64 concurrent clients pulling a 40-song
+// library through a cache bounded to two archives: 2,560 requests produced 2,
+// 1 and 0 such 404s across three runs - genuine HTTP 404s from the handler, not
+// connection failures. Intermittent, rare, and impossible to reproduce by hand,
+// which is exactly the profile of a bug that ships.
+//
+// Holding the handle closes the window on both platforms rather than narrowing
+// it: on POSIX an unlinked file stays readable through an open descriptor, and
+// on Windows the remove fails while the handle is open and enforceBound simply
+// skips that entry. The cost is that a file being served cannot be evicted on
+// Windows, so a very busy server holds slightly more cache than its bound. That
+// is the right way round: the bound is a disk-space target, and serving a song
+// that exists is a correctness promise.
 //
 // Two requests for the same song pack once; two requests for different songs do
 // not block each other unless they collide on a lock shard.
@@ -139,14 +162,14 @@ func (c *Cache) MaxBytes() int64 { return c.maxBytes }
 // the key is the package hash, which is computed from the song's contents, so a
 // song that moves from a folder into a zip keeps the same cache entry and the
 // same bytes.
-func (c *Cache) Path(packageHash, src string) (string, error) {
+func (c *Cache) openOnce(packageHash, src string) (*os.File, error) {
 	if packageHash == "" {
-		return "", fmt.Errorf("packcache: empty package hash")
+		return nil, fmt.Errorf("packcache: empty package hash")
 	}
 	dst := filepath.Join(c.dir, packageHash+".sng")
 
-	if c.hit(dst) {
-		return dst, nil
+	if f := c.hitOpen(dst); f != nil {
+		return f, nil
 	}
 
 	lock := c.lockFor(packageHash)
@@ -154,8 +177,8 @@ func (c *Cache) Path(packageHash, src string) (string, error) {
 	defer lock.Unlock()
 
 	// Another request may have finished while we waited for the lock.
-	if c.hit(dst) {
-		return dst, nil
+	if f := c.hitOpen(dst); f != nil {
+		return f, nil
 	}
 
 	// Write to a temp file and rename. A crash or a full disk mid-pack would
@@ -163,26 +186,128 @@ func (c *Cache) Path(packageHash, src string) (string, error) {
 	// request would happily serve as if it were whole.
 	tmp, err := os.CreateTemp(c.dir, packageHash+".*.partial")
 	if err != nil {
-		return "", fmt.Errorf("packcache: %w", err)
+		return nil, fmt.Errorf("packcache: %w", err)
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }() // no-op once the rename has succeeded
 
 	if err := scan.PackPath(src, tmp); err != nil {
 		tmp.Close()
-		return "", fmt.Errorf("packcache: pack %s: %w", src, err)
+		return nil, fmt.Errorf("packcache: pack %s: %w", src, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return "", fmt.Errorf("packcache: %w", err)
+		return nil, fmt.Errorf("packcache: %w", err)
 	}
 	if err := os.Rename(tmpName, dst); err != nil {
-		return "", fmt.Errorf("packcache: %w", err)
+		return nil, fmt.Errorf("packcache: %w", err)
+	}
+
+	// Open immediately, and let Open retry if this loses a race with an evicting
+	// goroutine.
+	//
+	// A window exists here by inspection: between the rename and this open,
+	// another goroutine's enforceBound can remove the archive. Unlike the
+	// caller-side window this replaced, it has NOT been reproduced.
+	//
+	// The honest history, because the wrong version of it was briefly written
+	// into this file: a stress run with the cache bounded to one archive and 64
+	// clients reported ~70 of 7,680 requests failing, and that was read as this
+	// window firing. It was not. Those failures had status 0 - a TRANSPORT
+	// error, the harness exhausting sockets because it used http.Get and opened
+	// a fresh connection per request. Once the test pooled its connections the
+	// failures vanished, and a build with this retry disabled then passed five
+	// runs out of five. So the retry guards a gap that is real in the code and
+	// that no measurement here has ever shown firing.
+	//
+	// It is kept because it is cheap and the failure it prevents is a 500 on a
+	// song that exists. It is NOT kept because it was measured, and this comment
+	// says so rather than implying otherwise.
+	//
+	// One thing that genuinely was measured, in the negative: holding a handle
+	// on the temp file and renaming underneath it - the tidy fix that would
+	// close the window by ordering - does not work. On Windows os.Rename fails
+	// outright while the source is open, and it broke every serial baseline
+	// request the moment it was tried. That was reasoned from Go's share flags
+	// and was simply wrong.
+	f, err := os.Open(dst)
+	if err != nil {
+		return nil, fmt.Errorf("packcache: %w: %w", errVanished, err)
 	}
 
 	// Evict AFTER the insert, and never the archive just written: a caller is
 	// about to serve it. enforceBound skips the newest entry for that reason.
 	c.enforceBound(dst)
-	return dst, nil
+	return f, nil
+}
+
+// errVanished marks the one failure that is worth retrying: the archive was
+// packed and renamed into place, and an evicting goroutine removed it before it
+// could be opened. Every other error means something is actually wrong.
+var errVanished = errors.New("packed archive evicted before it could be opened")
+
+// openAttempts bounds the retry. Each attempt is a full re-pack, so a loop that
+// never gave up could spin forever against a cache bounded smaller than a single
+// archive - a misconfiguration, but one the server should survive rather than
+// hang on. Three is arbitrary and deliberately so: the window it guards has
+// never been observed firing, so there is no measured rate to size it against,
+// and pretending otherwise would be the same mistake this package's history is
+// already full of.
+const openAttempts = 3
+
+// Open returns an OPEN archive for src, packing it if needed. The caller owns
+// the file and must close it.
+func (c *Cache) Open(packageHash, src string) (*os.File, error) {
+	var err error
+	for attempt := 0; attempt < openAttempts; attempt++ {
+		var f *os.File
+		f, err = c.openOnce(packageHash, src)
+		if err == nil {
+			return f, nil
+		}
+		if !errors.Is(err, errVanished) {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("packcache: gave up after %d attempts: %w", openAttempts, err)
+}
+
+// Path returns the path of a packed archive for src, packing it if this is the
+// first request.
+//
+// Prefer Open. A path is a claim about the past: by the time the caller acts on
+// it, eviction may have removed the file. Path remains because tests and tools
+// that are not serving concurrently find it convenient, and because the
+// eviction tests need to assert on paths rather than handles - on Windows an
+// open handle prevents the very removal those tests exist to observe.
+func (c *Cache) Path(packageHash, src string) (string, error) {
+	f, err := c.Open(packageHash, src)
+	if err != nil {
+		return "", err
+	}
+	name := f.Name()
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("packcache: %w", err)
+	}
+	return name, nil
+}
+
+// hitOpen returns an open handle to dst when it is a usable cached archive, and
+// marks it as recently used. It returns nil when there is no usable archive -
+// deliberately not an error, because "not cached yet" is the ordinary case and
+// the caller's next step is to pack, not to report a failure.
+func (c *Cache) hitOpen(dst string) *os.File {
+	f, err := os.Open(dst)
+	if err != nil {
+		return nil
+	}
+	st, err := f.Stat()
+	if err != nil || st.Size() == 0 {
+		f.Close()
+		return nil
+	}
+	now := time.Now()
+	_ = os.Chtimes(dst, now, now) // best effort; a read-only data dir must not fail a serve
+	return f
 }
 
 // hit reports whether dst is a usable cached archive, and marks it as recently

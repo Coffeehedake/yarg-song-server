@@ -147,3 +147,59 @@ claim of parity is made for it, and the API documentation says so.
   property of the output from a property of the key is the mistake; only the bytes settle it.
 - Reproducing `SortString` means it can drift from upstream, exactly as ADR-001 accepted for
   the format parsers. Mitigated the same way: by measuring against a real client.
+
+## Concurrency, measured 2026-09-07 — and the defect it found
+
+Everything above was measured with one client at a time. "A Pi on the LAN serves a shared
+library" is inherently concurrent, so this is what several clients at once actually do.
+
+As with archive ingest, a throwaway probe **printed** what happened before anything was
+asserted. It found one real defect, confirmed two properties, and corrected one promise this
+ADR had been making loosely.
+
+### The defect: a 404 for a song that exists
+
+The handler asked the cache for a **path** and then opened it as a separate step. An evicting
+goroutine could remove the archive in between, and the server then answered
+
+> **404** — *this song is no longer where the index says it is; rescan*
+
+for a song that was perfectly present. Confidently wrong, and it points the operator at a
+library that is fine.
+
+Measured on Windows, 64 clients pulling a 40-song library through a cache bounded to two
+archives: **2, 1 and 0 spurious 404s across three runs of 2,560 requests.** Rare enough never
+to be seen by hand, common enough to happen constantly on a busy server.
+
+`packcache.Open` now returns an **open file** rather than a path, so there is no moment when
+the caller holds a name but not a handle. On POSIX an unlinked file stays readable through an
+open descriptor; on Windows the remove fails while the handle is open and `enforceBound`
+already skips that entry. `Path` remains, implemented on top of `Open`, for tests and tools
+that are not serving concurrently.
+
+**A `.sng` already in the library is still opened from its own path**, because there the 404
+means what it says: someone really did move the file.
+
+### Two properties that held
+
+- **The thundering herd collapses.** 64 concurrent requests for one *uncached* song produce
+  one pack, one archive in the cache, and 64 byte-identical responses. The sharded lock and
+  the double-check after acquiring it do what they claim.
+- **Eviction under load costs a re-pack and never data.** 7,680 requests across 64 clients
+  against a cache bounded to a **single** archive: every response byte-identical to the same
+  song packed serially. Zero mismatches. This is the claim at the top of `packcache` that was
+  false once before, now measured under the conditions most likely to break it.
+
+### One promise corrected: the bound is a high-water target, not a hard cap
+
+`pack_cache_max` is enforced *after* each insert, so concurrent packs can finish before any
+eviction runs. Peak cache observed at **1.5× the bound with 4 and 16 clients, 2.25–2.75× with
+64** — an overshoot of one to three archives, growing with concurrency rather than unbounded.
+
+On Windows there is a second contributor, and it is deliberate: a file being served cannot be
+evicted, because the handle that guarantees the song is servable is the same handle that
+blocks the remove. **That is the right way round.** The bound is a disk-space target; serving
+a song that exists is a correctness promise, and when they conflict the promise wins.
+
+Operators sizing a cache on a small SD card should therefore treat `pack_cache_max` as
+"roughly this, plus a few archives under load", not as a ceiling.

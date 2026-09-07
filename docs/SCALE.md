@@ -120,6 +120,39 @@ Three things there, in order of importance:
   directory tree and reading small files, so a Pi on an SD card will be far slower and the
   ratio is not predictable from here. The memory constant should carry across; the time
   constant should not be assumed to.
-- **Concurrency is untested.** Every request here was serial. Nothing says what happens
-  when eight clients sync at once, which is the actual shape of "a Pi on the LAN serves a
-  shared library".
+- ~~**Concurrency is untested.**~~ **Closed 2026-09-07, and it found a real defect** — an
+  intermittent 404 for a song that exists, when eviction removed an archive between the
+  handler taking its path and opening it. See [ADR-002](ADR-002-v1-store.md), "Concurrency".
+  What is now measured: the thundering herd collapses to one pack; 7,680 requests across 64
+  clients against a single-archive cache bound returned byte-identical archives with zero
+  mismatches; and the bound is a high-water target rather than a hard cap, overshooting by
+  one to three archives as concurrency rises.
+
+  Still untested: concurrency *at scale*. These runs used 40 songs, not 31,109, and the
+  clients were goroutines on the same machine rather than real ones over a network.
+
+## What the concurrency work cost, and three lessons about instruments
+
+The defect above took four attempts to pin down, and every wrong turn was the measurement
+rather than the server. That is worth recording, because this project's whole method is to
+trust measurement over reasoning, and a measurement can be wrong in ways that reasoning is
+not.
+
+**A regression test has to be tuned against the defect, not written and hoped over.** The
+first version — cache bounded to two archives, one pass over the library — **passed on the
+broken code**. A test that catches a bug one run in three is decoration. One archive and three
+rounds fails every time the defect is reintroduced, and the numbers are in the test with a
+note saying why they are those numbers.
+
+**The harness blamed the wrong component.** Using `http.Get` opened a fresh connection per
+request; at 7,680 requests roughly one run in six then failed with a few responses whose
+status was `0`. That is the test machine running out of sockets, not the server losing a
+song — but the failure counter reported both identically, and the noise was briefly written
+up as a *second* defect inside the pack cache. It was not. Pooling connections removed it,
+and a build with the supposed fix disabled then passed five runs out of five. `fetch` now
+reports transport errors as a separate category for exactly this reason.
+
+**Reasoning about a platform is not measuring it.** The tidy fix for the remaining window was
+to hold a handle on the temp file and rename underneath it. That was argued from Go's Windows
+share flags and is simply wrong: `os.Rename` fails while the source is open, and it broke
+every serial request the moment it was tried. One test run replaced a confident paragraph.
