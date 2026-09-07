@@ -288,9 +288,37 @@ observable.
    is waiting on Jay.
 2. **Would they take `SngFile.TryLoadFromStream` on its own?** It is a small, general
    improvement with no remote-library baggage. If the answer is yes, that is worth doing
-   first regardless of what happens to the rest.
-3. **Is anyone upstream already on this?** Not searched exhaustively. Doing so is cheaper
-   than being told.
+   first regardless of what happens to the rest. **Nothing is in flight on it** — searched
+   2026-09-07: the open PRs on `YARG.Core` are vocals (#437) and chart parsing (#204), and
+   nothing has touched `SngFile` since the SNG handling changes of January 2024.
+3. **Is anyone upstream already on this?** ~~Not searched exhaustively.~~ **Answered
+   2026-09-07, and the answer changed two things in this document's neighbourhood.**
+
+   **The remote song source itself is unclaimed.** No issue and no PR proposes fetching
+   songs from a server.
+
+   **The control channel is not.** [#984][p984] — open as a draft since February 2025 —
+   puts an HTTP server *inside* YARG on port 9090, lists the library, and selects a song in
+   the running game when you click it. Its author calls it *"Very basic version of #860"*.
+   A contributor tried it, said *"it works really well"*, and asked for it to be reshaped
+   into a JSON API on `/api` with a bundled HTML frontend — GET for the song list, POST to
+   change the selection. It then stalled with merge conflicts and no reviews.
+
+   Two consequences for this ADR. First, **the decision above is reinforced rather than
+   threatened**: finding 1 argued the Unity layer should do the networking because
+   YARG.Core has none, which was an inference; #984 is a Unity-layer HTTP server that
+   upstream reacted to with enthusiasm, which is evidence. Second, **#984 is the opposite
+   direction from increments 1–3 and does not overlap them** — it is the game serving
+   control, not the game fetching content — so the two compose rather than compete, and
+   `docs/UPSTREAM.md` now asks upstream whether they consider them one conversation or two.
+
+   Also merged since: [#1540][p1540], a static "Web Page" export of the library as a
+   self-contained HTML browser. Not live, cannot select a song, not the party-mode
+   frontend — but YARG now ships an HTML song browser, which is prior art for the one #984's
+   discussion asks for.
+
+[p984]: https://github.com/YARC-Official/YARG/pull/984
+[p1540]: https://github.com/YARC-Official/YARG/pull/1540
 4. **What does the managed mirror folder do about songs the player deleted by hand?**
    `yarg-sync` already treats anything that is not `<40 hex>.sng` as the player's own and
    never touches it. The in-game version inherits that rule and should say so where a

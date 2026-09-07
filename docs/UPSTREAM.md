@@ -35,24 +35,75 @@ their contributing guide tells contributors to ask.
 
 ## What we searched before asking
 
-Nothing found in their issues proposes loading songs from a remote server. The nearest is
-**[#860, "[FR] Built in Web Server for Song Queing/Search from external device"][i860]** —
-a *control plane* (search and queue from a phone) rather than a content source. Worth
-citing so it is clear we looked, and worth not conflating with what we are proposing.
+**Searched again on 2026-09-07, and the first search was not good enough.** It covered
+issues and missed pull requests entirely, which produced a confident claim that was false.
+What follows is the corrected picture; the retracted version is kept below it because the
+error is the interesting part.
 
-**But it is not merely adjacent, and that is worth saying in the post.** #860 has been open
-since August 2024, unlabelled, with a comment pointing at a second Discord proposal that
-adds up/down votes on the queue — so there is demand and nobody has built it. The reason
-nobody has is in the request's own words: *"whilst YARG is running"*. Nothing outside the
-game can reach a running client. **A remote song source is the thing that could** — the same
-channel that fetches songs can carry a queue. So this proposal is not novel work competing
-for their attention; it is the missing half of a request they already have.
+**No issue or PR proposes loading songs from a remote server.** That is the thing this
+project is actually building, and it is unclaimed. `#1030 "Add support for user-supplied
+song sources"` is about **source icons**, not sources of songs. `#167 "Online Servers"` is
+online co-op play. Nothing in `YARG.Core` touches stream loading either — the open PRs there
+are vocals (#437) and chart parsing (#204), and nothing has moved on `SngFile` since the SNG
+handling changes of early 2024.
+
+**But the queue half of #860 has been attempted, and we said it had not.**
+
+- **[#860][i860]**, open since August 2024, unlabelled: search and queue from a phone
+  *"whilst YARG is running"*.
+- **[#984][p984], "Add very basic ability to select song via http to music library"**, by
+  `theli-ua`, opened 2025-02-27, **still open as a draft**, one commit, targets `dev`. In the
+  author's words it *"allows to open `yarg_host:9090`, be presented with basic list of songs
+  in the library, upon clicking on them they will become selected in yarg"* — he labels it
+  *"Very basic version of #860"* and *"more of PoC to get some general feedback on the idea"*.
+  It has since collected a `Has Conflicts` label and no reviews.
+
+**Read the discussion on it before writing anything about #860.** `joewestcott` tried it and
+replied: *"I've just checked this out and it works really well!"*, that it *"could lay the
+foundation for a YARG app"* for parties where everyone browses on their own phone, and then
+asked for a specific architecture — *"it's probably better for YARG itself to serve a JSON
+API over HTTP, rather than generating HTML within csharp"*, with the frontend bundled as an
+HTML file served on the same port: *"`yarg_host:9090` would serve the HTML file from the
+frontend team, and `yarg_host:9090/api` would have a GET endpoint for a song list and a POST
+endpoint to change the selected song."* He offered to build that frontend himself. The
+author's answer was *"I don't know if anyone is actually interested in working on this or of
+any plans to do anything in this area"*, and it has sat there since.
+
+Three things follow, and none of them were visible from the issues alone:
+
+1. **"Nobody has built it" was wrong.** Someone built a working proof of concept eighteen
+   months ago and a contributor confirmed it works. The retracted paragraph is below.
+2. **"Nothing outside the game can reach a running client" was the wrong diagnosis.** #984
+   solves it the obvious way — it puts an HTTP *server* inside the game. That is not a
+   remote song source and it does not need one.
+3. **It is direct evidence that networking in the Unity layer is welcome**, which
+   [ADR-004](ADR-004-remote-song-source.md) had only inferred from YARG.Core having none.
+   Someone put an HTTP server in the Unity project and the response was enthusiasm plus a
+   request for more endpoints.
+
+**Also merged since we last looked: [#1540][p1540]**, `XaiaX`, merged into `dev` 2026-07-07 —
+a "Web Page" option in Settings → File Management → Export Songs that writes the library as a
+self-contained HTML browser with search, per-instrument filter chips, sortable columns and a
+detail view (9,366 songs ≈ 1.13 MB). It is a **static export**, so it is neither live nor able
+to select a song, and it is not the party-mode frontend. It does mean YARG now ships an HTML
+song browser, and its record schema is prior art for anyone building the one `joewestcott`
+asked for.
+
+### Retracted: what this section said before
+
+> #860 has been open since August 2024 … so there is demand and **nobody has built it**. The
+> reason nobody has is in the request's own words: *"whilst YARG is running"*. **Nothing
+> outside the game can reach a running client.** A remote song source is the thing that could.
+
+Both bolded claims are false, and the Discord draft below repeated the first one back to a
+channel where the two people who did the work are presumably reading. The cause is the usual
+one for this project: **a negative result from a search that did not cover pull requests,
+written down as a fact about the world.** The searches that would have caught it took under
+five minutes.
 
 [i860]: https://github.com/YARC-Official/YARG/issues/860
-
-Also searched and not found: any issue or PR about shared libraries, syncing songs between
-machines, or a network song source. `#1030 "Add support for user-supplied song sources"` is
-about **source icons**, not sources of songs.
+[p984]: https://github.com/YARC-Official/YARG/pull/984
+[p1540]: https://github.com/YARC-Official/YARG/pull/1540
 
 ## The shape of the ask, and why it is smaller than it sounds
 
@@ -118,7 +169,7 @@ Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 > of needing a separate tool.
 >
 > I read through `YARG.Core` and the Unity side before writing this, so I can ask something
-> more specific than "would you like this feature". Four questions, smallest first:
+> more specific than "would you like this feature". Five questions, smallest first:
 >
 > **1. Would you take `SngFile.TryLoadFromStream(Stream, bool)` on its own?**
 > `TryLoadFromFile` opens the `FileStream` itself, but everything after the first few lines
@@ -148,10 +199,11 @@ Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 > HTTPS from the server, or make it an opt-in per host? I'd rather match whatever you'd
 > want than pick one and find out later.
 >
-> **5. Which tier does a remote song source fall into, and is anyone already on it?**
-> It doesn't match any of the CONTRIBUTING examples and I couldn't find an issue for it — the
-> closest is #860, which is search/queue from a phone rather than a source of songs. Happy to
-> stay out of the way if someone's already working on it.
+> **5. Which tier does a remote song source fall into?**
+> It doesn't match any of the CONTRIBUTING examples. As far as I can find nothing proposes
+> fetching songs from a server — the closest things are #860 and #984, which are search/queue
+> and song *selection* from a phone rather than a source of songs. Happy to stay out of the
+> way if someone is on it and I've missed them.
 >
 > To be explicit about what I'm *not* asking for: **no `HttpClient` in `YARG.Core`.** There's
 > no networking in the library at all right now and I don't think this needs to change that —
@@ -163,11 +215,18 @@ Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 > just rather build it in a shape you'd consider than find out later it was never going to
 > fit.
 >
-> One thing in case it makes this more interesting rather than less: the same channel would
-> carry a **queue**. #860 has been open since 2024 asking for search-and-queue from a phone
-> while YARG is running, and as far as I can tell it's unbuilt because nothing outside the
-> game can reach a running client. A remote source is the thing that could. Not proposing that
-> part now — just noting the two are the same plumbing.
+> One last thing, and it's a question rather than a pitch. I found **#984** after I'd drafted
+> most of this — the PoC that serves a song list on `yarg_host:9090` and selects a song when
+> you tap it — and the discussion on it (a JSON API on `/api`, an HTML frontend bundled
+> alongside, GET for the list and POST to change the selection) describes almost exactly the
+> API my server already speaks, just pointed at the local library instead of a remote one.
+> It's been sitting in draft with conflicts for a while and the author wasn't sure anyone was
+> interested.
+>
+> So: **are the "control a running client" side and the "fetch songs from a server" side the
+> same conversation to you, or two?** If they're one, I'd rather help get #984 unstuck than
+> open a second front next to it — I have the API and the frontend already written and
+> LGPL'd, and I'm happy for them to be someone else's starting point rather than mine.
 >
 > Everything's LGPL-3.0-or-later, same as YARG:
 > <https://github.com/Coffeehedake/yarg-song-server>

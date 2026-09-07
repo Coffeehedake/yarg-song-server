@@ -717,7 +717,20 @@ The point at which the server stops being one feature and becomes a platform.
 
 Upstream has an **open feature request for exactly this** — [#860][i860], filed August 2024,
 still open and unlabelled, with a comment pointing at a second Discord proposal that adds
-up/down votes on the queue. So there is demand, and nobody has built it.
+up/down votes on the queue. So there is demand.
+
+**"And nobody has built it" is what this said until 2026-09-07, and it was wrong.**
+[#984][p984] has been open as a draft since February 2025: an HTTP server *inside* YARG on
+port 9090 that lists the library and selects a song in the running game when you tap it. A
+contributor tried it, said it works, and asked for it to be reshaped into a JSON API plus a
+bundled HTML frontend; it then stalled with merge conflicts and no reviews. The earlier claim
+came from searching issues and not pull requests — the same shape of error as everything in
+the lessons list: **a negative from a narrow query, written down as a fact about the world.**
+The full account, including what the discussion on it says upstream would accept, is in
+`docs/UPSTREAM.md`.
+
+That changes the framing here rather than the plan. #984 is the game *serving* control; this
+project is the game *fetching* content. They compose.
 
 **Half of it is ours already and half of it is not, and the split is worth being precise
 about** rather than filing this as "just add a UI":
@@ -754,6 +767,7 @@ documented 404 into HTML a sync client would try to parse as a `.sng`. Red-proof
 **Still no queue, deliberately**, and no UI hinting at one.
 
 [i860]: https://github.com/YARC-Official/YARG/issues/860
+[p984]: https://github.com/YARC-Official/YARG/pull/984
 
 ---
 
