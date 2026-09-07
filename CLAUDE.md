@@ -1,7 +1,13 @@
 # yarg-song-server — working notes
 
-Part of the "YARG — Open Source Contributions" project. The umbrella instructions live one level
-up in the project folder's `CLAUDE.md`; this file covers only this repo.
+Part of the "YARG — Open Source Contributions" project. The umbrella instructions — both repos,
+their remotes, the tooling and the constraints that span them — are in
+[`docs/WORKSPACE.md`](docs/WORKSPACE.md); this file covers only this repo.
+
+*They used to live one level up, in a `CLAUDE.md` at the folder root. That was safe only while
+the folder itself synced between machines. Syncthing was retired on 2026-09-06 and **the two
+machines are now independent**, so anything outside a pushed repo reaches exactly one machine —
+the umbrella instructions moved in here, and the folder root keeps a pointer.*
 
 ## Read before writing parser code
 
@@ -23,6 +29,10 @@ Then, by subject:
 | `docs/research/chart-preparsing.md` | Track names, note maps and the false-positive traps, cited per claim. **Read before touching `internal/chart`** |
 | `docs/research/yarg-song-formats.md` | The `.sng` binary layout, song identity, stem naming. Marked as history at the top: parts of it were superseded, and it says which |
 | `docs/TEST-CORPUS.md` | Where test input comes from, what we deliberately do not use, and how to run the oracle |
+| `docs/SCALE.md` | What this costs at 1k / 10k / 31k songs, the memory constant, and what the synthetic library does *not* prove |
+| `docs/DEPLOY-VAULT2.md` | The live deployment, and every claim it has and has not established |
+| `docs/UPSTREAM.md` | YARC's contribution rules, what we searched before proposing anything, and the draft outreach |
+| `docs/WORKSPACE.md` | The umbrella: both repos, remotes, tooling, and the rules that span them |
 
 ## Rules
 

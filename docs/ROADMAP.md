@@ -23,9 +23,14 @@ Repos, remotes, mirrors and the format research that everything else is built on
       divergent refs not kept. First sync 2026-09-05 16:44 ET, both `finished` with no error,
       and the GitHub side matches GitLab commit-for-commit.
 
-**Deliberately deferred:** the `yarg` fork is *not* cloned locally. The project folder is inside
-the Syncthing `dev-projects` mesh, so a local clone replicates ~350 MB to r7 and Vault2 for a repo
-nothing touches until Phase 3. Clone it when Phase 3 starts:
+**Deliberately deferred:** the `yarg` fork is *not* cloned locally, because nothing touches the
+client until Phase 3 and ~350 MB of Unity source with LFS is not worth carrying before then.
+
+*The original reason was different and is now void: the folder used to sit in the Syncthing
+`dev-projects` mesh, so a clone here replicated to r7 and Vault2 as well. Syncthing was retired
+on 2026-09-06 and the machines are independent, so a clone now costs disk on one machine only.
+The conclusion happens to survive the reason dying — but it survives on the weaker of the two
+arguments, which is worth knowing if the decision is revisited.* Clone it when Phase 3 starts:
 
 ```powershell
 cd "C:\dev\YARG - Open Source Contributions"
@@ -617,8 +622,9 @@ SHA-256 verified against `go.dev/dl/?mode=json` before extraction, with `go\bin`
 the MSI needs elevation, and an unattended `msiexec /qn` from a non-elevated session fails
 *silently* — the same failure mode that produced the Bambu Studio update loop. Nothing about this
 install needs elevation, and `GOPATH`/`GOCACHE` land in the user profile rather than in the
-Syncthing root. Promote it to a machine-wide install later if you want; nothing depends on where
-it lives.
+projects root — which mattered when that root was a Syncthing folder, and now simply keeps a
+multi-gigabyte build cache out of a directory full of repos. Promote it to a machine-wide
+install later if you want; nothing depends on where it lives.
 
 **mingw-w64 followed, for the race detector.** `go test -race` needs cgo, and cgo needs a C
 compiler; without one ENG-1 reported `CGO_ENABLED=0` and `-race` failed outright with "requires
