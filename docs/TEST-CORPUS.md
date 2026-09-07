@@ -585,3 +585,68 @@ produces a forward slash and tests nothing; and `namelist()` normalises backslas
 so a correctly-built probe still *looks* wrong. Counting `0x5C` bytes in the file is the only
 honest check. **Both the writer and the reader hide the thing under test** — the same shape as
 the original defect, where an `fs.FS` view of an archive is not the archive.
+
+## Sixth oracle run — 2026-09-07, the first against REAL community charts
+
+Every earlier run scanned songs this project wrote. Jay supplied three community song packs —
+**128 songs, 1.16 GB** — and they were run through both YARG and our scanner. This closes the
+gap `docs/SCALE.md` and the section above both name: *self-authored input cannot produce unknown
+unknowns.*
+
+It also makes the oracle a script rather than a hand procedure. `scripts/oracle.ps1` repoints
+YARG's `SongFolders`, wipes the cache, launches, waits, compares, and **restores `settings.json`
+in a `finally` block** so a crash still puts the operator's YARG back.
+
+### The result, and why it is a WEAK positive
+
+| | |
+|---|---:|
+| Songs in library | 128 |
+| YARG refused | **0** |
+| Our scanner flagged | **0** |
+| YARG refused and we passed | **0** |
+| We flagged and YARG accepted | 0 |
+
+The standard held — but it held *trivially*. **Both sides said everything was fine, so there
+were no disagreements available to find.** A curated pack that people actually play is close to
+the least informative sample possible for this test: it contains no broken songs, which is
+precisely what the comparison exists to catch. Reporting this as "the oracle passed at scale"
+would be the same error as the second oracle run, which recorded a miss as a pass.
+
+What it *does* establish, and these are worth having:
+
+- **Zero false positives on 128 real charts.** Nothing had ever tested that. A scanner that
+  cried wolf on ordinary community songs would be useless in exactly the situation it is for,
+  and this is the first evidence it does not.
+- **The harness works end to end and refuses to lie.** It waits on the *song cache* rather than
+  on `badsongs.txt`, because a library YARG is happy with produces no `badsongs.txt` at all —
+  waiting on that file would hang on the very outcome we most want to report. It requires the
+  cache's mtime to be newer than the launch, so last run's file cannot be read as this run's
+  verdict, which is a mistake this project has already made once.
+- **`ErrTooManySongs` is right about real files.** Pointed at the three pack `.zip`s as
+  downloaded, the scanner refused all three with *"archive holds more than one song folder;
+  unpack it and add the songs individually"*. That behaviour existed only as a synthetic test
+  until now.
+
+### A second, independent oracle: upstream's own scanner
+
+`YARG.Core.UnitTests` has two integration tests, `FullScan` and `QuickScan`, that were being
+**skipped** — they call `CacheHandler.RunScan` over directories named by the
+`YARG_TEST_SONG_DIRS` environment variable, and skip when it is unset. Pointed at the same 128
+songs, both pass and YARG.Core writes **no `badsongs.txt`**.
+
+That is worth more than one more green tick: it exercises upstream's real scanner in-process,
+without launching the game, so it can run in seconds and on any machine with the .NET SDK. Note
+what it does and does not assert — upstream's own comment says *"the only fail condition would
+be an unhandled exception"* — so it is a crash test over real input, not a verdict test.
+
+### What is STILL not covered
+
+- **All 128 songs are `.mid`.** Real-world `.chart` coverage remains zero, and `.chart` is the
+  format with the early-return bug this project already found once.
+- **No broken songs.** The sample most likely to find a defect is old, odd and badly made —
+  Frets on Fire era, odd encodings, missing stems, non-Latin metadata. A deliberately ugly
+  hundred would be worth more than these curated packs, and than a thousand more like them.
+- **The corpus is not redistributable and is not committed.** These are commercial recordings
+  charted by the community; they live on one machine and only statistics reach this repo. That
+  is the same line drawn at the top of this document, and it is why `cmd/mkscale` exists.

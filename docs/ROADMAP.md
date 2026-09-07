@@ -468,6 +468,30 @@ and exercises the whole server end-to-end.
       does not close:** the songs are uniform, so a real library's *variety* is untested,
       and the oracle has never run at scale — that is the measurement most likely to find a
       YARG rejection category the scanner misses, and it needs real charts.
+- [x] **The oracle, against REAL charts and as a script** — done 2026-09-07.
+      `scripts/oracle.ps1` replaces a documented hand procedure: it repoints YARG's
+      `SongFolders`, wipes the cache, launches, waits, compares both verdicts, and restores
+      `settings.json` in a `finally` so a crash still puts the operator's YARG back. It waits
+      on the **song cache** rather than `badsongs.txt`, because a library YARG is happy with
+      writes no `badsongs.txt` at all, and it requires that file to be newer than the launch so
+      last run's verdict can never be read as this one's.
+
+      Run against **128 real community songs** (1.16 GB, supplied by Jay): YARG refused 0, we
+      flagged 0. **A weak positive, and recorded as one** — both sides agreeing means there were
+      no disagreements available to find, and a curated pack people actually play is close to
+      the least informative sample for this test. What it does establish is **zero false
+      positives on real charts**, which nothing had tested, and that `ErrTooManySongs` is right
+      about real pack `.zip`s rather than only synthetic ones.
+- [x] **Un-skip upstream's own scanner tests** — done 2026-09-07. `YARG.Core.UnitTests`'
+      `FullScan` and `QuickScan` skip unless `YARG_TEST_SONG_DIRS` names a song directory.
+      Pointed at the same 128 songs, both pass and YARG.Core writes no `badsongs.txt` — a second
+      oracle that runs **in-process in seconds**, needing only the .NET SDK rather than the game.
+      Upstream's own comment says the only fail condition is an unhandled exception, so it is a
+      crash test over real input, not a verdict test; `docs/TEST-CORPUS.md` says so rather than
+      letting it read as more.
+
+      **Still uncovered:** all 128 songs are `.mid`, so real-world `.chart` coverage is zero —
+      and `.chart` is the format whose early-return bug this project already found once.
 - [x] **Measure what several clients at once do — and fix what it found** — done 2026-09-07.
       Every measurement before this was serial, while the whole point of the project is a
       server on a LAN with more than one client. The probe found a **real defect**: the song
