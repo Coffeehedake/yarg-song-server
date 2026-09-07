@@ -650,3 +650,73 @@ be an unhandled exception"* — so it is a crash test over real input, not a ver
 - **The corpus is not redistributable and is not committed.** These are commercial recordings
   charted by the community; they live on one machine and only statistics reach this repo. That
   is the same line drawn at the top of this document, and it is why `cmd/mkscale` exists.
+
+## Seventh oracle run — 2026-09-07, songs broken on purpose, and the standard finally fails
+
+The sixth run held trivially: 128 healthy songs, nothing refused, nothing flagged. A comparison
+where both sides say nothing cannot tell a scanner that agrees with YARG from one that is asleep.
+
+So `cmd/mkbroken` takes songs with **real structure** and damages them in named ways — each case
+carrying a **predicted verdict**. That turns the oracle from a two-column table into three:
+
+```
+prediction | our scanner | YARG
+```
+
+and each disagreement means something different. YARG refusing what we passed is the standard
+violated. YARG *accepting* what we predicted it would refuse means our model of YARG is wrong,
+which a two-column comparison cannot see at all.
+
+16 cases were generated from the 128-song library. **Neither the input nor the output may be
+committed**: damage a copyrighted recording and it is still a copyrighted recording. The tool
+ships; what it makes does not.
+
+### The result
+
+| | |
+|---|---:|
+| Songs indexed | 14 |
+| YARG refused | 6 |
+| We flagged | 5 |
+| **YARG refused, we PASSED** | **2** |
+| We flagged, YARG accepted | 1 |
+
+**The two we missed:**
+
+| Case | YARG's reason |
+|---|---|
+| `03-chart-truncated` | Corruption of either the ini file or chart/mid file |
+| `04-chart-is-not-a-chart` | Corruption of either the ini file or chart/mid file |
+
+`03` is a MIDI cut to a third of its length. `04` is a plain text file named `notes.mid`. **Our
+scanner indexes both as perfectly good songs and reports no issue at all**, because it never
+parses the chart — it only hashes it. Song identity is `SHA1(chart bytes)` by design, and this
+project has deliberately not reimplemented YARG's parser. The consequence, unnoticed until now,
+is that we cannot tell a chart from a shopping list, and will happily serve one to a client that
+then refuses it.
+
+That is the standard this project holds, violated, and found by the corpus on its first run.
+
+The one in the other column is fine: `07-no-song-ini` is flagged by us and loaded by YARG. A
+scanner is allowed to be stricter than a refusal.
+
+### The harness lied first, and the fix changed the answer
+
+The first run of this reported **3** rejections and 3 misses. The corrected run reports **6** and
+2. The difference was not YARG.
+
+`badsongs.txt` reports some rejections against the offending **file** rather than the song
+folder, so keying the comparison on `Split-Path -Leaf` produced a key of `notes.mid` — which
+matched no case, collapsed four separate rejections onto one key, and made the songs they
+belonged to look accepted. **The table still added up. It was still wrong.**
+
+Both sides now reduce any path to the song folder relative to the library root, and the script
+reports **unattributable rejections** explicitly and exits 2 — inconclusive rather than passing —
+whenever a refusal cannot be matched to a song. A comparison that cannot name what it compared
+should say so, not average it away.
+
+That is the fourth instrument failure in this stretch of work, after the length-comparison probe,
+the socket-exhausted load harness, and the Windows rename-while-open reasoning. The pattern is
+consistent enough to state as a rule: **when a measurement surprises you, suspect the instrument
+before the subject** — and when the instrument is fixed, re-read the result, because it may have
+been wrong in both directions at once.

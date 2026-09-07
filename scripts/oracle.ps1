@@ -44,6 +44,19 @@ $ErrorActionPreference = 'Stop'
 
 function Fail($msg) { Write-Host "ORACLE FAILED: $msg" -ForegroundColor Red; exit 1 }
 
+# SongKey reduces any path YARG or our scanner reports to the song folder it
+# belongs to, relative to the library root. Both sides then use the same key and
+# the comparison is meaningful.
+function SongKey([string] $path, [string] $root) {
+  $p = $path.Trim()
+  if ($p.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
+    $p = $p.Substring($root.Length).TrimStart('\', '/')
+  }
+  $first = ($p -split '[\\/]', 2)[0]
+  if (-not $first) { return $p }
+  return $first
+}
+
 if (-not (Test-Path -LiteralPath $Library)) { Fail "library not found: $Library" }
 $Library = (Resolve-Path -LiteralPath $Library).Path
 
@@ -125,7 +138,16 @@ if (Test-Path -LiteralPath $bad) {
   for ($i = 0; $i -lt $lines.Count; $i++) {
     $l = $lines[$i].Trim()
     if ($l -match '^[A-Za-z]:\\' -and $i + 1 -lt $lines.Count) {
-      $rejects[(Split-Path $l -Leaf)] = $lines[$i + 1].Trim()
+      # Key by the song FOLDER relative to the library, not by the filename.
+      #
+      # The first version of this used Split-Path -Leaf, and it was wrong in a
+      # way that quietly corrupted the whole comparison: YARG reports some
+      # rejections against the offending FILE rather than the folder, so a
+      # refusal came back keyed as "notes.mid". That matched no case, which made
+      # one real rejection unattributable AND made the song it belonged to look
+      # accepted. A lossy key is worse than no key, because the table still adds
+      # up and is still wrong.
+      $rejects[(SongKey $l $Library)] = $lines[$i + 1].Trim()
     }
   }
 }
@@ -134,12 +156,14 @@ Write-Host "YARG refused $($rejects.Count) song(s)"
 # --- our verdict --------------------------------------------------------------
 $raw = & $ServerExe scan $Library 2>&1 | Out-String
 $flagged = @{}
+$indexed = @()
 $total = 0
 foreach ($m in [regex]::Matches($raw, '(?ms)^\{.*?^\}')) {
   try { $o = $m.Value | ConvertFrom-Json } catch { continue }
   $total++
+  $indexed += (SongKey $o.source_path $Library)
   if ($o.issues -and $o.issues.Count -gt 0) {
-    $flagged[(Split-Path $o.source_path -Leaf)] = ($o.issues | ForEach-Object { $_.code }) -join ','
+    $flagged[(SongKey $o.source_path $Library)] = ($o.issues | ForEach-Object { $_.code }) -join ','
   }
 }
 Write-Host "our scanner indexed $total song(s), flagged $($flagged.Count)"
@@ -147,10 +171,20 @@ Write-Host "our scanner indexed $total song(s), flagged $($flagged.Count)"
 # --- the comparison -----------------------------------------------------------
 $missed = @()
 foreach ($k in $rejects.Keys) {
-  $hit = $flagged.Keys | Where-Object { $k -like "$_*" -or $_ -like "$k*" -or $_ -eq $k }
-  if (-not $hit) { $missed += "$k  <- YARG: $($rejects[$k])" }
+  if (-not $flagged.ContainsKey($k)) { $missed += "$k  <- YARG: $($rejects[$k])" }
 }
-$extra = @($flagged.Keys | Where-Object { -not ($rejects.Keys -contains $_) })
+$extra = @($flagged.Keys | Where-Object { -not $rejects.ContainsKey($_) })
+
+# A rejection whose key names no song folder we indexed means the key extraction
+# is wrong, not that the song is fine. Say so loudly rather than letting it sink
+# into one of the columns below.
+$unattributable = @($rejects.Keys | Where-Object { $indexed -notcontains $_ })
+if ($unattributable.Count -gt 0) {
+  Write-Host ""
+  Write-Host "UNATTRIBUTABLE REJECTIONS - these could not be matched to a song folder:" -ForegroundColor Yellow
+  $unattributable | ForEach-Object { Write-Host "  $_  <- YARG: $($rejects[$_])" -ForegroundColor Yellow }
+  Write-Host "  (the comparison below cannot be trusted while this is non-empty)" -ForegroundColor Yellow
+}
 
 Write-Host ""
 Write-Host "=== agreement ==="
@@ -167,6 +201,12 @@ if ($extra.Count -gt 0) {
   Write-Host ""
   Write-Host "we flagged these; YARG accepted them anyway (allowed, not a failure):"
   $extra | Select-Object -First 20 | ForEach-Object { Write-Host "  $_  ($($flagged[$_]))" }
+}
+
+if ($unattributable.Count -gt 0) {
+  Write-Host ""
+  Write-Host "ORACLE INCONCLUSIVE: $($unattributable.Count) rejection(s) could not be attributed to a song." -ForegroundColor Yellow
+  exit 2
 }
 
 if ($missed.Count -gt 0) {

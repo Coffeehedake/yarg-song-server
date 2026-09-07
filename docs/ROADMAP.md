@@ -492,6 +492,23 @@ and exercises the whole server end-to-end.
 
       **Still uncovered:** all 128 songs are `.mid`, so real-world `.chart` coverage is zero —
       and `.chart` is the format whose early-return bug this project already found once.
+- [x] **Break real songs on purpose, and find something** — done 2026-09-07. `cmd/mkbroken`
+      damages songs with real structure in 16 named ways, each carrying a **predicted verdict**,
+      so the oracle compares three columns rather than two: prediction, our scanner, YARG.
+
+      **The standard failed, for the first time on this axis.** Of 6 songs YARG refused, **2 were
+      ones we passed with no issue at all**: a MIDI truncated to a third of its length, and a
+      plain text file named `notes.mid`. Both draw *"Corruption of either the ini file or
+      chart/mid file"* from YARG. The cause is not a bug in a check — it is the absence of one:
+      **the scanner never parses the chart, it only hashes it.** Identity is `SHA1(chart bytes)`
+      by design and this project deliberately does not reimplement YARG's parser, but the
+      consequence had never been stated: we cannot tell a chart from a shopping list.
+- [ ] **Decide what "is this even a chart?" should mean.** The cheap answer catches both cases
+      without reimplementing anything: a structural check that `notes.mid` begins `MThd` with a
+      plausible header, and that a `.chart` contains a `[Song]` section. It would **not** catch a
+      MIDI truncated *after* its header, and saying so matters more than the check does — a
+      validation that quietly implies more coverage than it has is how this project got the
+      *"eviction costs a re-pack and never data"* sentence that was false when written.
 - [x] **Measure what several clients at once do — and fix what it found** — done 2026-09-07.
       Every measurement before this was serial, while the whole point of the project is a
       server on a LAN with more than one client. The probe found a **real defect**: the song

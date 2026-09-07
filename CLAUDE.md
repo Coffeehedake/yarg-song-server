@@ -100,6 +100,16 @@ Then, by subject:
   the pack cache; and a Windows rename-while-open fix argued from share flags that broke every
   request the moment it ran. Check the instrument before the subject, and record the
   correction rather than quietly deleting it.
+- **A lossy key makes a table that adds up and is wrong.** The oracle keyed YARG's rejections
+  on `Split-Path -Leaf`, but `badsongs.txt` names the offending FILE for some failures, so four
+  separate rejections collapsed onto one key of `notes.mid` — hiding half of them AND making the
+  songs they belonged to look accepted. The first run reported 3 rejections; the corrected one
+  reported 6. When a comparison cannot name what it compared, it must say so and exit
+  inconclusive, not average it away.
+- **The scanner hashes the chart; it does not read it.** Song identity is `SHA1(chart bytes)`
+  and this project deliberately does not reimplement YARG's parser. The price, found on
+  2026-09-07: a truncated MIDI and a text file named `notes.mid` both index as healthy songs
+  that YARG then refuses. Anything claiming the scanner "validates" a chart is wrong.
 - **Comparing counts and totals is not comparing bytes.** Two machines each reported 22 archives
   and 229,515 bytes and were 16 files apart. Any claim of the form "identical" must come from
   hashing every file; a summary line cannot support it. The same applies to a second request that
