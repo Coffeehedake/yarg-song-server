@@ -330,9 +330,49 @@ runtime.
 so it can never silently rewrite source in a fork we intend to upstream. With the editor
 version matching the pin it has nothing to do anyway.
 
-Run it from a **scheduled task**, not from a bridge call — see the bridge notes below. Unity
-writes to `-logFile` rather than stdout, so it has none of the `EPIPE` fragility the Unity Hub
-CLI has.
+**Do NOT pass `-noUpm` to get around a Package Manager failure.** It resolves no packages, so
+the compile that follows is missing TextMeshPro and every other package dependency and reports
+errors that have nothing to do with the code under test. A run with it is not comparable to a
+run without it.
+
+Unity writes to `-logFile` rather than stdout, so it has none of the `EPIPE` fragility the
+Unity Hub CLI has. Launching it, though, is the part that bites:
+
+### Launch Unity with `Win32_Process.Create`, not `Start-Process`
+
+Measured 2026-09-07. Unity started from a bridge PowerShell call — `& $unity` or
+`Start-Process` alike — dies after 30 s with:
+
+```
+[Package Manager] Could not connect to IPC stream "Upm-<pid>" after 30.0 seconds.
+[Package Manager] Failed to start the Unity Package Manager local server process.
+```
+
+The message blames anti-virus and that is a red herring. Measured instead: `UnityPackageManager.exe`
+runs fine on its own (`--version` → `v9.21.3`), Defender has no ASR rules and Controlled Folder
+Access is off, there is 1.1 TB free, and `%LOCALAPPDATA%\Unity\Editor\upm.log` gets **no new
+entry at all** — polling `Win32_Process` for the whole 30 s window shows the child is never
+created. The editor is not failing to talk to UPM; it is failing to *spawn* it, because a
+process tree started from a bridge call inherits a job object that will not let it.
+
+The fix is to have something outside that job create the process:
+
+```powershell
+$cmd = '"C:\Program Files\Unity\Hub\Editor\6000.3.5f2\Editor\Unity.exe" ' +
+       '-batchmode -nographics -projectPath "C:\dev\YARG - Open Source Contributions\yarg" ' +
+       '-logFile "' + $log + '" -executeMethod YARG.Editor.SettingsRowProbe.Run'
+$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine = $cmd}
+```
+
+WMI creates it from `WmiPrvSE`, so it is outside the bridge's tree entirely. The UPM child
+appears within 25 s and the run completes normally. This also replaces the older "register a
+scheduled task" advice for Unity specifically — same breakaway, far less ceremony — though a
+scheduled task is still right for anything that must outlive the whole session.
+
+**Quote the project path inside `-ArgumentList`.** `Start-Process -ArgumentList @(..., $p, ...)`
+splits `C:\dev\YARG - Open Source Contributions\yarg` on its spaces and Unity exits with
+`Couldn't set project path to: C:/Users/ENG2/C:/dev/YARG`. The same applies to the WMI command
+line above, which is why every path in it is quoted.
 
 ### Opening the project dirties one tracked file, harmlessly
 

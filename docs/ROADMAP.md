@@ -667,9 +667,40 @@ Set to `DevelopmentOnly` — enough to develop and test, nothing weaker shipped 
 what a release build should do is now question 4 in the Discord post rather than a default
 quietly changed in a fork.
 
+**The settings row followed on 2026-09-07.** Increment 1 shipped with `SongServerUrl` as a
+hidden field edited by hand in `settings.json`, because the project had exactly one
+`AbstractSetting<string>` — the IPv4 one — and its visual parsed IPv4 addresses itself. It is
+now a real row on the Song Manager tab:
+
+- `TextSetting` is the shared base; the setting owns what is valid, the visual owns the text
+  field and knows nothing about either.
+- `IPv4SettingVisual` became `TextSettingVisual`, **renamed rather than replaced so its
+  `.cs.meta` GUID survives** — that GUID is the prefab's reference to it and to its four
+  serialized fields, and re-creating the file would have silently emptied all of them.
+- Every text setting shares the one prefab. No Addressables change, no cloned asset.
+
+**The reuse plan was wrong in one place, and only reading the asset found it.** The shared
+prefab has `m_CharacterValidation: 6` (Regex) with `m_RegexValue: '[\d.]'` baked in, so a URL
+is not merely rejected in that field — it is **untypeable**, the letters silently swallowed.
+TMP exposes no setter for `m_RegexValue`, so the filter is now installed through the public
+`onValidateInput` delegate, which takes precedence over the serialized one
+(`TMP_InputField.cs:631`, `onValidateInput ?? Validate`).
+
+Verified by `Assets/Editor/SettingsRowProbe.cs` in batchmode, 9 checks, zero `error CS`: the
+prefab resolves `TextSettingVisual`, all four serialized references survived the rename,
+`onEndEdit` still reaches `OnTextFieldChange`, the localization keys are in
+`Settings.Setting` and not a neighbouring section, **a URL is typeable in the row**, and the
+IPv4 row still rejects letters and accepts digits.
+
+One incidental measurement, upstream's behaviour and not ours: `IPAddress.TryParse` reads a
+leading-zero octet as **octal**, so typing `010.1.1.1` into the RB3E or sACN row silently
+stores `8.1.1.1`. The probe pins it so a future change to it is visible. A comment in
+`IPv4Setting` claimed the opposite until this was measured.
+
 **Exit criterion:** the fork can browse and play from a server without a sync step, and a
 discussion thread exists upstream. **Half met:** it can play from a server without a separate
-tool; the discussion thread is still waiting on Jay to post.
+tool, now configured from the menu rather than a text editor; the discussion thread is still
+waiting on Jay to post.
 
 ---
 
