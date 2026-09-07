@@ -23,14 +23,22 @@ Repos, remotes, mirrors and the format research that everything else is built on
       divergent refs not kept. First sync 2026-09-05 16:44 ET, both `finished` with no error,
       and the GitHub side matches GitLab commit-for-commit.
 
-**Deliberately deferred:** the `yarg` fork is *not* cloned locally, because nothing touches the
-client until Phase 3 and ~350 MB of Unity source with LFS is not worth carrying before then.
+**Cloned 2026-09-06**, ending a deferral this document argued for twice. It is on ENG-1 at
+`C:\dev\YARG - Open Source Contributions\yarg`, **625 MB** on disk with submodules and LFS —
+the earlier "~350 MB" estimate was low by most of a factor of two, which is the ordinary fate of
+a size guessed rather than measured. Branch `dev`, `origin` on Vault2 GitLab, `upstream` on
+GitHub, `YARG.Core` submodule initialised.
 
-*The original reason was different and is now void: the folder used to sit in the Syncthing
+*The deferral's original reason had already gone void: the folder used to sit in the Syncthing
 `dev-projects` mesh, so a clone here replicated to r7 and Vault2 as well. Syncthing was retired
-on 2026-09-06 and the machines are independent, so a clone now costs disk on one machine only.
-The conclusion happens to survive the reason dying — but it survives on the weaker of the two
-arguments, which is worth knowing if the decision is revisited.* Clone it when Phase 3 starts:
+on 2026-09-06, so a clone now costs disk on one machine only — and the conclusion had been
+surviving on the weaker of its two arguments for a day before anything acted on that.*
+
+It was cloned to answer a question rather than to start work: **YARG.Core builds and tests with
+plain `dotnet` and no Unity install** (`netstandard2.1` library, `net10.0` tests), which is what
+makes [`ADR-004`](ADR-004-remote-song-source.md) groundable in real types instead of guesses.
+
+If it needs cloning again:
 
 ```powershell
 cd "C:\dev\YARG - Open Source Contributions"
@@ -599,6 +607,36 @@ would carry a **queue**, which is what upstream's open issue [#860][i860] has be
 since August 2024 — search and queue from a phone while YARG is running. That request is
 unbuilt because nothing can reach the running game; a remote song source is the thing that
 could. See "Party mode" under Phase 4.
+
+**Design recorded 2026-09-07: [`ADR-004`](ADR-004-remote-song-source.md), grounded in
+YARG.Core rather than in the paragraph above.** Reading the code changed the shape of the ask
+twice over, and the entry above was wrong in one place — it says the seam is that
+`ActualLocation` / `SortBasedLocation` / `GetLastWriteTime()` assume a local path. True, but not
+the useful finding.
+
+- **YARG.Core contains no networking whatsoever** — `HttpClient|System.Net|UnityWebRequest`
+  returns **zero** matches across the whole library. The Unity project does network (Discord,
+  localization, song sources), but none of it produces a `SongEntry`. So this is not "extend the
+  existing pattern"; there is no pattern, and putting an `HttpClient` in YARG.Core is a change of
+  character rather than an addition.
+- **`SngEntry` and `UnpackedIniEntry` are `internal sealed` with private constructors**, and so
+  is their base `IniSubEntry`. A remote entry type cannot be added from outside the assembly at
+  all — every entry-level approach is a change *to* YARG.Core.
+- **Exactly one source seam already exists** — `protected abstract FixedArray<byte>?
+  GetChartData(string filename)` — and it is not enough: `SngEntry` reaches for
+  `SngFile.TryLoadFromFile(_location, …)` at seven sites and the local filesystem at nine more.
+  `SngFile` has no stream-taking loader, though `FixedArray` does.
+
+So the decision is **YARG.Core stays offline and the Unity layer fetches**, in three increments,
+with only the first committed to: a managed mirror folder inside the game (**zero YARG.Core
+changes** — it is `yarg-sync` moved in-process, and it needs no answer from upstream to ship);
+then lazy fetch-on-play, which needs exactly two named seams; then server-supplied entries,
+deferred because consuming that path means speaking the cache format, whose version constant is
+`26_09_04_00` and whose groups store absolute paths — the `songcache.bin` non-goal wearing a hat.
+
+The upstream ask gets much smaller as a result: not "support remote libraries" but "take
+`SngFile.TryLoadFromStream`, and consider a materialise hook on `IniSubEntry`" — both small,
+both useful on their own, neither dragging networking into the library.
 
 **Exit criterion:** the fork can browse and play from a server without a sync step, and a
 discussion thread exists upstream.
