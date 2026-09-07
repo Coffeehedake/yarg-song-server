@@ -836,60 +836,68 @@ deployment. The generated audio is zero-filled, so unlike the real corpus this o
 commit if it ever needs to be.
 
 
-## The oracle is a different YARG from the one the fork is built on
+## RETRACTED: "the oracle is a different YARG from the one the fork is built on"
 
-Found 2026-09-07, by accident, while checking that the fork's song-server mirror produces
-songs YARG will actually scan. It is recorded here because it undermines a method this
-project has been relying on, not because of the bug itself.
+Two sections used to sit here, added 2026-09-07, claiming that current YARG `dev` refuses a
+song whose `song.ini` omits `song_length` while v0.15.0 accepts it — and drawing from that the
+larger conclusion that this project's standard had been validated against a build the fork does
+not use. **Both are withdrawn.** They were a false comparison, and they are replaced rather than
+quietly deleted because the way they went wrong is the useful part.
 
-### What was measured
+### The comparison
 
-Faith No More — "Easy" from the real corpus. Two folders, the **chart copied byte for byte**
-(94 KB `notes.mid`) and the same 3 MB `song.ogg`, differing by exactly one line of
-`song.ini`:
-
-```
-song_length = 190676
-```
-
-| | with `song_length` | without `song_length` |
+| | how it was run | audio backend |
 |---|---|---|
-| **YARG v0.15.0** — the oracle | accepted | **accepted**, no `badsongs.txt` written at all |
-| **YARG `dev` `3673672`** — what the fork is built on | accepted | **refused**: *"Corruption of either the ini file or chart/mid file"* |
-| our scanner | indexed | indexed, **not flagged** |
+| **v0.15.0** | the real game, via `scripts/oracle.ps1` | **up** |
+| **`dev`** | editor batchmode, via `ScanFolderProbe` | **dead** |
 
-Isolated by bisecting six synthetic variants that differed only in which `song.ini` keys were
-present, then confirmed on the real song above so the result could not be blamed on synthetic
-audio. `song_length` is the only variable.
+The harnesses differed in the one way that decides this exact case. `SongEntry.IniBase.cs:286`:
 
-Current `dev` refuses a song for omitting an **optional** metadata key, and attributes it to
-chart corruption — which is not what happened and would send anyone debugging it to the wrong
-file.
+```csharp
+if (entry._metadata.SongLength <= 0)
+{
+    using var mixer = entry.LoadAudio(0, 0, false);
+    ...
+}
+```
 
-### Why this matters more than the bug
+No `song_length` means the scanner measures the length **from the audio**, which needs
+`GlobalAudioHandler` — initialised by `GlobalVariables.cs:96` in the running game and never in
+a static editor method. `LoadAudio` throws, `ScanSngFile` catches it, and reports *"Corruption
+of either the ini file or chart/mid file"*: a message that names neither the real cause nor the
+real file, and is entirely convincing. **All 14 extra refusals were the harness.**
 
-**The standard has been validated against a build the fork does not use.** Every oracle run in
-this document ran YARG **v0.15.0**; the fork is built on **`dev`**, thousands of commits later.
-Where the two disagree, the oracle cannot see it — so "the standard held" means *held against
-v0.15.0*, and says nothing about the YARG a contribution would land in.
+Calling `GlobalAudioHandler.Initialize<BassAudioManager>()` does not fix it, and does not
+complain either — decoding a real 3 MB ogg immediately afterwards still throws
+`NullReferenceException`. `Initialize` constructs the manager and says nothing about whether it
+works, so "I initialised audio" was never evidence. The probe now decodes a file and believes
+the result.
 
-Against `dev`, the standard is **violated** for this class of song: `dev` refuses it and our
-scanner passes it silently.
+### What is true, and what is simply unknown
 
-That does **not** mean the scanner should start flagging a missing `song_length`. Whether
-`dev`'s behaviour is a deliberate tightening or a regression is unknown, and building to match
-an unreleased behaviour that might be reverted would be worse than the gap. **Ask upstream
-first** — it is a question in `docs/UPSTREAM.md`.
+- **Unknown:** whether `dev` refuses songs lacking `song_length`. Not disproven — never tested,
+  because nothing here has yet scanned with `dev` and a working audio backend.
+- **True, and mildly interesting:** a song with no `song_length` whose audio cannot be decoded
+  *is* refused with a message blaming the chart. That misdirection is real. It is a diagnostics
+  nit, not a regression, and the upstream question built on the regression claim was pulled
+  rather than sent to a maintainer with a broken control behind it.
+- **Unaffected:** the mirror exoneration below. That comparison had the **same** harness on both
+  sides — `.sng` and loose folder refused identically — so it stands.
 
-### How the two builds are run
+### The rule that would have caught it, stated for next time
 
-- **v0.15.0** — `scripts/oracle.ps1 -Library <folder>`, the installed release build.
-- **`dev`** — `Editor.ScanFolderProbe.Run` in the fork, batchmode, `YARG_SCAN_FOLDER` set to
-  the library. It runs `CacheHandler.RunScan` into throwaway cache and badsongs paths and
-  prints the verdict for every song. Committed in the fork at `38bec7b`.
+Two runs are only comparable when the *harness* is held constant, and "same scanner, same
+songs" is not the same thing as "same harness". Both runs called `CacheHandler.RunScan` on the
+same folders; one of them could decode audio and the other could not, and nothing in either
+output said so. **`ScanFolderProbe` now exits 2 — inconclusive — rather than printing a verdict
+it cannot support**, which is the same discipline `scripts/oracle.ps1` already applies to
+unattributable rejections.
 
-Running both over the same folder is now the only honest way to say what "YARG does" — and
-the answer has to name which YARG.
+It is worth noticing that this project has now made the instrument-versus-subject error five
+times: the length-comparison probe, the socket-exhausted load harness, the Windows-only
+rename-while-open reasoning, the `Split-Path -Leaf` oracle key, and this. The pattern is not
+carelessness about the code — it is trusting a harness that has never been asked to prove
+itself.
 
 ### The control that stopped a wrong conclusion being written down
 
@@ -903,63 +911,14 @@ identically, same songs, same message.** `.sng` and loose folder behave the same
 property the entire remote-library design rests on, and it survived the scare.
 
 
-## Run 9 — the 23-case corpus against BOTH builds, side by side
 
-The table everywhere above this one is **v0.15.0 only**. Here is the same corpus, generated
-fresh from `cmd/mkcorpus`, scanned by both builds within two minutes of each other on
-2026-09-07.
+### Run 9 is withdrawn with the rest
 
-| | YARG **v0.15.0** (the oracle) | YARG **`dev` `3673672`** (the fork's base) |
-|---|---:|---:|
-| accepted | 20 | **4** |
-| refused | **3** | **17** |
-| silently skipped | — | 2 (`17-no-song-ini`, `23-zipped.zip`) |
+The two-column table that stood here reported v0.15.0 accepting 20 and `dev` accepting 4 over
+the same corpus. The `dev` column is the harness artefact above and means nothing; the v0.15.0
+column (**20 accepted, 3 refused** — `13-mid-beats-chart`, `19-no-audio`,
+`21-ultrastar-no-title`) was measured in the real game and stands.
 
-Both builds refuse the same three, with **identical messages** — which is what makes the two
-runs comparable rather than two unrelated measurements:
-
-| Case | Both builds say |
-|---|---|
-| `13-mid-beats-chart` | No notes found |
-| `19-no-audio` | No audio accompanying the chart file |
-| `21-ultrastar-no-title` | Name metadata not provided |
-
-`dev` then refuses **fourteen more**, every one of them with *"Corruption of either the ini
-file or chart/mid file"*: `03-latin1`, `04-utf16le`, `05-no-section-header`,
-`06-uppercase-section`, `07-duplicate-keys`, `08-messy-year`, `09-equals-in-value`,
-`10-unknown-keys`, `11-absurd-numbers`, `12-crlf-and-spacing`, `16-cover-override`,
-`18-empty-song-ini`, `20-ultrastar`, `22-ultrastar-duet`.
-
-Every one of those omits `song_length`. The four `dev` accepts — `01-plain`, `02-utf8-bom`,
-`14-clean-explicit-stems`, `15-multitrack-drums` — are exactly the cases built from the
-`ini()` helper, which includes it.
-
-### How bad is it really? Measured, and the answer is reassuring
-
-The obvious next sentence was "this breaks community charts". **It does not**, and the number
-says so plainly:
-
-```
-real song.ini files examined : 256
-with song_length             : 256
-WITHOUT song_length          :   0
-```
-
-Every real chart on hand declares it. So `dev`'s behaviour costs real players nothing
-detectable, and the upstream report should say so rather than implying an emergency — the
-issue is a misleading error message on an edge case, not a broken library.
-
-### What it does cost is THIS CORPUS
-
-Fourteen of twenty-three cases now fail against `dev` for a reason that has nothing to do
-with what they were built to test. `12-crlf-and-spacing` exists to test ragged whitespace
-around `song.ini` keys; against `dev` it is refused before that question is ever reached. **As
-an instrument for measuring `dev`, the corpus is currently mostly measuring one unrelated
-behaviour.**
-
-The fix is small — give the hand-written inis a `song_length` unless the case is *about*
-`song_length` — but it changes the baseline every oracle run in this document is quoted
-against, so it is a deliberate decision rather than a tidy-up. **Left for Jay to choose.**
-
-Until then, an oracle number for `dev` should be read as "4 accepted, and 14 of the refusals
-are the same known cause".
+The one number worth keeping from that investigation, because it was measured and it is
+reassuring: **of 256 real community charts on hand, all 256 declare `song_length`.** Whatever
+any build does with its absence, no real library is affected.
