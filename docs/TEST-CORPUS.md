@@ -901,3 +901,65 @@ as loose folders too.
 `ScanFolderProbe` exists to settle exactly that, and it did: **the loose folders were refused
 identically, same songs, same message.** `.sng` and loose folder behave the same, which is the
 property the entire remote-library design rests on, and it survived the scare.
+
+
+## Run 9 — the 23-case corpus against BOTH builds, side by side
+
+The table everywhere above this one is **v0.15.0 only**. Here is the same corpus, generated
+fresh from `cmd/mkcorpus`, scanned by both builds within two minutes of each other on
+2026-09-07.
+
+| | YARG **v0.15.0** (the oracle) | YARG **`dev` `3673672`** (the fork's base) |
+|---|---:|---:|
+| accepted | 20 | **4** |
+| refused | **3** | **17** |
+| silently skipped | — | 2 (`17-no-song-ini`, `23-zipped.zip`) |
+
+Both builds refuse the same three, with **identical messages** — which is what makes the two
+runs comparable rather than two unrelated measurements:
+
+| Case | Both builds say |
+|---|---|
+| `13-mid-beats-chart` | No notes found |
+| `19-no-audio` | No audio accompanying the chart file |
+| `21-ultrastar-no-title` | Name metadata not provided |
+
+`dev` then refuses **fourteen more**, every one of them with *"Corruption of either the ini
+file or chart/mid file"*: `03-latin1`, `04-utf16le`, `05-no-section-header`,
+`06-uppercase-section`, `07-duplicate-keys`, `08-messy-year`, `09-equals-in-value`,
+`10-unknown-keys`, `11-absurd-numbers`, `12-crlf-and-spacing`, `16-cover-override`,
+`18-empty-song-ini`, `20-ultrastar`, `22-ultrastar-duet`.
+
+Every one of those omits `song_length`. The four `dev` accepts — `01-plain`, `02-utf8-bom`,
+`14-clean-explicit-stems`, `15-multitrack-drums` — are exactly the cases built from the
+`ini()` helper, which includes it.
+
+### How bad is it really? Measured, and the answer is reassuring
+
+The obvious next sentence was "this breaks community charts". **It does not**, and the number
+says so plainly:
+
+```
+real song.ini files examined : 256
+with song_length             : 256
+WITHOUT song_length          :   0
+```
+
+Every real chart on hand declares it. So `dev`'s behaviour costs real players nothing
+detectable, and the upstream report should say so rather than implying an emergency — the
+issue is a misleading error message on an edge case, not a broken library.
+
+### What it does cost is THIS CORPUS
+
+Fourteen of twenty-three cases now fail against `dev` for a reason that has nothing to do
+with what they were built to test. `12-crlf-and-spacing` exists to test ragged whitespace
+around `song.ini` keys; against `dev` it is refused before that question is ever reached. **As
+an instrument for measuring `dev`, the corpus is currently mostly measuring one unrelated
+behaviour.**
+
+The fix is small — give the hand-written inis a `song_length` unless the case is *about*
+`song_length` — but it changes the baseline every oracle run in this document is quoted
+against, so it is a deliberate decision rather than a tidy-up. **Left for Jay to choose.**
+
+Until then, an oracle number for `dev` should be read as "4 accepted, and 14 of the refusals
+are the same known cause".

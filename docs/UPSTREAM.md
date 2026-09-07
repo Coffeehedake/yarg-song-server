@@ -158,9 +158,12 @@ Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 > - `dev` (`3673672`): the one without `song_length` refused, *"Corruption of either the ini
 >   file or chart/mid file"*
 >
-> If that's deliberate, no problem — but the message points at the chart, which sent me
-> looking in the wrong place for a while, and plenty of community charts leave `song_length`
-> out. Happy to open an issue with the two folders if it's useful.
+> If that's deliberate, no problem. Two things in case they help: the message points at the
+> chart, which sent me looking in the wrong place for a while — and I checked before assuming
+> this was a big deal, so I can say it isn't: of 256 real community charts I have here, **all
+> 256 declare `song_length`**, so nobody's library is breaking. It only showed up because my
+> own synthetic test corpus writes minimal `song.ini` files. Happy to open an issue with the
+> two folders if it's worth having.
 >
 > **6. Which tier does a remote song source fall into, and is anyone already on it?**
 > It doesn't match any of the CONTRIBUTING examples and I couldn't find an issue for it — the
