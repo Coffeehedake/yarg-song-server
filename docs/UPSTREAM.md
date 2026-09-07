@@ -35,6 +35,14 @@ their contributing guide tells contributors to ask.
 
 ## What we searched before asking
 
+**Everything in this section is context for talking to their team, not work this project is
+taking on.** The scope line is in [`ROADMAP.md`](ROADMAP.md) under "What this project is, and
+what it is not": we build a library server and a client that talks to YARG, plus the means to
+manage that library without launching the game. Features that live inside YARG and change how
+it plays are theirs. They are recorded here because knowing what upstream already has in
+flight is what makes a conversation with them useful — not because adjacency is a reason to
+adopt something.
+
 **Searched again on 2026-09-07, and the first search was not good enough.** It covered
 issues and missed pull requests entirely, which produced a confident claim that was false.
 What follows is the corrected picture; the retracted version is kept below it because the
@@ -223,10 +231,17 @@ Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 > It's been sitting in draft with conflicts for a while and the author wasn't sure anyone was
 > interested.
 >
-> So: **are the "control a running client" side and the "fetch songs from a server" side the
-> same conversation to you, or two?** If they're one, I'd rather help get #984 unstuck than
-> open a second front next to it — I have the API and the frontend already written and
-> LGPL'd, and I'm happy for them to be someone else's starting point rather than mine.
+> To be clear about scope: **that side of it isn't what I'm building.** Mine is a library
+> server — one copy of the library on the network, every machine plays from it, and you can
+> browse and manage it from a phone without launching the game at all. Controlling a running
+> client is a different feature and it's yours.
+>
+> I mention it only because the API #984's discussion describes — GET a song list, POST to
+> change the selection — is close to what my server already speaks, just pointed at a remote
+> library instead of a local one. **It's LGPL-3.0 and it's all public**, so if it's useful to
+> whoever picks that up, take any of it. And if the two turn out to be one conversation
+> rather than two, I'd rather know that now than after I've built the second half of
+> something in the wrong place.
 >
 > Everything's LGPL-3.0-or-later, same as YARG:
 > <https://github.com/Coffeehedake/yarg-song-server>

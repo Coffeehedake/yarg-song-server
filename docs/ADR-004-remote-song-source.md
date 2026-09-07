@@ -274,9 +274,12 @@ observable.
   `IniSubEntry`". Both are small, both are useful outside this feature, and neither drags
   networking into YARG.Core. That is a much better thing to put in a Discord question than
   a paragraph about song servers.
-- **Party mode (upstream #860) gets its second half.** The browse-and-search half is already
-  deployed and answers a 10,000-song catalog in ~140 ms; queueing from a phone needs the
-  game, which is what increment 1 first puts in place.
+- **The library becomes manageable without the game.** That is a project goal in its own
+  right, not a by-product: the browse UI over `/api/v1/songs` already answers a 10,000-song
+  catalog in ~140 ms from any device on the network with YARG closed, and increment 1 means
+  the machine that *plays* no longer has to be the machine that *holds* the library.
+  (Upstream's party-mode requests sit near this and are deliberately not ours — see
+  [UPSTREAM.md](UPSTREAM.md).)
 - **A player on increment 1 pays disk for simplicity.** That is the right first trade: the
   Pi-with-a-small-card case that increments 2 and 3 exist for is exactly the case we have
   never measured on real hardware.

@@ -7,6 +7,28 @@ Two tracks run in parallel. The **server track** is the #1 priority and is seque
 depends on the one before it. The **client track** is independent and can absorb spare cycles at
 any time.
 
+## What this project is, and what it is not
+
+Written down because the roadmap drifted once already: upstream's issue tracker is full of
+interesting features, and a phase named after one of them starts reading like a commitment.
+
+**What we are building:**
+
+1. **A server/client pair that talks to YARG**, so a library lives in one place and every
+   machine in the house plays from it — instead of a full copy of the library on every device.
+2. **A way to manage that library without launching YARG at all.** Browse, search, inspect,
+   see what is broken and why, from any device on the network with the game closed and no
+   YARG install on that device. This is a first-class goal, not a side effect of having an API.
+3. **Later: chart generation** — process audio into playable charts across all difficulties,
+   with the charts distributable separately from the audio. Phase 5, and it depends on
+   everything above.
+
+**What we are not building:** features that live inside YARG and change how the game plays.
+Upstream has open requests and in-flight PRs in that space — search-and-queue from a phone,
+selecting a song in a running client. Those are **notes for a future conversation with the
+YARG team**, recorded in [`UPSTREAM.md`](UPSTREAM.md), not deliverables here. A thing being
+adjacent to our API is not a reason to adopt it.
+
 ---
 
 ## Phase 0 — Foundations ✅
@@ -617,11 +639,11 @@ post:
   local path; *a song entry whose bytes are not on disk* is a general capability rather than a
   feature about our server, and may be an easier thing for upstream to want.
 
-**A second payoff, which strengthens the case upstream.** The same client-to-server channel
-would carry a **queue**, which is what upstream's open issue [#860][i860] has been asking for
-since August 2024 — search and queue from a phone while YARG is running. That request is
-unbuilt because nothing can reach the running game; a remote song source is the thing that
-could. See "Party mode" under Phase 4.
+**A note, not a plan.** The same client-to-server channel could carry a queue, which is the
+shape of upstream's [#860][i860]. That is worth knowing when we eventually talk to their team,
+and it is not on this roadmap — see "What this project is, and what it is not" at the top.
+(An earlier revision of this paragraph called #860 unbuilt and said nothing could reach a
+running client. Both are false: [#984][p984] does exactly that, and has since February 2025.)
 
 **Design recorded 2026-09-07: [`ADR-004`](ADR-004-remote-song-source.md), grounded in
 YARG.Core rather than in the paragraph above.** Reading the code changed the shape of the ask
@@ -713,58 +735,42 @@ The point at which the server stops being one feature and becomes a platform.
 - Candidate modules: multi-user libraries and permissions, playlists/setlists shared across
   clients, scores and leaderboards, library health reporting.
 
-### Party mode: a web UI for search and queueing from a phone
+### The web UI: managing the library without launching YARG
 
-Upstream has an **open feature request for exactly this** — [#860][i860], filed August 2024,
-still open and unlabelled, with a comment pointing at a second Discord proposal that adds
-up/down votes on the queue. So there is demand.
+**This is goal 2 from the top of the document, and it is the half of the server most easily
+mistaken for a nice-to-have.** A library that can only be inspected through the game is a
+library you can only inspect on a machine with the game installed, sitting in front of the
+TV, with the game running. Everything else — checking whether last night's ingest worked,
+finding out why four songs are missing, seeing what a charter actually named a track — means
+launching a rhythm game to read a list.
 
-**"And nobody has built it" is what this said until 2026-09-07, and it was wrong.**
-[#984][p984] has been open as a draft since February 2025: an HTTP server *inside* YARG on
-port 9090 that lists the library and selects a song in the running game when you tap it. A
-contributor tried it, said it works, and asked for it to be reshaped into a JSON API plus a
-bundled HTML frontend; it then stalled with merge conflicts and no reviews. The earlier claim
-came from searching issues and not pull requests — the same shape of error as everything in
-the lessons list: **a negative from a narrow query, written down as a fact about the world.**
-The full account, including what the discussion on it says upstream would accept, is in
-`docs/UPSTREAM.md`.
-
-That changes the framing here rather than the plan. #984 is the game *serving* control; this
-project is the game *fetching* content. They compose.
-
-**Half of it is ours already and half of it is not, and the split is worth being precise
-about** rather than filing this as "just add a UI":
-
-- **The browse-and-search half needs no new capability.** `/api/v1/songs` already does free
-  text across name, artist, album, genre, subgenre, charter, source and playlist, with
-  twelve sort attributes, ordering and paging, and it answers a 10,000-song catalog in
-  ~140 ms. A phone-friendly page over that API is presentation work on an API that exists.
-- **The queueing half needs the game.** The request says *"whilst YARG is running"*, and
-  that is the whole difficulty: this server has no channel into a running client, and
-  polling a folder is not one. A queue can live here as server-side state, but something in
-  the game has to read it.
-
-**That second half is the same work as Phase 3, seen from the other end** — and that is the
-useful realisation, not a coincidence to note in passing. A client that can talk to a server
-for songs can read a queue from the same server over the same channel. It means the remote
-source has two payoffs rather than one, and it means this project would be answering an open
-request of upstream's rather than proposing something novel.
-
-Order follows from that: **build the web UI when the server is otherwise idle** — it is
-useful on its own for picking songs from the couch, and it needs nothing from anyone — but
-do not promise the queue until Phase 3 has a channel to carry it.
-
-**The browse half shipped 2026-09-07.** `GET /` serves a phone-friendly page: search, the
-twelve sort attributes read from `/api/v1/library` so the page cannot drift from the server,
-and a per-song panel with metadata, parts, the scanner's issues and a download link. Embedded
-in the binary — no CDN, no build step — because a Pi at a party has no internet to fetch a
+**Shipped 2026-09-07.** `GET /` serves a phone-friendly page: search, the twelve sort
+attributes read from `/api/v1/library` so the page cannot drift from the server, and a
+per-song panel with metadata, parts, the scanner's issues and a download link. Embedded in
+the binary — no CDN, no build step — because a Pi at a party has no internet to fetch a
 stylesheet from. On by default (`browse_ui`); it exposes nothing the API did not already.
 
 Registered as `GET /{$}`, and that detail is load-bearing: a bare `GET /` in Go's ServeMux is
 a catch-all that would answer every unmatched path with the page and a 200, turning every
 documented 404 into HTML a sync client would try to parse as a `.sng`. Red-proofed.
 
-**Still no queue, deliberately**, and no UI hinting at one.
+It rests on `/api/v1/songs`, which already does free text across name, artist, album, genre,
+subgenre, charter, source and playlist, with twelve sort attributes, ordering and paging, and
+answers a 10,000-song catalog in ~140 ms.
+
+Where this goes next, all of it server-side and none of it needing the game:
+
+- **Library health as a view, not a log line.** The scanner already records why it refused a
+  song; `/api/v1/library` already reports problems. A page that makes "these six songs are
+  broken and here is each reason" the first thing an operator sees is presentation work.
+- **Ingest from the browser** — drop an archive in, watch it scan, see the verdict.
+- **Metadata and playlists**, once multi-user libraries exist (Phase 4 proper).
+
+**What it deliberately does not do: control a running game.** No queue, no remote select, and
+no UI hinting at either. That capability lives inside YARG and upstream has both an open
+request ([#860][i860]) and a stalled draft PR ([#984][p984]) in that space — see
+[`UPSTREAM.md`](UPSTREAM.md), where it belongs as collaboration context. If we ever want it,
+it is a conversation with their team, not a feature we bolt on from outside.
 
 [i860]: https://github.com/YARC-Official/YARG/issues/860
 [p984]: https://github.com/YARC-Official/YARG/pull/984
