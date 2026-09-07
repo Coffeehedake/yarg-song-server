@@ -689,7 +689,31 @@ Set to `DevelopmentOnly` — enough to develop and test, nothing weaker shipped 
 what a release build should do is now question 4 in the Discord post rather than a default
 quietly changed in a fork.
 
-**The settings row followed on 2026-09-07.** Increment 1 shipped with `SongServerUrl` as a
+**Auto-sync on startup followed, `yarg` `6a6888de`.** Pointing the game at a server is now
+something you do once: `Sync On Startup` (default on) mirrors before the startup scan, so a
+machine that plays does not have to be administered. Default-on costs nothing until a URL is
+set - the path returns before opening a socket.
+
+**Reading YARG.Core is what made it work, and the fact is worth keeping:** a startup **quick
+scan cannot see new files.** `CacheHandler.QuickScan` only deserialises `songcache.bin` -
+its own summary is *"performing very few validation checks ... for the sole purpose of
+speeding through to gameplay"* - and never walks the filesystem; it falls through to a full
+scan only when it parses **zero** entries. Syncing before the ordinary startup scan would
+therefore have downloaded songs that stayed invisible until the player manually refreshed,
+and the feature would have looked broken while working perfectly. The scan mode is now
+decided by what the sync did: full when something arrived, quick otherwise.
+
+**Startup is the one place this must be neither loud nor slow.** A song server is somebody's
+Pi or NAS and will be off, asleep or behind a dropped link a good fraction of the time, which
+is the ordinary case rather than the exceptional one. Every startup failure is logged and
+swallowed - no dialog in front of a loading screen - and reachability gets its own budget
+separate from download time: `Sync` takes `listTimeoutSeconds`, and startup passes 5 instead
+of 30. **Measured at 5.1 s** by `Assets/Editor/StartupReachabilityProbe.cs` against
+`192.0.2.1` (TEST-NET-1, RFC 5737, guaranteed unroutable). Deliberately not a closed port on
+localhost: a refused connection returns instantly and would pass the test while proving
+nothing, where an unroutable address hangs, which is what an unplugged Pi actually does.
+
+**The settings row came first, on 2026-09-07.** Increment 1 shipped with `SongServerUrl` as a
 hidden field edited by hand in `settings.json`, because the project had exactly one
 `AbstractSetting<string>` — the IPv4 one — and its visual parsed IPv4 addresses itself. It is
 now a real row on the Song Manager tab:
