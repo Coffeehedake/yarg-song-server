@@ -689,7 +689,31 @@ Set to `DevelopmentOnly` — enough to develop and test, nothing weaker shipped 
 what a release build should do is now question 4 in the Discord post rather than a default
 quietly changed in a fork.
 
-**Auto-sync on startup followed, `yarg` `6a6888de`.** Pointing the game at a server is now
+**Server status in the menu, `yarg` `c025a98a`.** Settings -> Song Manager shows a live line
+under the URL: connected and how many songs, or not reachable and why, plus the last sync's
+outcome. Before this, the only way to learn whether a URL worked was to press Sync and read an
+error dialog — a typo, a sleeping NAS and a healthy server were indistinguishable until you
+committed to a sync.
+
+It reports **the server's own health too**, because `/api/v1/library` already names every
+directory the scan could not read and a library that quietly indexes 9,000 of 10,000 songs
+looks exactly like a library that has 9,000 songs. It shows `distinct_charts`, not `songs`:
+the server counts packages, two packages sharing a chart are one song to YARG, and the package
+count would promise more songs than a sync can deliver. Verified against vault2 — the row reads
+"connected, 23 songs" and the server independently reports `distinct_charts: 23`.
+
+**One probe in this change went green while testing nothing, and that is the reusable part.**
+`SettingsManager.Settings` is null outside a running game; the status check dereferenced it
+before setting any state, and the `NullReferenceException` was swallowed by a fire-and-forget
+call. The state never changed, so both assertions held vacuously — the log carried four NREs
+while the probe reported PASS. The fix was not only to null-guard the read (a real defect: the
+row is reachable from a menu drawn before settings load, and would have stayed blank forever
+while looking like it worked) but to make the probe call the same path directly, with nothing
+able to swallow an error. **A probe that cannot fail is not evidence**, and the tell was in the
+log the whole time — lesson 5, "a green must come from the thing being tested", found again in
+a new disguise.
+
+**Auto-sync on startup came first, `yarg` `6a6888de`.** Pointing the game at a server is now
 something you do once: `Sync On Startup` (default on) mirrors before the startup scan, so a
 machine that plays does not have to be administered. Default-on costs nothing until a URL is
 set - the path returns before opening a socket.
