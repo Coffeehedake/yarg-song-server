@@ -245,6 +245,49 @@ Two things about that VM that cost time:
   It shows up as untracked in `git status` and will be committed by a `git add -A` that nobody
   looked at first.
 
+### Install Unity Hub from Unity's own installer, never the MSIX
+
+`winget install Unity.UnityHub` serves the **MSIX** package, and the MSIX Hub cannot license
+or launch an Editor. MSIX virtualises the app's writes into
+`%LOCALAPPDATA%\Packages\UnityTechnologies.UnityHub_…\LocalCache\`, but the Editor is a
+separate **unpackaged** process that reads the real `%APPDATA%` and `%LOCALAPPDATA%`. So the
+Hub signs in and writes `UnityEntitlementLicense.xml` into the container, the Editor looks in
+`%LOCALAPPDATA%\Unity\licenses`, finds nothing, and exits with code 1. The visible symptom is
+a different one — *"Failed to resolve project template: … `%APPDATA%\UnityHub\Templates\…tgz`
+was not found"* — because the same split hides the 338 MB template the Hub just downloaded.
+
+Use `https://public-cdn.cloud.unity3d.com/hub/prod/<version>/UnityHubSetup-<version>-x64.exe`.
+The bare `.../hub/prod/UnityHubSetup.exe` URL that is all over the internet is **404** now;
+`winget show --id Unity.UnityHub` is a reliable way to learn the current version number even
+though its installer is the wrong package.
+
+Three related traps, all met the same afternoon:
+
+- **`winget install` printed `Successfully installed` and installed nothing.** The classic
+  installer is machine-scope and the bridge shell is not elevated, so it exits 0.
+- **`Start-Process -Verb RunAs` did not elevate from a bridge call.** The retry got a truthful
+  `0x80070005 Access is denied`. Do not plan on elevating from here; hand Jay the installer.
+- **`Test-Path "$env:ProgramFiles\Unity Hub"` is the wrong check for an MSIX.** It never
+  exists. `Get-AppxPackage` is the check — searching the filesystem and concluding "the install
+  failed" led to uninstalling a package that was fine.
+
+And the Hub CLI needs `$env:ALLUSERSPROFILE = 'C:\ProgramData'` set explicitly, or it dies
+with `Unable to resolve config folder: ALLUSERSPROFILE is not set` — the bridge shell's
+environment is stripped.
+
+**Install the Editor version the project pins**, from `ProjectSettings/ProjectVersion.txt` —
+`6000.3.5f2` / changeset `3fa8bc678cb0` for the `yarg` fork. The Hub's default offer is the
+newest LTS, and opening the fork with it silently migrates the project, which is the last
+thing a repo intended for upstreaming should do. Point the editor install path at
+`%LOCALAPPDATA%\Programs\Unity\Hub\Editor` (the house convention, and it avoids the admin
+that the default `Program Files` path would need):
+
+```powershell
+$env:ALLUSERSPROFILE = 'C:\ProgramData'
+& "$env:ProgramFiles\Unity Hub\Unity Hub.exe" -- --headless install-path -s "$env:LOCALAPPDATA\Programs\Unity\Hub\Editor"
+& "$env:ProgramFiles\Unity Hub\Unity Hub.exe" -- --headless install --version 6000.3.5f2 --changeset 3fa8bc678cb0
+```
+
 ### Run git on Windows, not in the bridge VM
 
 `core.autocrlf` is `true` on ENG-1, and `git diff` from the VM reports every CRLF file as fully
