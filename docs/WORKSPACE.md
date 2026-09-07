@@ -280,13 +280,71 @@ environment is stripped.
 newest LTS, and opening the fork with it silently migrates the project, which is the last
 thing a repo intended for upstreaming should do. Point the editor install path at
 `%LOCALAPPDATA%\Programs\Unity\Hub\Editor` (the house convention, and it avoids the admin
-that the default `Program Files` path would need):
+that the default `Program Files` path would need) — **note this applies to CLI installs only**:
+an install started from the Hub's GUI with admin lands in `C:\Program Files\Unity\Hub\Editor`
+regardless, which is where 6000.3.5f2 actually is. Check both roots before concluding an editor
+is missing.
 
 ```powershell
 $env:ALLUSERSPROFILE = 'C:\ProgramData'
 & "$env:ProgramFiles\Unity Hub\Unity Hub.exe" -- --headless install-path -s "$env:LOCALAPPDATA\Programs\Unity\Hub\Editor"
 & "$env:ProgramFiles\Unity Hub\Unity Hub.exe" -- --headless install --version 6000.3.5f2 --changeset 3fa8bc678cb0
 ```
+
+## Building the `yarg` fork
+
+Verified end to end on 2026-09-07: **the fork imports and compiles clean under Unity
+6000.3.5f2, batchmode, exit code 0, 121 assemblies, zero `error CS`** (20 warnings). About
+seven minutes for a cold import; `Library/` ends at 2.5 GB.
+
+### Restore the NuGet packages FIRST, or you get 270 errors that look like broken code
+
+`Assets/packages.config` lists **16 NuGet packages** restored by NuGetForUnity into
+`Assets/Packages/`, which is gitignored and therefore **absent in a fresh clone**. Without
+them a batchmode import fails with 270 `error CS` — `Melanchall` (DryWetMidi), `Cysharp`
+(ZString), `Utf16ValueStringBuilder`, `Microsoft.VisualStudio`, and so on. Every one is a
+missing dependency and none of them is about the code, but the volume reads like a broken
+checkout.
+
+```powershell
+dotnet tool install --global NuGetForUnity.Cli --version 4.5.0
+$env:DOTNET_ROLL_FORWARD = 'LatestMajor'      # see below
+& "$env:USERPROFILE\.dotnet\tools\nugetforunity.exe" restore "C:\dev\YARG - Open Source Contributions\yarg"
+```
+
+**`DOTNET_ROLL_FORWARD` is not optional on ENG-1.** The tool targets .NET 9; ENG-1 has 8.0.30
+and 10.0.11 and nothing in between, so it refuses to launch with a framework-not-found error
+that reads like a broken tool install. Rolling forward runs it on 10 and needs no extra
+runtime.
+
+### The import itself
+
+```powershell
+& "C:\Program Files\Unity\Hub\Editor\6000.3.5f2\Editor\Unity.exe" `
+    -batchmode -quit -nographics `
+    -projectPath "C:\dev\YARG - Open Source Contributions\yarg" `
+    -logFile "$env:TEMP\yarg-unity-import.log"
+```
+
+**Do NOT pass `-accept-apiupdate`.** Without it, Unity's API updater warns instead of running,
+so it can never silently rewrite source in a fork we intend to upstream. With the editor
+version matching the pin it has nothing to do anyway.
+
+Run it from a **scheduled task**, not from a bridge call — see the bridge notes below. Unity
+writes to `-logFile` rather than stdout, so it has none of the `EPIPE` fragility the Unity Hub
+CLI has.
+
+### Opening the project dirties one tracked file, harmlessly
+
+Unity 6000.3 adds a `VisionOS` icon block to `ProjectSettings/ProjectSettings.asset` — seven
+lines, no content. It is not ours and it is not upstream's; **revert it rather than committing
+it**, and expect it back every time the editor opens:
+
+```powershell
+git checkout -- ProjectSettings/ProjectSettings.asset
+```
+
+Everything else Unity writes (`Library/`, `Temp/`, `Logs/`, `Assets/Packages/`) is gitignored.
 
 ### Run git on Windows, not in the bridge VM
 
