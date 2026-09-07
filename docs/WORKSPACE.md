@@ -226,3 +226,27 @@ variable names in any loop.
 A process started from a Cowork session is killed when a bridge call times out, which silently
 cancelled a `winget` install mid-download. For anything running longer than about a minute,
 register a **scheduled task**; it is detached and survives.
+
+### The device-bridge Linux VM is a real Linux, and that is worth using
+
+Windows cannot see POSIX-only concurrency defects: an open handle blocks `os.Remove`, so a
+goroutine racing to delete a file another goroutine is about to open simply fails and the race
+disappears. That masked a real 500 in `packcache` through five clean stress runs, and Linux CI
+found it on the first pipeline. **Go 1.25.1 is installed in the bridge VM at `$HOME/go`** for
+exactly this; run concurrency and filesystem-race work there before believing a green.
+
+Two things about that VM that cost time:
+
+- **A background job does not survive the call that started it.** Each `device_bash` call is a
+  fresh `bwrap --unshare-pid --die-with-parent` namespace, so `nohup … &` dies the moment the
+  call returns and the log file is left empty — which reads exactly like a job that is still
+  running. Run long work in the **foreground** with the timeout raised; the ceiling is 180 s.
+- **`gofmt -w` on the mounted folder can leave its temp file behind**, named `<file>.go.<digits>`.
+  It shows up as untracked in `git status` and will be committed by a `git add -A` that nobody
+  looked at first.
+
+### Run git on Windows, not in the bridge VM
+
+`core.autocrlf` is `true` on ENG-1, and `git diff` from the VM reports every CRLF file as fully
+rewritten — 25 files and 3,840 insertions, none of them real. Read and edit in the VM; run
+**git** on Windows.
