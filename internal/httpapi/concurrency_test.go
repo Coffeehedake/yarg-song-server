@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -35,7 +36,7 @@ import (
 // concurrentServer builds a library of n distinct songs and serves it with the
 // pack cache bounded to maxBytes (0 = unbounded). It returns the chart hashes so
 // a test can request every song.
-func concurrentServer(t *testing.T, n int, maxBytes int64) (*httptest.Server, string, []string) {
+func concurrentServer(t *testing.T, n int, maxBytes int64) (*httptest.Server, string, []string, *serverLog) {
 	t.Helper()
 	root := t.TempDir()
 	for i := 0; i < n; i++ {
@@ -62,7 +63,13 @@ func concurrentServer(t *testing.T, n int, maxBytes int64) (*httptest.Server, st
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := &Server{Store: library.NewStore(ix), Packs: packs, Version: "test"}
+	errs := &serverLog{}
+	api := &Server{
+		Store:   library.NewStore(ix),
+		Packs:   packs,
+		Version: "test",
+		Log:     slog.New(slog.NewTextHandler(errs, &slog.HandlerOptions{Level: slog.LevelError})),
+	}
 	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
 
@@ -86,7 +93,40 @@ func concurrentServer(t *testing.T, n int, maxBytes int64) (*httptest.Server, st
 	if len(hashes) != n {
 		t.Fatalf("indexed %d songs, want %d", len(hashes), n)
 	}
-	return srv, packDir, hashes
+	return srv, packDir, hashes, errs
+}
+
+// serverLog captures what the server logged, so a failing request can be
+// reported with the error the HANDLER saw rather than only its status code.
+//
+// This exists because of a specific wasted hour. CI failed with "status=500
+// bytes=37" and nothing else, and 500 has two causes on that path - the pack
+// itself failing, and the packed archive being evicted before it could be
+// opened. Both produce the same body, so which one it was had to be inferred,
+// and inference is exactly what this project keeps getting wrong. The server
+// already knew the answer and was throwing it away, because the test never
+// gave it a logger.
+type serverLog struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *serverLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines = append(l.lines, strings.TrimRight(string(p), "\n"))
+	return len(p), nil
+}
+
+// sample returns up to n captured lines and how many there were in total.
+func (l *serverLog) sample(n int) ([]string, int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	total := len(l.lines)
+	if total > n {
+		return append([]string(nil), l.lines[:n]...), total
+	}
+	return append([]string(nil), l.lines...), total
 }
 
 // stressClient reuses connections on purpose.
@@ -126,7 +166,7 @@ func fetch(t *testing.T, url string) (int, []byte, error) {
 // Many clients asking for the same UNCACHED song must pack it once and hand
 // every one of them the same complete archive.
 func TestManyClientsAskingForOneColdSongAllGetTheSameArchive(t *testing.T) {
-	srv, packDir, hashes := concurrentServer(t, 1, 0)
+	srv, packDir, hashes, _ := concurrentServer(t, 1, 0)
 	const clients = 64
 
 	var wg sync.WaitGroup
@@ -214,7 +254,7 @@ func TestEvictionUnderLoadNeverLosesASongOrChangesItsBytes(t *testing.T) {
 
 	// Serial baseline: what each song's bytes SHOULD be, with no concurrency
 	// and no eviction pressure.
-	base, _, baseHashes := concurrentServer(t, songs, 0)
+	base, _, baseHashes, _ := concurrentServer(t, songs, 0)
 	want := map[string]string{}
 	var oneSize int64
 	for _, h := range baseHashes {
@@ -237,7 +277,7 @@ func TestEvictionUnderLoadNeverLosesASongOrChangesItsBytes(t *testing.T) {
 	// library several times. Both numbers were tuned against the defect rather
 	// than picked: at two archives and one pass this test passed on the BROKEN
 	// code, which would have made it decoration. See the note above the func.
-	srv, _, hashes := concurrentServer(t, songs, oneSize)
+	srv, _, hashes, srvErrs := concurrentServer(t, songs, oneSize)
 	const rounds = 3
 
 	var wg sync.WaitGroup
@@ -283,8 +323,9 @@ func TestEvictionUnderLoadNeverLosesASongOrChangesItsBytes(t *testing.T) {
 		// running out of sockets, NOT the server losing a song, and reporting
 		// the two the same way is how a flaky test gets blamed on the code it
 		// was meant to protect.
-		t.Errorf("%d of %d requests failed under eviction (%d of them transport-level); first few: %v",
-			total, clients*songs*rounds, transport, failures)
+		logged, nLogged := srvErrs.sample(5)
+		t.Errorf("%d of %d requests failed under eviction (%d of them transport-level); first few: %v\nserver logged %d error(s); first few: %v",
+			total, clients*songs*rounds, transport, failures, nLogged, logged)
 	}
 }
 

@@ -180,6 +180,50 @@ that are not serving concurrently.
 **A `.sng` already in the library is still opened from its own path**, because there the 404
 means what it says: someone really did move the file.
 
+### The second defect, which the first fix left behind — and which only Linux showed
+
+Handing back an open file closed the *caller-side* window. It left a smaller one inside
+`packcache.openOnce`: the archive is packed to a temp file, renamed into place, and only then
+opened, and between the rename and the open it is an ordinary cached entry that any other
+goroutine's `enforceBound` may remove.
+
+This window was written up here and in the code as *real by inspection but never reproduced*,
+on the strength of a stress build with the retry disabled passing **five runs out of five**.
+Every one of those runs was on Windows, **where an open handle blocks `os.Remove` and the
+platform masks the race**. A Windows-only negative was recorded as a fact about the code —
+the same error this project has now made three times, and the reason the standard is *verify
+by measuring*.
+
+Linux disagreed on the first pipeline that ran the eviction test:
+
+> `1 of 7680 requests failed under eviction (0 of them transport-level); [ca43baef: status=500 bytes=37]`
+
+A genuine server 500 for a song that exists. Reproduced immediately afterwards at the
+`packcache` level on Linux — **8 of 3,456 packs lost their archive in that window** — which is
+about a 0.2 % chance per pack here and evidently several percent on a CI runner, since three
+consecutive losses is what it takes to reach a client and CI reached one in 7,680.
+
+The fix holds the eviction lock across the rename and the open. `enforceBound` is the only
+thing that removes a `.sng` and it holds the same lock for its whole body, so the window is
+closed by construction rather than narrowed. Lock ordering is shard-then-evict and never the
+other way, so there is no cycle.
+
+Two things were added so this cannot quietly come back:
+
+- **`Cache.Vanished()`** counts every time a freshly packed archive is gone before its packer
+  can open it. It is asserted to be **zero**, which turns a once-in-a-pipeline flake into a
+  number. On the broken code the same test reports 8 in 3,456; on the fixed code, 15
+  consecutive runs report 0.
+- **The concurrency tests now give the server a logger and print what it logged.** The CI
+  failure said `status=500 bytes=37` and nothing else, and *two* different 500s on that path
+  have bodies of exactly 37 bytes — "could not pack this song" and "could not read this song"
+  are both 24 characters. Which one it was had to be inferred. The server knew and was
+  throwing it away.
+
+The retry (`openAttempts = 3`) is kept as a second line, but it is no longer the mechanism:
+it guards against a failure mode nobody has thought of yet, and `Vanished()` reports if it
+ever fires.
+
 ### Two properties that held
 
 - **The thundering herd collapses.** 64 concurrent requests for one *uncached* song produce
@@ -188,7 +232,9 @@ means what it says: someone really did move the file.
 - **Eviction under load costs a re-pack and never data.** 7,680 requests across 64 clients
   against a cache bounded to a **single** archive: every response byte-identical to the same
   song packed serially. Zero mismatches. This is the claim at the top of `packcache` that was
-  false once before, now measured under the conditions most likely to break it.
+  false once before, now measured under the conditions most likely to break it. What that run
+  did **not** cover is a request failing outright: it was a Windows run, and the section above
+  is what Linux found in the same test.
 
 ### One promise corrected: the bound is a high-water target, not a hard cap
 

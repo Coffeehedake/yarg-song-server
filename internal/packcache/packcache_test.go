@@ -302,3 +302,102 @@ func TestConcurrentRequestsForOneSongPackOnce(t *testing.T) {
 		t.Fatalf("%d .partial files left behind by concurrent packing", len(left))
 	}
 }
+
+// TestEvictionNeverStealsAnArchiveBeforeItsPackerCanOpenIt pins the fix for the
+// one concurrency defect in this package that reached main.
+//
+// The shape of it: openOnce packs to a temp file, renames it into place, and
+// then opens it. Between the rename and the open the archive is a normal cached
+// entry that any other goroutine's enforceBound is free to remove - and with a
+// cache bounded to one archive it very often does. The packer then gets ENOENT
+// for a file it just wrote, and after three such losses in a row the server
+// answers 500 for a song that exists.
+//
+// This asserts on the COUNTER rather than on Open failing, and that is the
+// whole point of the test. Three consecutive losses is rare - CI saw it once in
+// 7,680 requests - so a test that waited for the 500 would be a coin flip. A
+// single loss is common, so counting losses turns a once-a-pipeline flake into
+// a number that is either zero or obviously not.
+func TestEvictionNeverStealsAnArchiveBeforeItsPackerCanOpenIt(t *testing.T) {
+	const (
+		songs   = 24
+		workers = 24
+		rounds  = 6
+		pad     = 32 * 1024
+	)
+	src, cdir := t.TempDir(), t.TempDir()
+
+	dirs := make([]string, songs)
+	hashes := make([]string, songs)
+	for i := range songs {
+		dirs[i] = song(t, src, fmt.Sprintf("song-%03d", i), pad)
+		hashes[i] = fmt.Sprintf("%064d", i)
+	}
+
+	// Size the bound from a real archive, then allow exactly one. Every request
+	// for a different song therefore evicts, which is what puts traffic through
+	// the window this test is about.
+	sizer, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := sizer.Open(hashes[0], dirs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	one := st.Size()
+	f.Close()
+
+	c, err := New(cdir, WithMaxBytes(one))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var failures []string
+	for w := range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for r := range rounds {
+				for i := range songs {
+					// Stagger the starting song per worker so the workers are
+					// not all asking for the same one at the same moment.
+					j := (i + w + r) % songs
+					f, err := c.Open(hashes[j], dirs[j])
+					if err != nil {
+						mu.Lock()
+						if len(failures) < 5 {
+							failures = append(failures, err.Error())
+						}
+						mu.Unlock()
+						continue
+					}
+					st, err := f.Stat()
+					if err == nil && st.Size() == 0 {
+						mu.Lock()
+						if len(failures) < 5 {
+							failures = append(failures, "opened an empty archive")
+						}
+						mu.Unlock()
+					}
+					f.Close()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := c.Vanished(); got != 0 {
+		t.Errorf("%d of %d packs were evicted between the rename that published them and the open that claimed them; the window is meant to be closed by holding the eviction lock across it",
+			got, workers*rounds*songs)
+	}
+	if len(failures) > 0 {
+		t.Errorf("%d requests failed outright; first few: %v", len(failures), failures)
+	}
+}

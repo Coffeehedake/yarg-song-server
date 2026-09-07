@@ -50,6 +50,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coffeehedake/yarg-song-server/internal/scan"
@@ -81,9 +82,20 @@ type Cache struct {
 	locks [lockShards]sync.Mutex
 
 	// evict serialises eviction so two concurrent inserts cannot both decide to
-	// remove the same archives.
+	// remove the same archives. It is also held across the rename-then-open
+	// that publishes a freshly packed archive; see openOnce.
 	evict sync.Mutex
+
+	// vanished counts how many times a freshly packed archive was removed
+	// before the packing goroutine could open it. It exists to make that
+	// window MEASURABLE: it is meant to stay at zero, and a test asserts so.
+	vanished atomic.Int64
 }
+
+// Vanished reports how many times a freshly packed archive was evicted before
+// it could be opened. It should be zero; see openOnce for why, and for what it
+// cost to learn that "should be" is not a measurement.
+func (c *Cache) Vanished() int64 { return c.vanished.Load() }
 
 // Option configures a Cache.
 type Option func(*Cache)
@@ -198,39 +210,52 @@ func (c *Cache) openOnce(packageHash, src string) (*os.File, error) {
 	if err := tmp.Close(); err != nil {
 		return nil, fmt.Errorf("packcache: %w", err)
 	}
+	// Publish the archive and claim a handle on it under the eviction lock.
+	//
+	// enforceBound is the only thing that removes a .sng and it holds c.evict
+	// for its whole body, so holding that lock here makes it impossible for
+	// another goroutine to remove the archive between the rename that publishes
+	// it and the open that claims it. The lock covers two syscalls; eviction
+	// itself already holds it across a ReadDir and a series of removes, so this
+	// is not the expensive user of it.
+	//
+	// The lock ordering is shard-then-evict and only ever that way round.
+	// enforceBound takes no shard lock, so there is no cycle to deadlock on.
+	//
+	// This window was closed on 2026-09-07 after CI found it, and the history
+	// is worth keeping because the reasoning that left it open was wrong in a
+	// way this project keeps repeating.
+	//
+	// It was described here as real "by inspection" but never reproduced, and a
+	// build with the retry below disabled passed five stress runs out of five -
+	// so the retry was documented as guarding a gap no measurement had shown
+	// firing. Every one of those runs was on WINDOWS, where an open handle
+	// blocks os.Remove and enforceBound simply skips the entry; the platform was
+	// masking the race, and a Windows-only negative was written up as a fact
+	// about the code. On Linux, where an unlink succeeds regardless, CI failed
+	// on the first pipeline that ran this test: 1 of 7,680 requests answered
+	// 500 for a song that exists. Reproduced directly afterwards on Linux at
+	// the packcache level - 8 of 3,456 packs lost their archive in this window -
+	// which is what the Vanished counter and its test now hold at zero.
+	//
+	// The tidier fix - hold a handle on the temp file and rename underneath it,
+	// so the window closes by ordering rather than by a lock - does not work,
+	// and that too was measured rather than argued: on Windows os.Rename fails
+	// outright while the source is open, and it broke every serial baseline
+	// request the moment it was tried. It had been reasoned from Go's share
+	// flags, and the reasoning was simply wrong.
+	c.evict.Lock()
 	if err := os.Rename(tmpName, dst); err != nil {
+		c.evict.Unlock()
 		return nil, fmt.Errorf("packcache: %w", err)
 	}
-
-	// Open immediately, and let Open retry if this loses a race with an evicting
-	// goroutine.
-	//
-	// A window exists here by inspection: between the rename and this open,
-	// another goroutine's enforceBound can remove the archive. Unlike the
-	// caller-side window this replaced, it has NOT been reproduced.
-	//
-	// The honest history, because the wrong version of it was briefly written
-	// into this file: a stress run with the cache bounded to one archive and 64
-	// clients reported ~70 of 7,680 requests failing, and that was read as this
-	// window firing. It was not. Those failures had status 0 - a TRANSPORT
-	// error, the harness exhausting sockets because it used http.Get and opened
-	// a fresh connection per request. Once the test pooled its connections the
-	// failures vanished, and a build with this retry disabled then passed five
-	// runs out of five. So the retry guards a gap that is real in the code and
-	// that no measurement here has ever shown firing.
-	//
-	// It is kept because it is cheap and the failure it prevents is a 500 on a
-	// song that exists. It is NOT kept because it was measured, and this comment
-	// says so rather than implying otherwise.
-	//
-	// One thing that genuinely was measured, in the negative: holding a handle
-	// on the temp file and renaming underneath it - the tidy fix that would
-	// close the window by ordering - does not work. On Windows os.Rename fails
-	// outright while the source is open, and it broke every serial baseline
-	// request the moment it was tried. That was reasoned from Go's share flags
-	// and was simply wrong.
 	f, err := os.Open(dst)
+	c.evict.Unlock()
 	if err != nil {
+		// Retained, and now genuinely unreachable by construction rather than
+		// by luck: nothing can remove dst while the lock above is held. The
+		// counter is here so that "unreachable" stays a measurement.
+		c.vanished.Add(1)
 		return nil, fmt.Errorf("packcache: %w: %w", errVanished, err)
 	}
 
@@ -248,10 +273,14 @@ var errVanished = errors.New("packed archive evicted before it could be opened")
 // openAttempts bounds the retry. Each attempt is a full re-pack, so a loop that
 // never gave up could spin forever against a cache bounded smaller than a single
 // archive - a misconfiguration, but one the server should survive rather than
-// hang on. Three is arbitrary and deliberately so: the window it guards has
-// never been observed firing, so there is no measured rate to size it against,
-// and pretending otherwise would be the same mistake this package's history is
-// already full of.
+// hang on.
+//
+// Three was arbitrary when the window it guarded was open, and three losses in
+// a row is exactly how that window reached a client: CI answered 500 once in
+// 7,680 requests. The window is now closed under the eviction lock, so this
+// retry should never run at all. It is kept as a second line against a failure
+// mode nobody has thought of yet, and Cache.Vanished counts every time it
+// fires so that "should never" does not quietly become "does, rarely".
 const openAttempts = 3
 
 // Open returns an OPEN archive for src, packing it if needed. The caller owns
