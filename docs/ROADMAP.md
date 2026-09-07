@@ -498,8 +498,23 @@ and exercises the whole server end-to-end.
       crash test over real input, not a verdict test; `docs/TEST-CORPUS.md` says so rather than
       letting it read as more.
 
-      **Still uncovered:** all 128 songs are `.mid`, so real-world `.chart` coverage is zero —
-      and `.chart` is the format whose early-return bug this project already found once.
+      **Still uncovered:** real-world `.chart` coverage is zero — and `.chart` is the format
+      whose early-return bug this project already found once.
+
+      Re-measured 2026-09-07 and it is worse than "all 128 songs are `.mid`". The three
+      multi-song `.zip` packs the scanner refuses were opened and counted too: **270 songs in
+      the corpus, 128 of which are `.chart`-free loose folders and 128 inside the packs, and
+      every single chart file is `notes.mid`. Zero `.chart`, zero `notes.txt`.**
+
+      **Onyx is not the route, and the handoff that said it was should be ignored.** Its
+      release notes describe `.chart` as an *import* format and its conversions as producing
+      CH-compatible output (`song.ini` + `notes.mid`) — the wrong direction. A converted chart
+      would also be the converter's dialect rather than what charters actually publish, which
+      is most of the point of wanting real ones.
+
+      **What would actually close it:** a handful of genuine community `.chart` songs dropped
+      into `C:\dev\_incoming\YARG` — Clone Hero-era charts are commonly `.chart`. That is a
+      two-minute job for a human and one this session cannot do for itself.
 - [x] **Break real songs on purpose, and find something** — done 2026-09-07. `cmd/mkbroken`
       damages songs with real structure in 16 named ways, each carrying a **predicted verdict**,
       so the oracle compares three columns rather than two: prediction, our scanner, YARG.

@@ -117,8 +117,8 @@ Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 > any other folder. The obvious next step is YARG pointing at a server URL directly, instead
 > of needing a separate tool.
 >
-> I read through `YARG.Core` before writing this, so I can ask something more specific than
-> "would you like this feature". Three questions, smallest first:
+> I read through `YARG.Core` and the Unity side before writing this, so I can ask something
+> more specific than "would you like this feature". Four questions, smallest first:
 >
 > **1. Would you take `SngFile.TryLoadFromStream(Stream, bool)` on its own?**
 > `TryLoadFromFile` opens the `FileStream` itself, but everything after the first few lines
@@ -134,7 +134,13 @@ Not yet sent. Jay sends it, under his own account; nothing goes out without him.
 > hook the load methods call first, defaulting to a no-op, seems less invasive than abstracting
 > `_location`. Very open to being told that's the wrong shape.
 >
-> **3. Which tier does a remote song source fall into, and is anyone already on it?**
+> **3. Would a second "delivered out of band" song folder be objectionable in principle?**
+> `SongContainer.RunRefresh` already appends `PathHelper.SetlistPath` to the scan list — a
+> folder the player didn't add, populated by the Launcher, skipped cleanly when absent. What
+> I'd be adding is a second producer for that same shape of folder. If that pattern is fine,
+> most of this needs nothing from `YARG.Core` at all.
+>
+> **4. Which tier does a remote song source fall into, and is anyone already on it?**
 > It doesn't match any of the CONTRIBUTING examples and I couldn't find an issue for it — the
 > closest is #860, which is search/queue from a phone rather than a source of songs. Happy to
 > stay out of the way if someone's already working on it.

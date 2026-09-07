@@ -136,9 +136,29 @@ The game keeps a folder it owns, mirrors a server's library into it exactly as `
 does today, and adds that folder to the scan list. Everything downstream — scanning,
 caching, playing, sorting — is the path YARG already walks for a folder of `.sng` files.
 
-This is `yarg-sync` moved inside the game. It is not a compromise version of the feature;
-it is the feature, for anyone whose library fits on disk. It also means Phase 3's first
-release does not depend on an upstream answer, a YARG.Core change, or a cache version bump.
+**Upstream already does exactly this, and that is the strongest argument in this document.**
+`SongContainer.RunRefresh` (`Assets/Script/Song/SongContainer.cs:153`) builds its directory
+list from the player's `SongFolders` **and then appends one more**:
+
+```csharp
+var directories = new List<string>(SettingsManager.Settings.SongFolders);
+string setlistPath = PathHelper.SetlistPath;
+if (!string.IsNullOrEmpty(setlistPath) && !directories.Contains(setlistPath))
+{
+    directories.Add(setlistPath);
+}
+```
+
+`PathHelper.SetlistPath` is not a folder the player added. `FindLauncherPaths()`
+(`Assets/Script/Helpers/PathHelper.cs:150`) reads the **YARC Launcher's** `settings.json`,
+takes its `download_location`, and derives `<that>\Setlists` — a folder populated by a
+separate program, delivered out of band, appended to the scan list silently, and skipped
+cleanly when it does not exist.
+
+That is structurally identical to what increment 1 needs. The pattern is not new, it is not
+ours, and upstream wrote it. What we would be adding is a second producer for the same shape
+of folder — which makes this a much smaller thing to ask about than "support remote
+libraries", and a much smaller thing to review.
 
 **What it costs the player:** the whole library on disk, and a sync that runs before play.
 
@@ -193,6 +213,9 @@ observable.
 
 - **Phase 3 can start now.** Increment 1 touches only the fork's Unity layer and needs no
   answer from anyone.
+- **There is a precedent to point at.** The Official Setlist is already delivered out of band
+  by a separate program into a folder YARG appends to its own scan list. A remote library is a
+  second producer for that same shape, not a new concept.
 - **The upstream ask gets smaller and more concrete.** It is no longer "support remote
   libraries"; it is "take `SngFile.TryLoadFromStream`, and consider a materialise hook on
   `IniSubEntry`". Both are small, both are useful outside this feature, and neither drags
