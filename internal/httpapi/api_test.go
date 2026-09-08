@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -489,5 +490,70 @@ func TestHaveScalesToALargeClientLibraryAndRefusesAnAbsurdOne(t *testing.T) {
 	code, size := post(hashes(250_000))
 	if code != http.StatusRequestEntityTooLarge {
 		t.Errorf("a %d-byte body gave %d, want 413", size, code)
+	}
+}
+
+// Untrusted identifiers are LOOKUP KEYS here, never paths - and that is the
+// property worth pinning, because it is exactly what both sync clients got
+// wrong on the other side of the wire.
+//
+// /song/{chart_hash}.sng and ?package=<hash> are both attacker-controlled, and
+// packcache does build a filename from a package hash
+// (filepath.Join(c.dir, packageHash+".sng")). What makes that safe is that the
+// value reaching it is entry.Song.PackageHash - computed by this server from
+// content - and never the string the caller sent. The caller's string only ever
+// selects an index entry, or fails to.
+//
+// WHAT THIS TEST DOES AND DOES NOT COVER. It pins that a hostile identifier
+// selects nothing and leaks nothing - which holds however the plumbing below is
+// written. It does NOT catch a refactor that passes the query parameter through
+// to packcache, because such a request 404s at the lookup before reaching it.
+// That case is guarded where the filename is actually built, by
+// TestAKeyThatCouldBeAPathIsRefused in internal/packcache. Saying so here
+// because a test whose comment claims more than it checks is worse than no
+// comment at all.
+func TestUntrustedIdentifiersAreLookupKeysAndNeverPaths(t *testing.T) {
+	srv, _, _ := newTestServerWithPacks(t, defaultSpecs())
+
+	hostile := []string{
+		"../../../../etc/passwd",
+		"..%2f..%2f..%2fetc%2fpasswd",
+		"/etc/passwd",
+		"....//....//etc/passwd",
+		strings.Repeat("a", 4096),
+		"' OR 1=1--",
+	}
+
+	// As ?package= on a chart hash that really exists, so the request gets past
+	// everything except the package lookup itself.
+	for _, bad := range hostile {
+		u := srv.URL + "/song/" + strings.Repeat("0", 40) + ".sng?package=" + url.QueryEscape(bad)
+		code, body, err := fetch(t, u)
+		if err != nil {
+			t.Fatalf("?package=%q: transport error: %v", bad, err)
+		}
+		if code != http.StatusNotFound {
+			t.Errorf("?package=%q gave %d, want 404 - it must not select anything", bad, code)
+		}
+		if bytes.Contains(body, []byte("root:")) {
+			t.Fatalf("?package=%q returned something that looks like /etc/passwd", bad)
+		}
+	}
+
+	// And as the chart hash in the path.
+	for _, bad := range hostile {
+		u := srv.URL + "/song/" + url.PathEscape(bad) + ".sng"
+		code, body, err := fetch(t, u)
+		if err != nil {
+			// A malformed URL that the client refuses to send is fine; it never
+			// reached the server, which is the outcome we want anyway.
+			continue
+		}
+		if code == http.StatusOK {
+			t.Errorf("/song/%q.sng returned 200; no such song exists", bad)
+		}
+		if bytes.Contains(body, []byte("root:")) {
+			t.Fatalf("/song/%q.sng returned something that looks like /etc/passwd", bad)
+		}
 	}
 }

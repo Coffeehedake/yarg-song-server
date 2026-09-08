@@ -47,6 +47,7 @@ import (
 	"hash/fnv"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -70,6 +71,12 @@ const lockShards = 256
 // it up. The window is generous because a legitimate in-progress pack of a very
 // large song must never be swept out from under itself.
 const stalePartialAge = 1 * time.Hour
+
+// packageHashPattern is what a package hash may look like. Package hashes are
+// SHA-256 over the archive's contents, so 64 hex characters; the pattern is
+// deliberately a shape check rather than a length assertion tied to one hash
+// function, since the only job here is to refuse anything that could be a path.
+var packageHashPattern = regexp.MustCompile(`^[0-9a-f]{16,128}$`)
 
 // Cache is a directory of packed archives, keyed by package hash.
 type Cache struct {
@@ -175,8 +182,22 @@ func (c *Cache) MaxBytes() int64 { return c.maxBytes }
 // song that moves from a folder into a zip keeps the same cache entry and the
 // same bytes.
 func (c *Cache) openOnce(packageHash, src string) (*os.File, error) {
-	if packageHash == "" {
-		return nil, fmt.Errorf("packcache: empty package hash")
+	// The key becomes a FILENAME on the next line, so it is validated here
+	// rather than trusted to have been validated by whoever called.
+	//
+	// Today every caller passes a hash this server computed from content, so
+	// nothing reaches here that could escape c.dir - the HTTP handler uses the
+	// caller's ?package= only to look up an index entry and then passes that
+	// entry's own hash. That is correct and it is also invisible: a refactor
+	// that passed the query parameter straight through would be shorter, would
+	// read fine, and would turn this line into a directory traversal on the
+	// server. The check makes the safety local instead of a property of every
+	// call site.
+	//
+	// Both sync clients had exactly this defect on their side of the wire, where
+	// the server named the file. This is the same lesson pointed inward.
+	if !packageHashPattern.MatchString(packageHash) {
+		return nil, fmt.Errorf("packcache: %q is not a package hash", packageHash)
 	}
 	dst := filepath.Join(c.dir, packageHash+".sng")
 

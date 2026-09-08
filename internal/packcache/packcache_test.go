@@ -401,3 +401,57 @@ func TestEvictionNeverStealsAnArchiveBeforeItsPackerCanOpenIt(t *testing.T) {
 		t.Errorf("%d requests failed outright; first few: %v", len(failures), failures)
 	}
 }
+
+// The cache key becomes a filename, so the cache checks it rather than trusting
+// its callers to have done so.
+//
+// Every caller today passes a hash this server computed from content, which is
+// why this has never mattered. It is here because the safety should be local:
+// a handler refactored to pass a client's ?package= straight through would turn
+// filepath.Join(c.dir, packageHash+".sng") into a traversal, and would look like
+// a simplification while doing it.
+//
+// BE PRECISE ABOUT WHAT THIS FIXED. Removing the guard and re-running showed the
+// traversal keys were ALREADY refused - by os.CreateTemp, which rejects a
+// pattern containing a path separator. That is an accident of the standard
+// library, not a decision anyone made here, and it only covers keys with
+// separators: "a.b" and "NOTHEX" went straight through to the packing stage
+// before this. So this is defence in depth that makes an accidental protection
+// deliberate, and NOT a fix for an exploitable server-side traversal. Saying
+// which of those it is matters more than the check itself.
+func TestAKeyThatCouldBeAPathIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	c, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, bad := range []string{
+		"../../../../etc/passwd",
+		"..\\..\\windows\\system32\\x",
+		"/etc/passwd",
+		"a/b",
+		"a.b",
+		"",
+		"NOTHEX",
+		"0123456789abcdef!",
+	} {
+		f, err := c.Open(bad, dir)
+		if err == nil {
+			f.Close()
+			t.Errorf("key %q was accepted; it can name a file outside the cache", bad)
+			continue
+		}
+		// It must be refused for being malformed, not by happening to fail later.
+		if !strings.Contains(err.Error(), "is not a package hash") {
+			t.Errorf("key %q was refused, but for the wrong reason: %v", bad, err)
+		}
+	}
+
+	// And a well-formed one still gets through to the packing path.
+	if _, err := c.Open(strings.Repeat("a", 64), filepath.Join(dir, "nope")); err == nil {
+		t.Error("a well-formed key with a missing source should fail at packing, not validation")
+	} else if strings.Contains(err.Error(), "is not a package hash") {
+		t.Errorf("a well-formed key was rejected as malformed: %v", err)
+	}
+}
