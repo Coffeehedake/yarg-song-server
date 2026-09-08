@@ -218,9 +218,26 @@ container-image:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
     - |
       VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo "$CI_COMMIT_SHORT_SHA")"
+      # WHAT EACH TAG MEANS. Decided 2026-09-08; the previous scheme had
+      # `:latest` following the default branch, which meant a stranger running
+      # the README's one-line `docker pull …:latest` got whatever landed on
+      # main twenty minutes ago - including, after a bad merge, before we did.
+      #
+      #   :<short sha>  every build, always. Immutable, and the tag vault2 pins.
+      #   :main         the default branch head. Names what it is; use it if you
+      #                 actually want "newest development build".
+      #   :vX.Y.Z       a release tag, built from that tag's own commit.
+      #   :latest       THE NEWEST RELEASE TAG, not the newest commit.
+      #
+      # So `:latest` now goes stale between releases ON PURPOSE. That is the
+      # point: it is a version somebody chose to release. If it looks old, the
+      # answer is to cut a tag, never to point it back at a branch.
       set -- --tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
-      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
-        set -- "$@" --tag "$CI_REGISTRY_IMAGE:latest"
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        set -- "$@" --tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_TAG" \
+                    --tag "$CI_REGISTRY_IMAGE:latest"
+      elif [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        set -- "$@" --tag "$CI_REGISTRY_IMAGE:main"
       fi
       echo "building $VERSION for linux/amd64,linux/arm64"
       # --provenance=false is a MITIGATION, not a preference, and it is the
@@ -272,6 +289,15 @@ container-image:
     # recreate into a docker.img that has 99 GB free.
     - docker buildx rm "$BUILDX_BUILDER" 2>/dev/null || true
   rules:
+    # TAGS FIRST, and this line is the whole reason for the change. Without it
+    # a tag pipeline built no image at all: on a tag `CI_COMMIT_BRANCH` is
+    # unset, so both branch rules below are false and the job silently did not
+    # run. Measured rather than reasoned - v0.1.0's pipeline (2383) is green
+    # with four check jobs and `release:tag`, no `container-image` anywhere,
+    # and the registry held 89 tags and no `v0.1.0`. A release with archives
+    # and no image is not a release for a project whose first goal is a
+    # Docker-compatible server.
+    - if: '$CI_COMMIT_TAG'
     # Default branch, plus ci/* so the job can be proved on a branch before it
     # is trusted on main. Deliberately not every branch: each run pushes an
     # image, and the disk it lands on is not large.
