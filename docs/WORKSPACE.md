@@ -244,6 +244,29 @@ Two things about that VM that cost time:
 - **`gofmt -w` on the mounted folder can leave its temp file behind**, named `<file>.go.<digits>`.
   It shows up as untracked in `git status` and will be committed by a `git add -A` that nobody
   looked at first.
+- **`device_bash` cannot delete on the mount** ("Operation not permitted"), so cleaning those
+  temp files means PowerShell — and that is where the real trap is.
+  **`Get-ChildItem -Filter "*.go.*"` MATCHES `api.go`.** `-Filter` is passed to the filesystem
+  and evaluated with 8.3 short-name semantics, where a trailing `.*` also matches "no
+  extension after the dot". Measured 2026-09-08: `Get-ChildItem -Filter "*.go.*" | Remove-Item`
+  aimed at one leftover `check.go.4044019482262576786` **deleted every .go file in the
+  directory** — api.go, check.go, web.go, all three test files. Tracked files came back from
+  `git restore`; the new untracked file did not exist anywhere but that directory, and only
+  survived because a copy happened to be in the session's scratch space.
+
+  Filter with `Where-Object` on a real regex instead, and delete by literal path:
+
+  ```powershell
+  Get-ChildItem -LiteralPath $dir -File |
+    Where-Object { $_.Name -match '\.go\.\d+$' } |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+  ```
+
+  The general rule this is an instance of: **`-Filter` is not a glob and not a regex.** When a
+  delete is involved, list first, read the list, then delete by name.
+- **Git run from the mount cannot remove its own `.git/index.lock`** (same "Operation not
+  permitted"), so a stale zero-byte lock is left behind and blocks the next commit. Check for
+  a running `git` process, then remove it from PowerShell.
 
 ### Install Unity Hub from Unity's own installer, never the MSIX
 
