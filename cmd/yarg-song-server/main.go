@@ -332,9 +332,10 @@ func run(opt config.Resolved, log *slog.Logger) error {
 		// deployment it is literally mounted ro - and /tmp on a container image
 		// this small may be memory-backed, where a 128 MiB upload is a very
 		// different cost than it looks.
-		CheckDir: checkDir,
-		Features: opt.Features(),
-		Writes:   opt.ConfigWrites,
+		CheckDir:   checkDir,
+		Features:   opt.Features(),
+		Writes:     opt.ConfigWrites,
+		ConfigPath: opt.File,
 	}
 
 	// Name the config file that was actually read, or say that none was.

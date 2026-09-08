@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -217,29 +219,130 @@ func TestAMissingEnabledFieldIsRefusedRatherThanGuessed(t *testing.T) {
 	}
 }
 
-// The response has to say a change will not survive a restart. A settings menu
-// that silently forgets is a trap, and the operator should not have to find
-// out by restarting.
-func TestTheResponseAdmitsItIsNotPersisted(t *testing.T) {
-	s := writeServer(t, config.WritesLocal)
-	resp := do(t, s, "PUT", "/api/v1/features/check_uploads", "127.0.0.1:1", `{"enabled":true}`)
+type putBody struct {
+	Feature       config.Feature `json:"feature"`
+	Persisted     bool           `json:"persisted"`
+	MakePermanent string         `json:"make_permanent"`
+	PersistError  string         `json:"persist_error"`
+	ConfigFile    string         `json:"config_file"`
+}
 
-	var body struct {
-		Feature       config.Feature `json:"feature"`
-		Persisted     bool           `json:"persisted"`
-		MakePermanent string         `json:"make_permanent"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+func decodePut(t *testing.T, resp *http.Response) putBody {
+	t.Helper()
+	var b putBody
+	if err := json.NewDecoder(resp.Body).Decode(&b); err != nil {
 		t.Fatal(err)
 	}
+	return b
+}
+
+// With a config file to write to, a change survives a restart — and the file it
+// went into is the one the server actually read.
+func TestAChangeIsWrittenBackToTheConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "yarg-song-server.conf")
+	if err := os.WriteFile(conf, []byte(config.Example), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := writeServer(t, config.WritesLocal)
+	s.ConfigPath = conf
+
+	body := decodePut(t, do(t, s, "PUT", "/api/v1/features/check_uploads", "127.0.0.1:1", `{"enabled":true}`))
+	if !body.Persisted {
+		t.Fatalf("not persisted: %s", body.PersistError)
+	}
+	if body.ConfigFile != "yarg-song-server.conf" {
+		t.Errorf("config_file = %q", body.ConfigFile)
+	}
+
+	// The measurement that matters is not "we wrote a line" but "a server
+	// starting from this file now behaves differently".
+	reloaded := config.Defaults()
+	if err := config.LoadFile(&reloaded, conf); err != nil {
+		t.Fatal(err)
+	}
+	if !reloaded.CheckUploads {
+		t.Error("a server restarted from this file would still have check_uploads off")
+	}
+}
+
+// A save that fails must not be reported as a toggle that failed. The feature
+// really is on; only the saving went wrong, and conflating the two sends
+// somebody looking for a bug that is not there.
+func TestAFailedSaveStillLeavesTheFeatureOn(t *testing.T) {
+	s := writeServer(t, config.WritesLocal)
+	s.ConfigPath = filepath.Join(t.TempDir(), "does-not-exist.conf")
+
+	resp := do(t, s, "PUT", "/api/v1/features/check_uploads", "127.0.0.1:1", `{"enabled":true}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d; a save failure is not a request failure", resp.StatusCode)
+	}
+	body := decodePut(t, resp)
 	if body.Persisted {
-		t.Error("claimed the change was persisted; nothing writes the config file yet")
+		t.Error("claimed to have saved into a file that does not exist")
 	}
-	if body.MakePermanent != "check_uploads = yes" {
-		t.Errorf("make_permanent = %q, want the config line to write", body.MakePermanent)
+	if body.PersistError == "" {
+		t.Error("no reason given for not saving")
 	}
-	if !body.Feature.Enabled {
-		t.Error("the returned feature does not show the new value")
+	if !body.Feature.Enabled || !s.enabled("check_uploads") {
+		t.Error("the runtime change was lost because the save failed")
+	}
+	// And the route really is live, which is the whole point of the toggle.
+	if got := do(t, s, "POST", "/api/v1/check?name=x.sng", "127.0.0.1:1", "x").StatusCode; got == http.StatusNotFound {
+		t.Error("check is still absent after a toggle whose save failed")
+	}
+}
+
+// The server must not create a config file out of nowhere. Settings written
+// into whatever directory it happens to be running from would land somewhere
+// nobody would think to look.
+func TestNoConfigFileMeansNothingIsCreated(t *testing.T) {
+	dir := t.TempDir()
+	s := writeServer(t, config.WritesLocal)
+	s.ConfigPath = "" // the server read no config file
+
+	body := decodePut(t, do(t, s, "PUT", "/api/v1/features/browse_ui", "127.0.0.1:1", `{"enabled":false}`))
+	if body.Persisted {
+		t.Error("claimed to persist with no config file")
+	}
+	if body.MakePermanent != "browse_ui = no" {
+		t.Errorf("make_permanent = %q", body.MakePermanent)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("files appeared: %v", entries)
+	}
+}
+
+// Toggling twice must leave the file saying the second thing, once.
+func TestTogglingTwiceLeavesOneCorrectLine(t *testing.T) {
+	conf := filepath.Join(t.TempDir(), "yarg-song-server.conf")
+	if err := os.WriteFile(conf, []byte(config.Example), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := writeServer(t, config.WritesLocal)
+	s.ConfigPath = conf
+
+	do(t, s, "PUT", "/api/v1/features/check_uploads", "127.0.0.1:1", `{"enabled":true}`)
+	do(t, s, "PUT", "/api/v1/features/check_uploads", "127.0.0.1:1", `{"enabled":false}`)
+
+	reloaded := config.Defaults()
+	if err := config.LoadFile(&reloaded, conf); err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.CheckUploads {
+		t.Error("the file still says the first value")
+	}
+	raw, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(raw), "\ncheck_uploads = "); n != 1 {
+		t.Errorf("%d written check_uploads lines, want 1", n)
 	}
 }
 

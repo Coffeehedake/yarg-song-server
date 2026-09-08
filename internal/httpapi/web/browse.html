@@ -191,8 +191,7 @@ function renderSettings(writable, why){
   }).join("");
 
   const foot = writable
-    ? '<div class="note">Changes take effect at once and are <b>lost on restart</b>. ' +
-      'The line to make one permanent appears here after you use a switch.</div>'
+    ? '<div class="note">Changes take effect at once and are saved to the config file.</div>'
     : '<div class="note">Read-only. ' + esc(why) + '</div>';
 
   box.innerHTML = "<summary>Server settings</summary>" + rows + foot;
@@ -223,8 +222,15 @@ async function toggle(btn){
     // that decides, and a page that showed its own optimistic guess would look
     // right while being wrong.
     await loadSettings();
-    note("Changed. To keep it after a restart, put <code>" +
-         esc(body.make_permanent || "") + "</code> in yarg-song-server.conf.");
+    // Two things happened, and they can disagree: the feature really did
+    // change, and saving it may or may not have worked. Reporting only the
+    // second would tell somebody their toggle failed when it did not.
+    if (body.persisted) {
+      note("Changed, and saved to <code>" + esc(body.config_file || "the config file") + "</code>.");
+    } else {
+      note('Changed. <span class="warn">Not saved: ' + esc(body.persist_error || "unknown reason") +
+           '</span> To keep it, put <code>' + esc(body.make_permanent || "") + "</code> in the config file.");
+    }
     // A capability the rest of the page depends on may have just moved.
     if (name === "check_uploads") {
       if (want) { enableChecking(); } else { el("checkbox").hidden = true; }

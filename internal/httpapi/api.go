@@ -61,9 +61,14 @@ type Server struct {
 	// Writes says who may change a feature at runtime: off, local or lan.
 	// The zero value is off, so a Server built without thinking about it is
 	// read-only — which is the direction a default should fail in.
-	Writes  config.WriteAccess
-	Version string
-	Log     *slog.Logger
+	Writes config.WriteAccess
+	// ConfigPath is the config file the server actually READ, or empty when it
+	// read none. A change is written back here so it survives a restart. The
+	// server never creates one: settings written into whatever directory it
+	// happens to be running from would land somewhere nobody would look.
+	ConfigPath string
+	Version    string
+	Log        *slog.Logger
 
 	// Live feature state. BrowseUI and CheckUploads above are the STARTUP
 	// values and stay as the record of what the operator configured; these

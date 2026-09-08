@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/coffeehedake/yarg-song-server/internal/config"
@@ -145,15 +146,40 @@ func (s *Server) setFeature(w http.ResponseWriter, r *http.Request) {
 			"feature", name, "enabled", *body.Enabled, "from", r.RemoteAddr)
 	}
 
-	f := s.feature(name)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"feature": f,
-		// Says so plainly rather than letting somebody find out after a
-		// restart. A settings menu that silently forgets is a trap.
-		"persisted": false,
-		"make_permanent": fmt.Sprintf("%s = %s", name,
-			map[bool]string{true: "yes", false: "no"}[*body.Enabled]),
-	})
+	line := fmt.Sprintf("%s = %s", name, config.YesNo(*body.Enabled))
+
+	// Write it back to the operator's config file so it survives a restart.
+	//
+	// The RUNTIME change has already happened and stands either way. A failed
+	// save must not be reported as a failed toggle: the feature really is on,
+	// and saying otherwise would send somebody looking for a bug that is not
+	// there. It reports what happened to each half separately.
+	resp := map[string]any{
+		"feature":        s.feature(name),
+		"persisted":      false,
+		"make_permanent": line,
+	}
+	switch {
+	case s.ConfigPath == "":
+		// Nothing to write into. The server only ever edits a file it actually
+		// read; inventing one in whatever directory it happens to be running
+		// from would put settings somewhere nobody would think to look.
+		resp["persist_error"] = "no config file was read, so there is nothing to write to; " +
+			"create one beside the server and restart, then changes will be saved"
+	default:
+		if err := config.SetKey(s.ConfigPath, name, config.YesNo(*body.Enabled)); err != nil {
+			resp["persist_error"] = err.Error()
+			if s.Log != nil {
+				s.Log.Warn("feature changed but could not be saved",
+					"feature", name, "path", s.ConfigPath, "err", err)
+			}
+		} else {
+			resp["persisted"] = true
+			resp["config_file"] = filepath.Base(s.ConfigPath)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // feature returns one registry entry with its LIVE enabled value.
