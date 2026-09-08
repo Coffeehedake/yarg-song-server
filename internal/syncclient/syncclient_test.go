@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/coffeehedake/yarg-song-server/internal/scan"
@@ -367,5 +370,97 @@ func TestPruneIsOptInAndCostsASecondCall(t *testing.T) {
 func TestNoServerURLIsAnError(t *testing.T) {
 	if _, err := Run(context.Background(), Options{Dest: t.TempDir()}); err == nil {
 		t.Fatal("an empty server URL should be refused")
+	}
+}
+
+// The server names every file this client writes, so a server that lies about
+// what it holds is a write primitive unless the names are checked.
+//
+// This is the same defect the in-game mirror had, found there first and checked
+// here because the two clients were written to mirror each other. filepath.Join
+// CLEANS a path but does not CONFINE it: "../../x" resolves to somewhere above
+// the destination and is written there.
+//
+// Red-proofed by widening chartHash to `^.*$`: the test then fails with "6 song
+// request(s) were made for names that are not chart hashes".
+//
+// THE REQUEST COUNT IS THE ASSERTION THAT BITES, and the reason is worth
+// knowing. On POSIX the write is TRANSIENT: fetchOne downloads to a .part,
+// verification rejects the bytes, and os.Remove succeeds, so nothing is left
+// behind to find. On Windows the same sequence leaves the file, because
+// YARG.Core holds a non-.sng file open and the delete fails - which is how the
+// in-game mirror's version of this became a permanent write. The file checks
+// below are kept for that case and for any future one where cleanup fails; they
+// are not what catches it here.
+//
+// So the exposure here is an attacker-chosen URL fetched by the client, and an
+// attacker-chosen path written and then removed. Lesser than the Windows case,
+// and still not something a server should be able to ask for.
+func TestNamesThatAreNotChartHashesNeverBecomePaths(t *testing.T) {
+	dest := t.TempDir()
+
+	// A sibling of dest, reachable from it by "..", standing in for anywhere on
+	// the disk the process can write.
+	outside := t.TempDir()
+
+	hostile := []string{
+		"../" + filepath.Base(outside) + "/escaped-by-traversal",
+		"../../etc/passwd",
+		"not-a-hash",
+		"",
+		"0000000000000000000000000000000000000001EXTRA",
+		"0000000000000000000000000000000000000001/nested",
+	}
+
+	var served atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/have" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(haveResponse{
+				LibraryTotal: len(hostile),
+				Missing:      hostile,
+				MissingCount: len(hostile),
+			})
+			return
+		}
+		// Any song request means a hostile name got past the check and became a
+		// URL. Serve real bytes so the failure is a file on disk, not a 404 that
+		// would let this test pass for the wrong reason.
+		served.Add(1)
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 2048))
+	}))
+	defer srv.Close()
+
+	res, err := Run(context.Background(), Options{
+		ServerURL: srv.URL,
+		Dest:      dest,
+		HTTP:      srv.Client(),
+		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatalf("a hostile name list must not abort the sync: %v", err)
+	}
+
+	if got := served.Load(); got != 0 {
+		t.Errorf("%d song request(s) were made for names that are not chart hashes", got)
+	}
+	if len(res.Downloaded) != 0 {
+		t.Errorf("downloaded %v; none of those are chart hashes", res.Downloaded)
+	}
+
+	// Nothing anywhere near the destination, under any name.
+	for _, dir := range []string{dest, outside, filepath.Dir(dest)} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if strings.Contains(name, "escaped") || strings.HasSuffix(name, ".part") ||
+				strings.HasSuffix(name, ".sng") {
+				t.Errorf("a hostile name produced %s in %s", name, dir)
+			}
+		}
 	}
 }

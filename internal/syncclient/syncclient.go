@@ -41,6 +41,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/coffeehedake/yarg-song-server/internal/scan"
 	"github.com/coffeehedake/yarg-song-server/internal/sng"
@@ -48,6 +49,21 @@ import (
 
 // managedName matches exactly the files this client considers its own.
 var managedName = regexp.MustCompile(`^[0-9a-f]{40}\.sng$`)
+
+// chartHash is what a chart hash may look like, and EVERY hash the server sends
+// is checked against it before use.
+//
+// The server names the files this client writes. Without this check the list
+// returned by /api/v1/have is a write primitive: filepath.Join cleans a path but
+// does not confine it, so "../../.." lands wherever it points. The same defect
+// existed in the in-game mirror and is fixed there too - it was written once,
+// in two clients, because both trusted a server they had chosen.
+//
+// Choosing a server is not the same as trusting it to name files on your disk,
+// and the connection is plain HTTP on a LAN by design, so anything on the path
+// can supply this list. The scanner already refuses traversal entries inside
+// archives for exactly this reason.
+var chartHash = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // Options configures one sync run.
 type Options struct {
@@ -237,7 +253,41 @@ func postHave(ctx context.Context, opt Options, base string, have []string) ([]s
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, 0, fmt.Errorf("syncclient: malformed /have response: %w", err)
 	}
-	return out.Missing, out.LibraryTotal, nil
+
+	// Dropped rather than fatal: one malformed name must not cost a sync of ten
+	// thousand good ones. Logged, because a server sending these is either
+	// broken or hostile and both are worth noticing.
+	kept := out.Missing[:0]
+	for _, h := range out.Missing {
+		if !chartHash.MatchString(h) {
+			opt.Log.Warn("server offered a name that is not a chart hash; refusing it",
+				"name", sanitizeName(h))
+			continue
+		}
+		kept = append(kept, h)
+	}
+	return kept, out.LibraryTotal, nil
+}
+
+// sanitizeName makes an untrusted string safe to put in a log line. It came off
+// the network, so it is exactly as trustworthy as whatever sent it.
+func sanitizeName(v string) string {
+	if v == "" {
+		return "(empty)"
+	}
+	var b strings.Builder
+	for _, r := range v {
+		if b.Len() >= 64 {
+			b.WriteString("...")
+			break
+		}
+		if unicode.IsControl(r) {
+			b.WriteRune('?')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // fetchOne downloads, VERIFIES and installs one song.
@@ -271,6 +321,13 @@ func fetchOne(ctx context.Context, opt Options, base, hash string) (int64, error
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("GET %s returned %s", url, resp.Status)
+	}
+
+	// Checked again at the line that would do the damage, so this does not
+	// depend on a caller elsewhere having been careful.
+	if !chartHash.MatchString(hash) {
+		return 0, fmt.Errorf("syncclient: refusing a name that is not a chart hash: %s",
+			sanitizeName(hash))
 	}
 
 	part := filepath.Join(opt.Dest, hash+".sng.part")
