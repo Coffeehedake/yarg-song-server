@@ -113,6 +113,53 @@ five minutes.
 [p984]: https://github.com/YARC-Official/YARG/pull/984
 [p1540]: https://github.com/YARC-Official/YARG/pull/1540
 
+## Two bugs we can hand them, with reproductions
+
+Found 2026-09-08 by pointing our mirror at a deliberately hostile server (a body cut in half
+mid-transfer, a real archive served under someone else's hash, a 500, and random bytes). Both
+are in the **same failure path** of `SngFile.TryLoadFromFile` — the branch taken when a file
+turns out not to be a `.sng` — and both are one-liners. Neither has anything to do with remote
+libraries, which is what makes them worth sending first.
+
+**1. The `FileStream` leaks when the file is not a `.sng`.**
+`IO/SngHandler/SngFile.cs:100`:
+
+```csharp
+using var tracker = new SngTracker();
+var filestream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read, 1);
+...
+    if (filestream.Read(tag) < tag.Length || !tag.SequenceEqual(SNGPKG))
+    {
+        return default;          // <-- filestream was never given to the tracker
+    }
+    tracker.Stream = filestream; // <-- only reached on success
+```
+
+The stream is opened before the tag check and only handed to `tracker` after it passes, so the
+early return drops the only reference to an open handle. `tracker.Dispose()` has nothing to
+close. On Windows the file stays **locked until the finalizer runs**, so a caller that rejects a
+file and then tries to delete it gets `The process cannot access the file … because it is being
+used by another process`. Anything that scans a folder containing one non-`.sng` file and then
+tries to clean up hits this.
+
+**2. `Dispose()` throws on the value a failed load returns.**
+`IsLoaded` is `_tracker != null` and correctly reports `false`, but `Dispose()` is an
+unconditional `_tracker.Dispose()`. So the natural way to write the caller —
+
+```csharp
+using var sng = SngFile.TryLoadFromFile(path, false);
+if (!sng.IsLoaded) { throw new Exception("not a readable .sng"); }
+```
+
+— throws a `NullReferenceException` from the implicit `Dispose()` as the stack unwinds, and that
+NRE **replaces** the caller's own exception. We hit this exactly: a clear "downloaded file is not
+a readable .sng" reached the player as "Object reference not set to an instance of an object".
+
+Both are guarded against on our side (`SongServerSync.VerifyChartHash` no longer uses `using`,
+and partial downloads are swept on the next run), so neither blocks us. They are offered because
+they are small, real, and reproducible — and a first contribution that fixes a bug is a better
+introduction than one that asks for an API.
+
 ## The shape of the ask, and why it is smaller than it sounds
 
 The server already hands out **plain `.sng` files that unmodified YARG reads natively** —

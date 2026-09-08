@@ -689,7 +689,37 @@ Set to `DevelopmentOnly` — enough to develop and test, nothing weaker shipped 
 what a release build should do is now question 4 in the Discord post rather than a default
 quietly changed in a fork.
 
-**A `server:` search filter, `yarg` `a31ddef7`.** `server:yes` shows only what the mirror
+**The mirror's integrity guarantee, tested against a hostile server.** `SongServerSync` claimed
+in its own comment that "a crash or a dropped link mid-download cannot leave a truncated archive
+under a name the scanner will trust" — true by inspection, never reproduced, which is precisely
+the standing the packcache eviction race had until CI ran the one test that could fail.
+`Editor/HostileServerProbe.cs` now serves the four ways a download goes wrong from a raw-socket
+server: a body cut in half mid-transfer (Content-Length promises the whole file), a real archive
+served under someone else's hash, a 500, and random bytes.
+
+**The guarantee held — no bad archive was ever named — but three real defects came out around
+it**, none of which any unit test had reached:
+
+1. **The cleanup delete could throw and replace the real error.** A rejected download reported
+   "the process cannot access the file" instead of why it was rejected. The delete is now
+   guarded and can never mask the cause.
+2. **`SngFile.TryLoadFromFile` leaks its `FileStream`** when the file is not a `.sng`, so on
+   Windows the rejected file stays locked and cannot be deleted at all. Partial downloads are
+   now swept by `Inventory` on the next run instead, and `Result` reports `swept=`.
+3. **`SngFile.Dispose()` throws on the value a failed load returns**, and that
+   `NullReferenceException` replaced our own message — "downloaded file is not a readable .sng"
+   reached the caller as "Object reference not set to an instance of an object".
+
+Two of the three are upstream's, both one-liners in the same failure path, and both are now
+written up with reproductions in [`UPSTREAM.md`](UPSTREAM.md) as something to hand them ahead of
+any API request.
+
+The probe also pins what the guarantee does **not** promise: a failed download can still leave a
+`.part`, because the locked file cannot be deleted. What must hold is that a `.part` is never a
+song and that dead ones do not accumulate — measured at 1 after one sync and 1 after two, against
+a server that keeps failing.
+
+**A `server:` search filter came first, `yarg` `a31ddef7`.** `server:yes` shows only what the mirror
 brought in, `server:no` only what was already yours, and it composes with everything else
 (`artist:queen;server:yes`).
 
