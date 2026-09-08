@@ -1162,6 +1162,31 @@ it is a conversation with their team, not a feature we bolt on from outside.
 
 ---
 
+## Shipping the client — measured 2026-09-08
+
+**Nobody had ever built this fork.** Every measurement until now was against the official v0.15.0
+release or in editor batchmode, and "it compiles headless" is not "it ships". A public beta means
+somebody who is not Jay running the client, so the first question is whether a build exists at all.
+
+It does. **526 MB in 34.1 minutes**, Unity 6000.3.5f2, `StandaloneWindows64`, Mono backend, and the
+fork's own code verified present in `Assembly-CSharp.dll` rather than assumed —
+`SongServerSync`, `MirroredSongs`, `SongServerTab`, `WithServerBadge`.
+
+Three things came out of it that matter beyond "it worked", all in
+[`docs/BUILD.md`](BUILD.md):
+
+- **Upstream has no Windows build workflow at all**, and its one mac workflow pins Unity
+  `2021.3.21f1` against the project's real `6000.3.5f2`. There was no recipe to copy.
+- **Unity returned `Success` WITH three errors.** All `RenderTexture.Create failed`, from
+  `-nographics`. Almost certainly harmless, and "almost certainly" is the honest strength of that
+  claim, because nobody has launched the build. The reporting now says `PASS WITH 3 ERROR(S)`
+  rather than calling it clean — `BuildPipeline.BuildPlayer` returns `Succeeded` alongside a
+  non-zero error count, so a script that only read the result would have lied.
+- **The binary identifies itself as `YARC` / `YARG`**, upstream's own values. The SOURCE says it is
+  a modified fork; a distributed executable says nothing of the kind, and somebody handed it has no
+  way to tell it from the official build. That is bad for them and unfair to upstream, who would
+  field the bug reports. **A naming decision, and it belongs before anything is handed to anyone.**
+
 ## Phase 5 — LLM chart generation
 
 The long-term goal, and the phase most likely to move. It depends on every phase above working.
