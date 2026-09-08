@@ -101,9 +101,17 @@ Unzip it and run `start-server.cmd` on Windows or `./start-server.sh` elsewhere:
 Put songs in `songs/` and reload.
 
 Artifacts from `main` are kept **30 days**; a **tagged** build keeps its archives permanently.
-The archives are byte-for-byte reproducible — every file is stamped with a fixed timestamp rather
-than the clock — so two builds of one commit produce identical checksums, which is what makes
-`SHA256SUMS` worth publishing.
+
+**The packaging is deterministic: given the same binaries it produces byte-identical archives**,
+because every entry is stamped with a fixed timestamp rather than the clock. That is what makes
+`SHA256SUMS` meaningful across a rebuild.
+
+It is **not** yet a claim that you can reproduce a CI archive on your own machine, and the
+difference is worth stating rather than discovering. Reproducing one end to end also needs the
+same Go toolchain, and as of 2026-09-08 the two have drifted — CI pins **1.27.1** while ENG-1 has
+**1.27.0**, which is why the local and CI archives for `4ddd322` differ by about 2 KB. The
+compiler changed, not the packaging. Line them up before treating a checksum mismatch as
+tampering.
 
 The binaries are **not code-signed yet**, so Windows SmartScreen and macOS Gatekeeper will both
 object on first run. That warning is accurate rather than spurious: nobody has paid a certificate
