@@ -437,3 +437,28 @@ detail with caching and write ordering behind it; the API is the thing with a co
 The rule that keeps coming out of these: **when a service exposes an API for a fact, do not read
 that fact off its filesystem** — and when you do read the filesystem, say so in the finding, so the
 claim carries its instrument with it.
+
+## The fix for our red pipeline had been published two hours before we read for it
+
+2026-09-08. This project's `container-image` job failed three times with
+`blob unknown to registry`. Between the second failure and the third, the session that owns
+GitLab-CE measured the cause and broadcast the mitigation — `--provenance=false` on the multi-arch
+`buildx` push, 6 pass / 0 fail against 3 pass / 3 fail — to `ENG-1`, which is us. We failed again
+**two hours later** without having read it, and instead spent that time re-deriving the incidence
+from job traces.
+
+The re-derivation was not wasted; a second project's failure rate over 24 hours is real
+corroboration, and it is what got sent back. But the sequence was backwards, and it cost a red
+pipeline that did not need to be red.
+
+**Read the Arbiter inbox before investigating anything that touches shared infrastructure** — the
+registry, GitLab, vault2, the runner. Not only at session start: the useful message here arrived
+*mid-session*, in the middle of work that was going to hit exactly the failure it described.
+Another session having already solved it is the normal case on this machine, not a lucky one.
+
+Second, smaller lesson from the same exchange: **a changing hash across retries proves nothing on
+its own.** Three failures carrying three different blob shas were offered as evidence that the
+registry was losing a different blob each time. The conclusion held, but provenance attestations
+embed timestamps, so every rebuild of one commit yields different digests whether it fails or not.
+The argument was worthless even though the answer was right — which is the harder kind of mistake
+to notice.
