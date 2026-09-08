@@ -5,7 +5,7 @@
     "docs/ADR-001-server-architecture.md": "efac771cc5499c44def053278310b39e882e6463fd37a2723104e28f72c74596",
     "docs/ADR-002-v1-store.md": "6189374a44630cde315a1b7bf18323d2422a6f936ac450490e46156660955e80",
     "docs/ADR-003-archive-ingest.md": "07edb93d8403ea1edc76dc888644c7b23baabb1b5e062cc2d44882a3ef64c618",
-    "docs/ADR-004-remote-song-source.md": "67ea4fd61025531415820523599e838474b82c61f813e09e767082b99ea65c21",
+    "docs/ADR-004-remote-song-source.md": "f8b20c3ada128d3f9fdec60ef26941d2f05cc0bab020ac859e6f73009400fbf7",
     "docs/ADR-005-upload-check.md": "8afe6d0d7105eddc35becc3b4193fc7ae41337f496f2971be9c395257a7399e5",
     "docs/API.md": "2caa610f800f1b0942a08ee21d17d76e62a89c81b7467155df92f7c315513547",
     "docs/DEPLOY-VAULT2.md": "4381379d38907236ec857297a835b9df072936813f6e59874a94097d13bc4443",
@@ -14,7 +14,7 @@
     "docs/SOURCES.md": "ae8f29dc86ef0df75a7dbca575ef59a4c9c73f8cfa4c44b5a003facaf1627ad5",
     "docs/SYNC-CLIENT.md": "d27c58bfd1e3f2f175baac5d6456967055b83b4c6d78fe19a5bb9970b8cbaadc",
     "docs/TEST-CORPUS.md": "e709adcb8c26317b91e9b5448692bc37543fd8eb281fa34327059d61ac3c8888",
-    "docs/UPSTREAM.md": "015856e36afd45e5b9c57fdb27a503205545d5ebf837b5969a11a7b161cf202f",
+    "docs/UPSTREAM.md": "e4228ee88be36395610000b6b66e387db8f191adaab60e494703f094008c1fa0",
     "docs/WORKSPACE.md": "b29a192569773008f436068e62f6ea8c84093191517386c345db3a3cb882a38e",
     "docs/research/chart-preparsing.md": "5bbb0183f6b574ed54a215e48f7b3069aeedde551d7579438c68f270f5ec6e92",
     "docs/research/yarg-song-formats.md": "650bf169a65356c832ed474dd7293183e0649b2a09c11340b8a0949d5bb3e900"

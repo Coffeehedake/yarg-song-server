@@ -247,17 +247,30 @@ file.
 **DEFERRED to the bottom of the queue, 2026-09-08, by Jay: nothing goes to upstream until
 there is something to show, and that means a PUBLIC BETA. We are not there yet.**
 
-That is a scope decision, not a scheduling one, and it settles more than the post itself:
+**And upstream is a collaborator we would welcome, not a gate we are waiting at.** Jay, the same
+day, correcting a framing this document had been carrying:
 
-- **ADR-004 increments 2 and 3 stop being "waiting on upstream" and become "not yet".** They
-  were parked because their shape depends on answers this post was meant to get. With the post
-  deferred, the answers are not coming for a while, so either they are built fork-only on our
-  own judgement — accepting that upstream may later want a different shape — or they wait.
-  They wait. Increment 1 works, and building two more increments against a guess is how a fork
-  earns a rewrite.
-- **The `SngFile.TryLoadFromStream` question was the cheap one and it goes with the rest.** It
-  is a small, general improvement with no remote-library baggage, and it was worth asking on
-  its own. It still is, later. Not worth breaking the rule for.
+> Regardless of whether the YARG devs want to incorporate our work directly or not, or if they
+> approve of our additions in part or in whole, we are going to continue our work. I would
+> *like* to have their approval and cooperation, but it isn't required. This is an open-source
+> project, as is YARG, and we are fully allowed to fork, patch, or modify their code with our
+> project so long as we are attributing them correctly and maintaining license conditions.
+
+Those two together settle more than the post itself:
+
+- **ADR-004 increments 2 and 3 stop being "waiting on upstream" entirely.** Not "not yet" —
+  simply ours to decide. What is left is an ordinary engineering question with a measurable
+  answer: whether they need `YARG.Core` changes at all, or whether the Unity layer can
+  materialise a song before the loader runs the way increment 1 already does. See ADR-004.
+- **The `SngFile.TryLoadFromStream` question changes shape.** As a request it waits for beta.
+  As a *change*, it is ours to make in our own copy whenever we need it — the patch is already
+  written and measured in `docs/patches/`. What it costs is a fork of the `YARG.Core` submodule
+  and a rebase forever, which is the honest price and is payable.
+- **The licence obligation binds NOW, not at release.** LGPL-3.0-or-later carries GPL-3.0
+  §5(a): a modified work must carry prominent notices saying it was changed and when. The fork
+  did not — its README was upstream's, unchanged, with nothing marking it as modified. Fixed
+  2026-09-08 with a notice at the top of the README and `FORK-NOTICE.md`. Recording it as a
+  gap we had rather than a box we had already ticked.
 - **The draft below does not rot on its own, but its facts do.** It cites specific call sites,
   PR numbers and a measured claim about `YARG.Core` having no networking. Re-verify every one
   of those before sending — they were true on 2026-09-07 and nothing here will notice when

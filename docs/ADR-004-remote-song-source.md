@@ -1,7 +1,41 @@
 # ADR-004: how a YARG client reaches a remote library
 
-**Status:** increment 1 **built and verified** 2026-09-07 (`yarg` `6a05002` on `dev`).
-Increments 2 and 3 remain proposals.
+**Status:** increment 1 **built, verified and finished** (`yarg` `6a05002` through `2a7abe1c`
+on `dev`). Increments 2 and 3 are proposals, and **no longer blocked on anybody's answer** —
+see the scope note immediately below.
+
+## Scope, restated 2026-09-08
+
+This ADR was written expecting upstream to decide its fate, and its open questions were phrased
+as things to ask. **That framing was wrong and is corrected here.** Jay's position, stated
+2026-09-08:
+
+> Regardless of whether the YARG devs want to incorporate our work directly or not, or if they
+> approve of our additions in part or in whole, we are going to continue our work. I would
+> *like* to have their approval and cooperation, but it isn't required. This is an open-source
+> project, as is YARG, and we are fully allowed to fork, patch, or modify their code with our
+> project so long as we are attributing them correctly and maintaining license conditions.
+
+So upstream is a **collaborator we would welcome, not a gate we are waiting at.** Three things
+follow, and they are consequences rather than restatements:
+
+1. **"Waiting on upstream" stops being a status.** Increments 2 and 3 are now ordinary
+   engineering decisions, made on our own judgement, in the fork. What remains true is that
+   building against a guess about their preferred shape has a cost — but the cost is a possible
+   rewrite later, not a blocked project, and that is a trade we can price.
+2. **The obligation this creates is the licence's, and it binds now rather than at release.**
+   LGPL-3.0-or-later carries GPL-3.0 §5(a): a modified work must carry prominent notices saying
+   it was changed and when. **The fork did not do that** — its README was upstream's, unchanged,
+   with nothing marking it as modified. Fixed 2026-09-08: a notice at the top of the README and
+   `FORK-NOTICE.md` recording what changed and when. Worth stating plainly that this was a real
+   gap and not a formality we were already meeting.
+3. **The question "would upstream take this?" is replaced by a better one: "what is the smallest
+   change to THEIR code we can live with?"** Every line we add to `YARG.Core` is a line we
+   rebase forever. That is now the design constraint, and it is a sharper one than approval was.
+
+The patches in `docs/patches/` keep their value either way: they are correct fixes to real
+upstream bugs, they are what we would open a PR with if the moment comes, and until then they
+are what we would apply to our own copy.
 **Constrained by [ADR-001](ADR-001-server-architecture.md). Informed by [UPSTREAM.md](UPSTREAM.md).**
 
 Measured against `yarg` at `3673672` (branch `dev`) with the `YARG.Core` submodule at
@@ -306,11 +340,32 @@ observable.
   Pi-with-a-small-card case that increments 2 and 3 exist for is exactly the case we have
   never measured on real hardware.
 
-## Open questions, for upstream and for us
+## Open questions
 
-1. **Which tier does a remote song source fall into?** Unpublished, and it decides whether
-   any of this is upstreamable at all. The Discord post is drafted in `docs/UPSTREAM.md` and
-   is waiting on Jay.
+**Reframed 2026-09-08.** These were written as questions for upstream. Upstream's answers would
+be welcome and are not required, so they are restated here as questions for us — with the one
+genuine dependency named as what it is.
+
+1. ~~**Which tier does a remote song source fall into?**~~ **No longer load-bearing.** It decided
+   whether this was *upstreamable*, not whether it was *buildable*. The Discord post is drafted
+   in `docs/UPSTREAM.md` and is deferred to the bottom of the queue until there is a public beta
+   to show; nothing here waits on it.
+
+   **What replaces it as the real question: do increments 2 and 3 actually need `YARG.Core`
+   changes at all?** This has not been measured, and the badge on 2026-09-08 is the reason to
+   measure it rather than inherit the answer — that blocker was recorded as "needs the Unity
+   editor" through four handoffs and turned out to be false of the feature, only true of one
+   implementation of it. Increment 2 is *fetch a song when it is played*. If the Unity layer can
+   materialise the file into the mirror folder **before** the loader runs, the loader never knows
+   the difference and `YARG.Core` is untouched — exactly the trick increment 1 already pulls.
+   That is a measurement, not an opinion, and it decides whether increment 2 costs a submodule
+   fork or an afternoon.
+
+   **If it does need `YARG.Core`:** the submodule points at upstream
+   (`https://github.com/YARC-Official/YARG.Core`, pinned at `028969a9`). Modifying it means
+   forking it to Vault2 GitLab, repointing the submodule, and carrying our patches across every
+   upstream update forever. That is the real price of increment 2, it is payable, and it should
+   be paid deliberately rather than discovered halfway through.
 2. **Would they take `SngFile.TryLoadFromStream` on its own?** It is a small, general
    improvement with no remote-library baggage. If the answer is yes, that is worth doing
    first regardless of what happens to the rest. **Nothing is in flight on it** — searched
