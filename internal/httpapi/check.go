@@ -37,6 +37,17 @@ var checkExtensions = map[string]bool{".sng": true, ".zip": true, ".7z": true}
 // learned the expensive way, pointed at this server's own front door: a string
 // somebody else supplied may be a lookup key and must not be a filename.
 func (s *Server) check(w http.ResponseWriter, r *http.Request) {
+	// Absent, not forbidden. This used to be true because the route was never
+	// registered; it is now true because the handler answers with the mux's own
+	// 404. A server with this off is still indistinguishable from one that
+	// never had the feature, which is the property - and it is asserted by
+	// comparing this response to the 404 for a path that really does not exist,
+	// rather than by trusting that http.NotFound and the mux agree.
+	if !s.enabled("check_uploads") {
+		notThere(w, r)
+		return
+	}
+
 	name := r.URL.Query().Get("name")
 	if name == "" {
 		writeError(w, http.StatusBadRequest,

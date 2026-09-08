@@ -35,9 +35,11 @@ func main() {
 	def := config.Defaults()
 
 	var (
-		flagged     config.Config
-		configPath  string
-		showVersion = flag.Bool("version", false, "print version and exit")
+		flagged      config.Config
+		configPath   string
+		showVersion  = flag.Bool("version", false, "print version and exit")
+		configWrites string
+
 		writeConfig = flag.Bool("write-config", false, "print a commented example config file and exit")
 	)
 	flag.StringVar(&configPath, "config", "",
@@ -52,6 +54,8 @@ func main() {
 
 	flag.BoolVar(&flagged.CheckUploads, "check-uploads", def.CheckUploads,
 		"accept an uploaded archive at POST /api/v1/check, scan it and answer with the verdict; keeps nothing")
+	flag.StringVar(&configWrites, "config-writes", string(def.ConfigWrites),
+		"who may change a feature at runtime: off, local or lan")
 	flag.Int64Var(&flagged.CheckMaxBytes, "check-max-bytes", def.CheckMaxBytes,
 		"largest body POST /api/v1/check will accept, in bytes; 0 means unbounded")
 	flag.Parse()
@@ -100,6 +104,19 @@ func main() {
 	// without the global flag set.
 	given := map[string]bool{}
 	flag.Visit(func(f *flag.Flag) { given[f.Name] = true })
+
+	// The write-access flag is a string because the setting is a three-way
+	// choice, so it is parsed here rather than by the flag package. Only
+	// validated when it was actually typed: an untyped flag carries its default
+	// and must not be able to fail the parse.
+	if given["config-writes"] {
+		w, perr := config.ParseWriteAccess(configWrites)
+		if perr != nil {
+			log.Error("configuration", "err", fmt.Errorf("--config-writes: %w", perr))
+			os.Exit(1)
+		}
+		flagged.ConfigWrites = w
+	}
 
 	opt, err := resolveAll(configPath, flagged, given)
 	if err != nil {
@@ -196,6 +213,7 @@ func resolveAll(configPath string, flagged config.Config, given map[string]bool)
 	apply("browse-ui", func() { res.BrowseUI = flagged.BrowseUI })
 	apply("check-uploads", func() { res.CheckUploads = flagged.CheckUploads })
 	apply("check-max-bytes", func() { res.CheckMaxBytes = flagged.CheckMaxBytes })
+	apply("config-writes", func() { res.ConfigWrites = flagged.ConfigWrites })
 
 	return res, nil
 }
@@ -316,6 +334,7 @@ func run(opt config.Resolved, log *slog.Logger) error {
 		// different cost than it looks.
 		CheckDir: checkDir,
 		Features: opt.Features(),
+		Writes:   opt.ConfigWrites,
 	}
 
 	// Name the config file that was actually read, or say that none was.
@@ -353,6 +372,22 @@ func run(opt config.Resolved, log *slog.Logger) error {
 
 	if opt.CheckUploads {
 		log.Info("upload check limits", "max_bytes", opt.CheckMaxBytes, "staged_in", checkDir)
+	}
+
+	// Say who can reconfigure this server, every time, including when the
+	// answer is nobody. An operator who turned this on should see it confirmed,
+	// and one who did not should be able to prove it from the log rather than
+	// from a config file they may not be looking at.
+	switch opt.ConfigWrites {
+	case config.WritesLAN:
+		log.Warn("features can be changed over HTTP BY ANY CALLER on this network",
+			"config_writes", "lan", "at", "PUT /api/v1/features/{name}")
+	case config.WritesLocal:
+		log.Info("features can be changed over HTTP from this machine only",
+			"config_writes", "local", "at", "PUT /api/v1/features/{name}")
+	default:
+		log.Info("features cannot be changed over HTTP",
+			"config_writes", "off", "enable_with", "config_writes = local")
 	}
 
 	srv := &http.Server{

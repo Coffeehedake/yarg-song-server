@@ -42,6 +42,13 @@ var browseModified = time.Now()
 // a catch-all: it would turn every unmatched path into this page and quietly
 // destroy the 404s the API relies on. "{$}" matches the root and nothing else.
 func (s *Server) browse(w http.ResponseWriter, r *http.Request) {
+	// Off means the root is not served, exactly as when this route was only
+	// registered while enabled. The 404 comes from http.NotFound so it is the
+	// same bytes the mux itself would send for an unknown path.
+	if !s.enabled("browse_ui") {
+		notThere(w, r)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Length", strconv.Itoa(len(browseHTML)))
 	// The page is static for the life of the process, so a conditional request

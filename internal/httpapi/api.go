@@ -22,6 +22,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/coffeehedake/yarg-song-server/internal/catalog"
 	"github.com/coffeehedake/yarg-song-server/internal/config"
@@ -57,30 +58,44 @@ type Server struct {
 	// a Server built without a registry then reports nothing rather than
 	// reporting everything as off, which is the honest failure.
 	Features []config.Feature
-	Version  string
-	Log      *slog.Logger
+	// Writes says who may change a feature at runtime: off, local or lan.
+	// The zero value is off, so a Server built without thinking about it is
+	// read-only — which is the direction a default should fail in.
+	Writes  config.WriteAccess
+	Version string
+	Log     *slog.Logger
+
+	// Live feature state. BrowseUI and CheckUploads above are the STARTUP
+	// values and stay as the record of what the operator configured; these
+	// hold what is true now. Handlers read `enabled`, never the fields.
+	liveOnce sync.Once
+	liveMu   sync.RWMutex
+	live     map[string]bool
 }
 
 // Handler builds the router.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	// The browse page, when it is enabled. "{$}" is an exact match on the root -
-	// a bare "/" in Go's ServeMux is a catch-all and would swallow every 404 the
-	// API depends on.
-	if s.BrowseUI {
-		mux.HandleFunc("GET /{$}", s.browse)
-	}
+	// The browse page. "{$}" is an exact match on the root - a bare "/" in Go's
+	// ServeMux is a catch-all and would swallow every 404 the API depends on.
+	//
+	// Registered unconditionally now, where it used to be registered only when
+	// enabled, because a feature that can be switched on at runtime cannot have
+	// its route decided at startup. The handlers answer with the mux's OWN 404
+	// when their feature is off, so a disabled feature is still absent rather
+	// than forbidden - the property that mattered - and a test compares the two
+	// responses byte for byte rather than trusting this comment.
+	mux.HandleFunc("GET /{$}", s.browse)
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /version", s.versionInfo)
 	mux.HandleFunc("GET /api/v1/library", s.libraryInfo)
 	mux.HandleFunc("GET /api/v1/features", s.features)
+	mux.HandleFunc("PUT /api/v1/features/{name}", s.setFeature)
 	mux.HandleFunc("GET /api/v1/songs", s.songs)
 	mux.HandleFunc("GET /api/v1/songs/{hash}", s.song)
 	mux.HandleFunc("POST /api/v1/have", s.have)
-	if s.CheckUploads {
-		mux.HandleFunc("POST /api/v1/check", s.check)
-	}
+	mux.HandleFunc("POST /api/v1/check", s.check)
 	mux.HandleFunc("GET /song/{file}", s.songFile)
 
 	return mux
@@ -112,7 +127,7 @@ func (s *Server) libraryInfo(w http.ResponseWriter, r *http.Request) {
 		// A capability, not a statistic. The browse page reads it for the same
 		// reason it reads sort_attributes: a page that guessed which endpoints
 		// exist would offer a drop zone against a server that answers 404.
-		"check_uploads": s.CheckUploads,
+		"check_uploads": s.enabled("check_uploads"),
 	})
 }
 
@@ -132,11 +147,20 @@ func (s *Server) libraryInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) features(w http.ResponseWriter, r *http.Request) {
 	// Never nil in the body: an empty list is a server that reports no optional
 	// capabilities, and "features": null reads as a broken endpoint.
-	list := s.Features
+	list := s.liveFeatures()
 	if list == nil {
 		list = []config.Feature{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"features": list})
+	// Whether THIS caller may change them, not merely whether writing is
+	// switched on. A page that offered switches to a phone which will get a 403
+	// would be worse than one that offered none: the same rule that made the
+	// drop zone ask rather than assume.
+	writable, why := s.mayWrite(r)
+	body := map[string]any{"features": list, "writable": writable}
+	if !writable {
+		body["writable_reason"] = why
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // songsResponse is one page of a browse.

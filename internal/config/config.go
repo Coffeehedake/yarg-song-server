@@ -36,6 +36,9 @@ type Config struct {
 	CheckUploads bool
 	// CheckMaxBytes bounds one uploaded body. Ignored when CheckUploads is off.
 	CheckMaxBytes int64
+	// ConfigWrites says who may change a feature at runtime over HTTP: off,
+	// local, or lan. See writes.go for why it is not a bool.
+	ConfigWrites WriteAccess
 }
 
 // Defaults are what the server does when told nothing.
@@ -75,6 +78,11 @@ func Defaults() Config {
 		// chart with lossless stems without letting one request write a
 		// gigabyte to a Pi's SD card.
 		CheckMaxBytes: 128 << 20,
+		// OFF, for the same reason check_uploads is off and then some. An
+		// existing deployment must not acquire the ability to be reconfigured
+		// over the network by being upgraded, and this server has no
+		// authentication to put in front of that ability.
+		ConfigWrites: WritesOff,
 	}
 }
 
@@ -184,8 +192,14 @@ func ApplyTracked(c *Config, r io.Reader) ([]string, error) {
 				return nil, fmt.Errorf("line %d: check_max_bytes: %w", line, err)
 			}
 			c.CheckMaxBytes = n
+		case "config_writes":
+			w, err := ParseWriteAccess(value)
+			if err != nil {
+				return nil, fmt.Errorf("line %d: config_writes: %w", line, err)
+			}
+			c.ConfigWrites = w
 		default:
-			return nil, fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max, browse_ui, check_uploads, check_max_bytes", line, key)
+			return nil, fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max, browse_ui, check_uploads, check_max_bytes, config_writes", line, key)
 		}
 		keys = append(keys, key)
 	}
@@ -313,4 +327,25 @@ const Example = `# yarg-song-server configuration.
 # The largest body POST /api/v1/check will accept. Same size suffixes as
 # pack_cache_max. Anything larger is refused with 413 before it is read.
 # check_max_bytes = 128M
+
+# Who may turn features on and off from the browse page, rather than by editing
+# this file and restarting. One of:
+#
+#   off     nobody. The route does not exist. THIS IS THE DEFAULT.
+#   local   only from this machine. Open the page on the server itself and you
+#           get switches; open the same page on your phone and you do not.
+#   lan     anyone who can reach this port.
+#
+# Not a yes/no, on purpose. "yes" would have had to mean "lan", and on a home
+# network that is every device including the ones nobody is thinking about.
+# THIS SERVER HAS NO AUTHENTICATION, so "lan" means exactly what it says: any
+# device on your network can turn features on and off. That is a reasonable
+# choice for a box you administer from a laptop, and it should be a choice.
+#
+# Changes take effect immediately and DO NOT SURVIVE A RESTART. To make one
+# permanent, set it in this file. The server tells you the line to write.
+#
+# config_writes itself can never be changed this way - a write surface that can
+# widen its own access has no bound at all. It is only ever set here.
+# config_writes = off
 `
