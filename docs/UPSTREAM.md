@@ -160,6 +160,34 @@ and partial downloads are swept on the next run), so neither blocks us. They are
 they are small, real, and reproducible — and a first contribution that fixes a bug is a better
 introduction than one that asks for an API.
 
+### The patch, and the measurement that says it works
+
+`docs/patches/0001-sngfile-release-file-and-survive-dispose-on-rejected-load.patch` — two lines
+of code against `028969a9`, `git am`-ready:
+
+```
+-            _tracker.Dispose();
++            _tracker?.Dispose();
+...
++                    filestream.Dispose();
+                     return default;
+```
+
+**Measured A/B with the hostile-server probe, one variable changed and nothing else:**
+
+| YARG.Core | `.part` files left after a rejected download |
+|---|---|
+| stock `028969a9` | **1** — the file is locked, the delete fails |
+| patched | **0** — deleted immediately |
+
+The rejected download's reported reason is the real one in both cases only because our side
+stopped using `using`; with stock YARG.Core and the obvious caller shape it reads
+"Object reference not set to an instance of an object".
+
+The patch is **not applied to our submodule** — it sits on a local branch and the pointer is
+back on `028969a9`, so the fork builds against stock upstream and our workarounds stay in place.
+It exists to be sent, not to be depended on.
+
 ## The shape of the ask, and why it is smaller than it sounds
 
 The server already hands out **plain `.sng` files that unmodified YARG reads natively** —

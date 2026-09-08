@@ -1,0 +1,67 @@
+From 791778d611df00fd6fb21feb4bde3661e80c9b49 Mon Sep 17 00:00:00 2001
+From: Jason Carey-Schilling <jason@juniperdesign.com>
+Date: Mon, 7 Sep 2026 21:41:42 -0400
+Subject: [PATCH] Release the file and survive Dispose when a load is rejected
+
+SngFile.TryLoadFromFile has two problems on the path where the file turns out
+not to be a .sng, and they compound: the caller is told the wrong thing, and
+then cannot clean up the file it was told about.
+
+1. The FileStream is opened before the SNGPKG tag check but only handed to the
+   tracker after it passes, so the early eturn default drops the only
+   reference to an open handle. Nothing closes it. On Windows the rejected file
+   stays locked until the finalizer runs, so a caller that rejects a file and
+   then tries to delete or replace it gets "The process cannot access the file
+   ... because it is being used by another process".
+
+2. Dispose() calls _tracker.Dispose() unconditionally, but a rejected load
+   returns default, whose _tracker is null. IsLoaded reports that correctly,
+   so the natural caller is:
+
+       using var sng = SngFile.TryLoadFromFile(path, false);
+       if (!sng.IsLoaded) { throw new Exception("not a readable .sng"); }
+
+   The implicit Dispose then throws NullReferenceException as the stack
+   unwinds, REPLACING the caller's exception. A clear "this file is not a .sng"
+   reaches the user as "Object reference not set to an instance of an object".
+
+Found while syncing songs from an HTTP source: a download that returned
+something other than a .sng could neither be reported accurately nor deleted.
+Reproduced with a harness that serves deliberately bad bodies; with these two
+lines the rejected file is removed immediately and the real reason survives.
+---
+ YARG.Core/IO/SngHandler/SngFile.cs | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/YARG.Core/IO/SngHandler/SngFile.cs b/YARG.Core/IO/SngHandler/SngFile.cs
+index c8a5844f..682f4a00 100644
+--- a/YARG.Core/IO/SngHandler/SngFile.cs
++++ b/YARG.Core/IO/SngHandler/SngFile.cs
+@@ -93,7 +93,11 @@ namespace YARG.Core.IO
+ 
+         public readonly void Dispose()
+         {
+-            _tracker.Dispose();
++            // TryLoadFromFile returns `default` when the file is not a .sng, and IsLoaded
++            // reports that correctly - but disposing that value threw here, and the
++            // NullReferenceException replaced whatever exception the caller was already
++            // throwing about the bad file.
++            _tracker?.Dispose();
+         }
+ 
+         private static readonly byte[] SNGPKG = { (byte) 'S', (byte) 'N', (byte) 'G', (byte) 'P', (byte) 'K', (byte) 'G' };
+@@ -112,6 +116,11 @@ namespace YARG.Core.IO
+                 Span<byte> tag = stackalloc byte[SNGPKG.Length];
+                 if (filestream.Read(tag) < tag.Length || !tag.SequenceEqual(SNGPKG))
+                 {
++                    // The stream is only handed to the tracker further down, so nothing
++                    // else closes it on this path. Leaving it open holds a lock on the
++                    // file (Windows) until the finalizer runs, which stops a caller from
++                    // deleting or replacing the file it just rejected.
++                    filestream.Dispose();
+                     return default;
+                 }
+                 tracker.Stream = filestream;
+-- 
+2.54.0.windows.1
+
