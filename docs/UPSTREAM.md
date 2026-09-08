@@ -244,7 +244,27 @@ file.
 
 ## Draft: the Discord post
 
-Not yet sent. Jay sends it, under his own account; nothing goes out without him.
+**DEFERRED to the bottom of the queue, 2026-09-08, by Jay: nothing goes to upstream until
+there is something to show, and that means a PUBLIC BETA. We are not there yet.**
+
+That is a scope decision, not a scheduling one, and it settles more than the post itself:
+
+- **ADR-004 increments 2 and 3 stop being "waiting on upstream" and become "not yet".** They
+  were parked because their shape depends on answers this post was meant to get. With the post
+  deferred, the answers are not coming for a while, so either they are built fork-only on our
+  own judgement — accepting that upstream may later want a different shape — or they wait.
+  They wait. Increment 1 works, and building two more increments against a guess is how a fork
+  earns a rewrite.
+- **The `SngFile.TryLoadFromStream` question was the cheap one and it goes with the rest.** It
+  is a small, general improvement with no remote-library baggage, and it was worth asking on
+  its own. It still is, later. Not worth breaking the rule for.
+- **The draft below does not rot on its own, but its facts do.** It cites specific call sites,
+  PR numbers and a measured claim about `YARG.Core` having no networking. Re-verify every one
+  of those before sending — they were true on 2026-09-07 and nothing here will notice when
+  they stop being.
+
+The draft is kept because writing it is what forced the code reading that produced ADR-004.
+Jay sends it, under his own account; nothing goes out without him.
 
 > Hey folks — I've been building a self-hosted song server for YARG and wanted to ask here
 > before going further, per CONTRIBUTING.

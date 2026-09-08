@@ -1130,6 +1130,11 @@ Where this goes next, all of it server-side and none of it needing the game:
   title alone; and the staging directory was **empty** afterwards, so "keeps nothing" is now
   measured on a live server rather than in a unit test.
 
+  **Upstream contact is deferred to the bottom of the queue** (Jay, 2026-09-08): nothing goes to
+  YARG's team until there is something to show, and that means a public beta. See
+  [`UPSTREAM.md`](UPSTREAM.md) — it also settles ADR-004 increments 2 and 3, which were parked
+  "waiting on upstream" and are now simply **not yet**.
+
   Storing an upload is [ADR-005](ADR-005-upload-check.md) increment 2 and is deliberately not
   built: `--songs` is mounted `ro` on the live deployment, an unauthenticated write endpoint is
   a different risk from an unauthenticated read one, and the in-memory index (ADR-002) would
