@@ -64,3 +64,33 @@ func TestTheBrowsePageLoadsNothingExternal(t *testing.T) {
 		}
 	}
 }
+
+// The page must surface what the scan could not read. The server has always
+// known - /api/v1/library reports every unreadable directory and archive - and
+// the page fetched that response for its sort attributes and threw the rest
+// away, so a library missing a thousand songs looked exactly like a library
+// that had a thousand fewer.
+//
+// This is a STRUCTURAL check, and worth saying so: a Go test cannot run the
+// page's JavaScript, so it asserts the machinery is present rather than that it
+// renders. It fails if someone deletes the feature, not if they break it.
+func TestTheBrowsePageSurfacesScanProblems(t *testing.T) {
+	on := browseServer(t, true)
+	_, body, err := fetch(t, on.URL+"/")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	page := string(body)
+	for _, want := range []string{`id="health"`, "showProblems", "lib.problems"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the page no longer contains %q, so scan problems are invisible again", want)
+		}
+	}
+
+	// Whatever it renders, it must escape it: a problem's path and error come
+	// from the filesystem, and a folder can be named anything at all.
+	if !strings.Contains(page, "esc(p.path)") || !strings.Contains(page, "esc(p.error)") {
+		t.Error("problem paths or errors are rendered unescaped")
+	}
+}

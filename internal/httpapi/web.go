@@ -13,7 +13,7 @@ package httpapi
 //
 // # No CDN, no build step, one file
 //
-// Everything is inline in party.html - no external stylesheet, no framework, no
+// Everything is inline in browse.html - no external stylesheet, no framework, no
 // bundler. That is not minimalism for its own sake: the target deployment is a
 // Raspberry Pi on a LAN at a party, and a page that needs the internet to render
 // is a page that fails exactly when it is wanted. Embedding it in the binary
@@ -27,14 +27,14 @@ import (
 	"time"
 )
 
-//go:embed web/party.html
-var partyHTML []byte
+//go:embed web/browse.html
+var browseHTML []byte
 
-// partyModified is the page's Last-Modified time. It is the process start rather
+// browseModified is the page's Last-Modified time. It is the process start rather
 // than a build timestamp, which is honest about what it can know: the binary
 // does not carry the file's mtime, and inventing one would let a browser cache a
 // stale page across an upgrade.
-var partyModified = time.Now()
+var browseModified = time.Now()
 
 // browse serves the page.
 //
@@ -43,9 +43,9 @@ var partyModified = time.Now()
 // destroy the 404s the API relies on. "{$}" matches the root and nothing else.
 func (s *Server) browse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Length", strconv.Itoa(len(partyHTML)))
+	w.Header().Set("Content-Length", strconv.Itoa(len(browseHTML)))
 	// The page is static for the life of the process, so a conditional request
 	// costs nothing to answer and saves re-sending it on every phone that opens
 	// the page at a party.
-	http.ServeContent(w, r, "party.html", partyModified, newBytesReader(partyHTML))
+	http.ServeContent(w, r, "browse.html", browseModified, newBytesReader(browseHTML))
 }

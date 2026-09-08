@@ -896,9 +896,14 @@ answers a 10,000-song catalog in ~140 ms.
 
 Where this goes next, all of it server-side and none of it needing the game:
 
-- **Library health as a view, not a log line.** The scanner already records why it refused a
-  song; `/api/v1/library` already reports problems. A page that makes "these six songs are
-  broken and here is each reason" the first thing an operator sees is presentation work.
+- ~~**Library health as a view, not a log line.**~~ **Done.** The page fetched
+  `/api/v1/library` for its sort attributes and threw `problems` away, so a library missing a
+  thousand songs looked exactly like a library that had a thousand fewer. It now shows
+  "N items could not be read", collapsed by default with each path and reason inside — a
+  healthy library must not be made to look alarming, and the count is the part that matters at
+  a glance. Paths and errors come from the filesystem, so both are escaped.
+  The page is now `browse.html`, not `party.html`: the name was left over from framing this
+  project does not own.
 - **Ingest from the browser** — drop an archive in, watch it scan, see the verdict.
 - **Metadata and playlists**, once multi-user libraries exist (Phase 4 proper).
 
