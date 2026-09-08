@@ -156,3 +156,31 @@ reports transport errors as a separate category for exactly this reason.
 to hold a handle on the temp file and rename underneath it. That was argued from Go's Windows
 share flags and is simply wrong: `os.Rename` fails while the source is open, and it broke
 every serial request the moment it was tried. One test run replaced a confident paragraph.
+
+## The `/api/v1/have` round trip, and where it stops working
+
+Every sync begins with the client POSTing **every chart hash it already holds** to
+`/api/v1/have`, so this request's size is chosen by the player's library rather than by us. It
+had never been measured, and a ceiling discovered by somebody with a very large library is a
+sync that fails with no explanation.
+
+| Client holds | Request body | Status | Time |
+|---:|---:|---:|---:|
+| 1,000 | 43 KB | 200 | 1 ms |
+| 10,000 | 430 KB | 200 | 4 ms |
+| 31,109 | 1.34 MB | 200 | 11 ms |
+| 100,000 | 4.30 MB | 200 | 35 ms |
+| 250,000 | 10.75 MB | **413** | 23 ms |
+
+Flat **43 bytes per hash** and linear in time. The body cap is 8 MB, so the real ceiling is
+**about 195,000 songs** — past the 100,000 this document extrapolates to elsewhere, and past
+anything this project has a reason to expect.
+
+**What matters as much as the ceiling is the shape of the refusal.** Over the cap the server
+answers a clean `413`, not a 500 and not a truncated read silently treated as "this client has
+nothing" — that last one is the dangerous failure, because a client told it is missing the
+entire library would re-download all of it.
+
+`Index.Missing` is a map build over the client's list plus a scan of the library, so both halves
+are linear; nothing here is quadratic. The test deliberately asserts the **size** ceiling, which
+is exact, and only logs the timings — a duration threshold in CI is a flake generator.

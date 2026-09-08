@@ -200,8 +200,18 @@ type haveResponse struct {
 // the library that was not in that list. Sorted, so two calls with the same
 // library and the same input give the same bytes.
 func (s *Server) have(w http.ResponseWriter, r *http.Request) {
-	// A library of 10,000 songs is ~400 KB of hashes. A megabyte is generous
-	// and still refuses a body that could exhaust memory.
+	// The CLIENT decides this body's size: both sync clients POST every chart
+	// hash they already hold, so it grows with the player's library.
+	//
+	// Measured (TestHaveScalesToALargeClientLibraryAndRefusesAnAbsurdOne), at a
+	// flat 43 bytes per hash:
+	//
+	//	  10,000 songs    430 KB     4 ms
+	//	  31,109 songs   1.34 MB    11 ms   (largest library ever indexed here)
+	//	 100,000 songs   4.30 MB    35 ms   (what SCALE.md extrapolates to)
+	//
+	// so 8 MB refuses at roughly 195,000 songs - past anything this project has
+	// a reason to expect, and still small enough not to exhaust memory.
 	const maxBody = 8 << 20
 	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 
