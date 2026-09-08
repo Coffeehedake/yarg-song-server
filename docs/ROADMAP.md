@@ -597,8 +597,10 @@ builds for about a minute, then stopped reproducing within the hour with nothing
 machine — verified across three forced relinks and three distinct binary hashes, zero new
 detections, same signature version, no exclusion added. Acting on it immediately would have left
 a permanent Defender exclusion behind for a problem that had already evaporated. If it returns,
-re-measure before doing anything structural; the escalation is Microsoft's false-positive form
-and code signing, never an exclusion. Details in `docs/SYNC-CLIENT.md`.
+re-measure before doing anything structural; the escalation is Microsoft's false-positive form,
+never an exclusion. Code signing is *not* an available escalation — it was considered and
+declined on 2026-09-08 (free software, no certificate subscription). Details in
+`docs/SYNC-CLIENT.md`.
 
 **Exit criterion:** a Pi on the LAN serves a shared library; two machines running stock YARG both
 see the same songs without either one being modified.
@@ -1267,10 +1269,14 @@ Three things came out of it that matter beyond "it worked", all in
   claim, because nobody has launched the build. The reporting now says `PASS WITH 3 ERROR(S)`
   rather than calling it clean — `BuildPipeline.BuildPlayer` returns `Succeeded` alongside a
   non-zero error count, so a script that only read the result would have lied.
-- **The binary identifies itself as `YARC` / `YARG`**, upstream's own values. The SOURCE says it is
-  a modified fork; a distributed executable says nothing of the kind, and somebody handed it has no
-  way to tell it from the official build. That is bad for them and unfair to upstream, who would
-  field the bug reports. **A naming decision, and it belongs before anything is handed to anyone.**
+- **The binary identified itself as `YARC` / `YARG`**, upstream's own values — so a distributed
+  executable said nothing about being a fork, and upstream would have fielded our bug reports.
+  **Settled 2026-09-08** (fork commit `bc5847ca`): `FatalException` / `YARG-FE`. The label was the
+  smaller half; Unity derives `Application.persistentDataPath` from those strings, so the fork had
+  been writing `settings.json` and `songcache.bin` into an official install's folder.
+  `Assets/Editor/IdentityProbe.cs` asserts the *moved folder*, not the edited strings, and also
+  asserts that `PathHelper.LauncherPath` did NOT move — that one points at the external YARC
+  Launcher and must keep doing so. See [`docs/BUILD.md`](BUILD.md).
 
 ## Shipping the server — measured 2026-09-08
 

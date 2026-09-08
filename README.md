@@ -119,9 +119,12 @@ Four things have to hold for that, and each was a real defect first:
 The archives themselves stamp a fixed timestamp rather than the clock, so repacking the same
 binaries always gives the same bytes.
 
-The binaries are **not code-signed yet**, so Windows SmartScreen and macOS Gatekeeper will both
-object on first run. That warning is accurate rather than spurious: nobody has paid a certificate
-authority to vouch for them. The archive's README says so and explains how to check the checksum.
+The binaries are **not code-signed, and that is a decision rather than a to-do** — free software
+here does not carry a certificate subscription. Windows SmartScreen and macOS Gatekeeper will
+both object on first run, and that warning is accurate rather than spurious: nobody has paid a
+certificate authority to vouch for them. The archive's README says so and explains how to check
+the checksum. If you want a signed binary, the build is reproducible — build it yourself, sign
+it yourself, and you can prove it came from this source.
 
 `docker pull registry.badassium.com/fatalexception/yarg-song-server:latest` is the other route,
 for amd64 and arm64.

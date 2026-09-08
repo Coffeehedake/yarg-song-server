@@ -121,16 +121,43 @@ Verified rather than assumed — the fork's own code is present in `Assembly-CSh
 (2.1 MB): `SongServerSync`, `MirroredSongs`, `SongServerTab`, `WithServerBadge`, `BadgeMarkup`.
 So this is a build of *our* client, not a stock one that happened to compile.
 
-### The naming problem a beta has to solve first
+### The naming problem — settled 2026-09-08
 
-The player identifies itself as **`companyName: YARC`, `productName: YARG`, `bundleVersion: 0.1.0`**
-— upstream's values, because they are upstream's project settings and nothing here changed them.
+The player used to identify itself as `companyName: YARC`, `productName: YARG` — upstream's
+values, because they are upstream's project settings and nothing had changed them. A binary
+handed to somebody was indistinguishable from the official build, so bugs we introduced would
+have looked like upstream's, and upstream would have fielded the reports.
 
-The source now says clearly that this is a modified fork (`FORK-NOTICE.md`, and a note at the top
-of the README). **A distributed binary says nothing of the kind.** Somebody handed a `YARG.exe`
-from this fork has no way to tell it apart from the official build, which is bad for them — bugs
-we introduce look like upstream's — and unfair to upstream, who would field the reports.
+It now builds as **`companyName: FatalException`, `productName: YARG-FE`, `bundleVersion: 0.1.0`**
+(fork commit `bc5847ca`).
 
-This is a decision rather than a task, and it is Jay's: rename the product, add a suffix, ship a
-differently-named executable, or accept it for a closed beta among people who already know.
-**It should be settled before anything is handed to anyone**, not after.
+The consequence that actually mattered was not the label. Unity derives
+`Application.persistentDataPath` from those two strings, so before the rename this fork wrote its
+`settings.json` and `songcache.bin` into `AppData/LocalLow/YARC/YARG` — the same folder an
+official install uses. A player running both got one set of settings and one cache, written by
+whichever binary ran last, with nothing on screen to explain it.
+
+`Assets/Editor/IdentityProbe.cs` asserts the consequence rather than the cause: it reads
+`persistentDataPath` back out of a running editor and fails if it still lands under `/YARC/YARG`,
+if the build still claims upstream's name, **or if `PathHelper.LauncherPath` stopped pointing at
+the YARC Launcher.** That last check guards the opposite mistake — the launcher path is somebody
+else's install location, and if it ever follows our rename the fork can no longer read setlists
+the launcher put on disk. Measured on Unity 6000.3.5f2 batchmode:
+
+```
+companyName          = FatalException
+productName          = YARG-FE
+persistentDataPath   = .../AppData/LocalLow/FatalException/YARG-FE
+LauncherPath         = ...\AppData\Local\YARC\Launcher
+PASS
+```
+
+Still upstream's, deliberately: the window title and in-game branding. This change is about where
+bytes land, not what the splash screen reads.
+
+### Signing: decided against
+
+Release binaries are **not code-signed and will not be** — see `docs/SYNC-CLIENT.md`. Free
+software does not carry a certificate subscription. Releases ship with `SHA256SUMS` and an honest
+warning in each archive's README, and the reproducible build means anyone who wants a signed
+binary can build and sign it themselves and prove it matches this source.

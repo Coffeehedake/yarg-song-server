@@ -177,21 +177,35 @@ If it recurs *and persists across a re-test*:
   positives), and never suggest disabling protection to get a build through.
 - **Submit the binary to Microsoft's false-positive form.** Free, and it fixes
   the verdict for every player who downloads a release, not just for us.
-- **Sign the release artifact.** A code-signing certificate is the actual
-  solution for an unsigned executable that strangers download. Note that a
-  self-signed certificate does *not* help here — it does nothing for an ML
-  verdict.
+- **Do not buy a code-signing certificate.** *Decided 2026-09-08 by Jay, and
+  this is a closed question, not a deferred one:* this is free software given
+  away, and it will not carry a recurring certificate bill. Releases ship
+  unsigned, with `SHA256SUMS` published beside them and the honest SmartScreen
+  and Gatekeeper warning already written into each archive's README. Anyone
+  who wants a signed build can build from source and sign it themselves —
+  the build is reproducible (6 of 6 matching across OSes), so a third party
+  can verify that a signed binary really is this source.
 
-  **The signing identity is decided: FatalException.** This is a personal
-  project and is signed as one; it is never signed as Juniper Design Group,
-  whose certificate would attach a company's name and liability to a personal
-  release.
+  What that costs us, stated plainly rather than glossed: every player who
+  downloads a release meets a SmartScreen "unrecognized app" prompt, macOS
+  users meet Gatekeeper, and the `!ml` verdict above stays possible. A
+  checksum proves the file was not tampered with in transit; it proves
+  nothing to Windows, which does not consult it. That is the accepted
+  trade, not an oversight.
 
-  **FatalException is a brand, not a registered legal entity, and that settles
-  the certificate question more than price does.** Organization-validated and
-  EV certificates validate an organization; with no entity to validate, the
-  certificate is issued to the *individual* instead. Two consequences, both
-  worth knowing before anything is bought:
+  Do not reopen this with a cheaper vendor or a free-tier offer. The
+  objection is to a subscription on a free project, not to a price point.
+
+  The research that produced the decision, kept because it also answers
+  "why not just self-sign" and "why not use the domain":
+
+  A **self-signed certificate does not help.** It does nothing for an ML
+  verdict and nothing for SmartScreen, because neither trusts it.
+
+  **FatalException is a brand, not a registered legal entity**, so
+  organization-validated and EV certificates were never available anyway;
+  with no entity to validate, a certificate would be issued to the
+  *individual*. Two consequences that would have applied:
 
   - **The publisher string Windows shows will be the developer's validated
     legal name, not "FatalException".** Individual-validated certificates carry
@@ -205,11 +219,8 @@ If it recurs *and persists across a re-test*:
     Outside those countries, or if the individual tier is unsuitable, an OV
     certificate from a commercial CA is the documented fallback at roughly
     $150–300/year. Prices and eligibility both move; re-check them at the point
-    of purchase rather than trusting this paragraph.
-
-  A **self-signed certificate does not help** and is worth ruling out explicitly:
-  it does nothing for an ML verdict and nothing for SmartScreen, because neither
-  trusts it.
+    of purchase rather than trusting this paragraph. Both figures are recorded
+    as the *reason* for the decision above, not as an option still on the table.
 
   **Owning a domain does not change any of this.** `badassium.com` is a fine
   identity for the project and domain control does matter to some validation
