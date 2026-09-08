@@ -67,6 +67,19 @@ docker run -d --name yarg-song-server \
 > the same image", which is what it was used for — it does **not** prove "this
 > image is the only one that commit can produce". The `:<sha>` tag resolves to
 > whichever build of that commit pushed last.
+>
+> That is not hypothetical — it is true in the registry right now. Commit
+> `1ef7598e` was built by its `main` pipeline at 16:56 and again by the `v0.1.1`
+> tag pipeline at 17:06, so today:
+>
+> ```
+> :1ef7598e  a127c732…   the tag build, pushed second
+> :v0.1.1    a127c732…   same image
+> :latest    a127c732…   same image
+> :main      9b1d0f03…   the earlier build of THE SAME COMMIT
+> ```
+>
+> `:main` and `:1ef7598e` disagree while naming one commit. Neither is wrong.
 
 Three things there are not decoration:
 
