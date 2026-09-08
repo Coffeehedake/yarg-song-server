@@ -130,7 +130,11 @@ the checksum. If you want a signed binary, the build is reproducible — build i
 it yourself, and you can prove it came from this source.
 
 `docker pull registry.badassium.com/fatalexception/yarg-song-server:latest` is the other route,
-for amd64 and arm64.
+for amd64 and arm64. **`:latest` is the newest tagged release**, not the newest commit — so it
+is deliberately behind `main` most of the time, and it is a version that was chosen rather than
+one that merely compiled. `:main` is there if you actually want the newest development build,
+`:vX.Y.Z` names a release, and `:<eight-character sha>` names one exact build and never moves —
+**pin that one** for anything you intend to keep running.
 
 ## Running it
 

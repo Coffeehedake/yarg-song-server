@@ -40,6 +40,34 @@ docker run -d --name yarg-song-server \
   registry.badassium.com/fatalexception/yarg-song-server:latest
 ```
 
+> **`:latest` CHANGED MEANING ON 2026-09-08, and everything written below this
+> line predates that.** It used to follow the default branch, so `:latest` was
+> "the newest commit on main" and the deployment records further down confirm it
+> that way — correctly, for the day they were written. It now means **the newest
+> release tag**. The tags are:
+>
+> | Tag | Means |
+> |---|---|
+> | `:<short sha>` | that exact build, eight characters, never moves — **this is what a deployment pins** |
+> | `:main` | the default branch head; the honest replacement for what `:latest` used to be |
+> | `:vX.Y.Z` | a release, built from that tag's own commit |
+> | `:latest` | the newest **release**, which is deliberately older than main most of the time |
+>
+> The `docker run` above uses `:latest` only to get a first container onto the
+> box. **Pin the eight-character sha for anything you intend to keep**, exactly
+> as the rest of this document does.
+>
+> **A digest identifies a BUILD, not a commit.** Commit `6c686ce` was built
+> twice on 2026-09-08 — once from `ci/tag-images`, once from `main` — with an
+> identical version string (`v0.1.0-5-g6c686ce`) and identical source, and the
+> two images have different digests (`e982e528…` and `ee21f46f…`). Container
+> images are not bit-reproducible here the way the release archives are: the
+> image config carries build timestamps and nothing sets `SOURCE_DATE_EPOCH`.
+> So the digest comparison used further down proves "this tag and that tag are
+> the same image", which is what it was used for — it does **not** prove "this
+> image is the only one that commit can produce". The `:<sha>` tag resolves to
+> whichever build of that commit pushed last.
+
 Three things there are not decoration:
 
 - **`chown 65532`.** The image is distroless and runs as `nonroot`, uid 65532.
