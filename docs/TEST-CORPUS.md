@@ -790,6 +790,66 @@ before the subject** — and when the instrument is fixed, re-read the result, b
 been wrong in both directions at once.
 
 
+## Run 9 was not run, and that is the stronger result
+
+**2026-09-08.** The scanner changed after run 8 — `667e507` extracted `scan.ScanFile` out of
+`WalkLibrary` so the upload-check endpoint and a library walk could not disagree about what a
+file is. A dispatch refactor is exactly the shape of change the oracle exists to catch, so run 9
+was the obvious next move.
+
+It could not be driven from this session, for two honest reasons rather than one:
+
+- **A detached process on ENG-1 cannot read YARG's `release` profile.** Measured: a process
+  created through `Win32_Process.Create` runs as the same user, at medium integrity, and sees
+  `…\LocalLow\YARC\YARG` containing only `dev`. The bridge session sees `dev` AND `release`. The
+  oracle needs `release`, because that is where the real v0.15.0 game keeps `settings.json`,
+  `songcache.bin` and `badsongs.txt`.
+- **`oracle.ps1` needs up to 180 s and a bridge call dies at about 45.** It repoints
+  `settings.json` and restores it in a `finally`, so a call killed mid-run would leave the
+  operator's YARG pointed at the test library. A scheduled task registered with an interactive
+  principal stayed `Queued` and never started.
+
+So the question was answered a different way, and the answer turns out to be better than a run.
+
+### Both sides of the comparison are provably unchanged
+
+The oracle compares **what YARG rejects** against **what our scanner flags**. Run 9 would have
+re-derived both. Instead each was shown not to have moved:
+
+**Our side — measured by diffing the scanner against itself.** `662907b` (the commit before the
+refactor) and `9ec5dfb` (current) were both built and run over the same two libraries:
+
+| Library | Before | After | Difference |
+|---|---|---|---|
+| 128 real community songs | 128 songs, 0 failures, 22,370 lines of JSON | identical | **none** |
+| the 16-case `mkbroken` corpus | 14 songs, 0 failures | identical | **none** |
+
+Byte-identical on stdout and stderr both times, once `date_added` is normalised out — it is
+`time.Now()` and changes every run, which is why a naive file comparison shows a seven-byte
+difference and means nothing. The JSON carries the `issues` array, so *what we flag* is included
+in that identity, not just *what we index*.
+
+**YARG's side — unchanged by construction.** Same binary (v0.15.0, the release build), same
+corpus: all 69 files under `broken/` were last written 2026-09-07 00:19, before run 8, and the
+manifest still lists its 16 cases.
+
+Same inputs, same programs, so the same verdicts. **Run 8's result stands for `9ec5dfb`**: 14
+indexed, 6 refused by YARG, 7 flagged by us, **0 refused-but-passed**, and the one allowed
+overshoot (`07-no-song-ini`).
+
+### What this does NOT establish
+
+Worth stating plainly, because "equivalent to a run that passed" is not the same claim as "ran
+and passed":
+
+- It says the refactor changed nothing **on these two libraries**. A dispatch difference that
+  only shows on a shape neither library contains would survive this check — a `.7z`, a console
+  package, an archive with backslash separators. The unit tests cover those; the oracle would
+  not have exercised them either.
+- It says nothing about YARG's behaviour on anything new. Nothing new was added to the corpus.
+- **The next real change to the scanner needs a real run 9**, on a machine where somebody can
+  watch it. This substitutes for one run, not for the oracle.
+
 ## A library with a duplicate package, for testing 300 Multiple Choices
 
 The 23-case corpus and the 270-song real library both have `duplicate_packages: 0`, so
