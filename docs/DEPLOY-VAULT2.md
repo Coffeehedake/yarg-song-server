@@ -448,3 +448,51 @@ The last two matter more than they look. A deployment that serves a page but not
 deployment that passes a health check and fails a player; and the `GET /{$}` versus `GET /`
 distinction is the kind of thing an image rebuild could quietly undo, turning every 404 into HTML
 that a sync client would try to parse as a `.sng`.
+
+## State check over Tailscale, 2026-09-08 13:52Z — read-only, nothing deployed
+
+Reached vault2 as `vault2.tail20252e.ts.net` rather than `192.168.2.7`; the Tailscale name
+works off-LAN and the LAN literal does not.
+
+| Measured | Value |
+|---|---|
+| `docker inspect` | `running`, started `2026-09-08T02:39:26Z`, **restarts=0** |
+| Image | `registry.badassium.com/fatalexception/yarg-song-server:3f80da0a` |
+| Ports | `8080/tcp -> 0.0.0.0:8099` |
+| `GET /healthz` on `:8099` | `200` |
+| Startup log | `songs=23 distinct_charts=23 duplicate_packages=0 problems=0 took=19ms` |
+| Commits behind `origin/main` (`3f80da0..7e12e55`) | **17** |
+
+The live deployment is healthy and has not restarted; it is simply old on purpose. Nothing here
+was changed — deploying, and turning `check_uploads` on, are both still Jay's calls.
+
+**The image is distroless, so `docker exec <name> sh -c ...` fails with
+`exec: "sh": executable file not found in $PATH`.** That is the image behaving correctly, not a
+broken container. An authenticated `/api/v1/*` probe therefore cannot be run from inside the
+container; use `/healthz` (unauthenticated) plus the startup log, or call the API from a host that
+holds the key.
+
+### The registry's on-disk tag directory is NOT a reliable inventory
+
+Listing
+`/var/opt/gitlab/gitlab-rails/shared/registry/docker/registry/v2/repositories/<ns>/<img>/_manifests/tags`
+inside the GitLab-CE container returned **69** tags and omitted `7e12e557` — the tag for `main`'s
+head, whose pipeline had succeeded 90 minutes earlier. The GitLab API returned **70**, including it.
+Read from the disk, the conclusion would have been "CI never published an image for HEAD", which is
+false and would have been the ninth wrong-instrument finding in this project.
+
+**Use the API, and take the digest, not the tag name:**
+
+```
+GET /api/v4/projects/<id>/registry/repositories
+GET /api/v4/projects/<id>/registry/repositories/<repo_id>/tags/<tag>   -> .digest
+```
+
+`latest` and `7e12e557` resolve to the same digest (`sha256:2597abd874b3b646…`), so `:latest`
+currently *is* head-of-`main` — but that is a measurement with a timestamp on it, not a property.
+Compare digests every time; a tag name is a label somebody can move.
+
+Pipeline history for the 17 undeployed commits is 16 `success` and one `failed` (`e8eda83b`,
+a docs commit). Project id is **53**; the credential is Windows Credential Manager
+`dev:gitlab-ce-pat`, read via `CredRead` so the token never reaches a command line or the
+transcript.

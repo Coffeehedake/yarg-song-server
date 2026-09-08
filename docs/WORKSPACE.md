@@ -421,3 +421,19 @@ Everything else Unity writes (`Library/`, `Temp/`, `Logs/`, `Assets/Packages/`) 
 `core.autocrlf` is `true` on ENG-1, and `git diff` from the VM reports every CRLF file as fully
 rewritten — 25 files and 3,840 insertions, none of them real. Read and edit in the VM; run
 **git** on Windows.
+
+## A directory listing under a service's storage is not that service's inventory
+
+2026-09-08. Checking whether CI had published an image for `main`'s head, I listed the registry's
+`_manifests/tags` directory on disk inside the GitLab-CE container. It returned 69 tags and did not
+include the one I was looking for, whose pipeline had succeeded 90 minutes earlier. The GitLab API
+returned 70 and did include it.
+
+This is the same shape as `ls -la <dir> | head -3` "proving" a directory was empty, and as
+`-Filter "*.go.*"` matching `api.go`: a plausible instrument, pointed at the right place, answering
+a slightly different question than the one asked. A registry's on-disk layout is an implementation
+detail with caching and write ordering behind it; the API is the thing with a contract.
+
+The rule that keeps coming out of these: **when a service exposes an API for a fact, do not read
+that fact off its filesystem** — and when you do read the filesystem, say so in the finding, so the
+claim carries its instrument with it.
