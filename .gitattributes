@@ -16,3 +16,30 @@
 # ending, which is what makes it worth pinning here rather than remembering.
 
 **/testdata/** -text
+
+# Source and scripts are LF in the working tree on every machine, not just in the
+# index. `core.autocrlf=true` on the Windows workstations was checking these out
+# as CRLF, and that produced three recurring costs, all of which look like
+# something else:
+#
+#   1. `gofmt -l .` flagged nine files that were perfectly formatted, so the one
+#      real formatting error would have been invisible in the noise.
+#   2. `bash ci/*.sh` died on `$'\r'`, which reads as a broken script.
+#   3. Five files sat permanently "modified" with an EMPTY diff. That made the
+#      tree dirty to `git describe --dirty`, and Go stamps `vcs.modified=true`
+#      into every binary it builds from a dirty tree. Measured 2026-09-08:
+#      that flag was the ENTIRE remaining difference between a local build and
+#      a CI build of the same commit, after the toolchain and `-trimpath` were
+#      lined up - 2,916 differing bytes out of 8.5 MB, all of it the VCS stamp
+#      and the Go build ID derived from it.
+#
+# Test fixtures stay `-text` above and are unaffected; this is only about files
+# whose bytes nobody hashes.
+*.go        text eol=lf
+*.sh        text eol=lf
+*.mod       text eol=lf
+*.sum       text eol=lf
+Makefile    text eol=lf
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.md        text eol=lf
