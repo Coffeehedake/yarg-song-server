@@ -66,6 +66,18 @@ dd{margin:0;min-width:0;overflow-wrap:anywhere}
 #health li{padding:3px 0;word-break:break-all}
 #health .why{color:var(--ink-faint)}
 .err{color:var(--warn)}
+#settings{margin:8px 12px 0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+#settings summary{padding:10px 12px;cursor:pointer;color:var(--ink-dim);font-size:14px}
+#settings .f{display:flex;align-items:flex-start;gap:10px;padding:8px 12px;border-top:1px solid var(--line)}
+#settings .f .t{flex:1;min-width:0}
+#settings .nm{font-size:14px}
+#settings .d{font-size:12px;color:var(--ink-faint)}
+#settings .ep{font-size:12px;color:var(--ink-faint);font-family:ui-monospace,monospace}
+#settings button{height:32px;padding:0 12px;font-size:13px}
+#settings button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+#settings .note{padding:8px 12px;font-size:12px;color:var(--ink-faint);border-top:1px solid var(--line)}
+#settings .note code{color:var(--ink-dim)}
+#settings .warn{color:var(--warn)}
 #checkbox{margin:8px 12px 0;border:1px dashed var(--line);border-radius:10px;padding:14px 12px;
   text-align:center;color:var(--ink-dim);font-size:14px}
 #checkbox.over{border-color:var(--accent);color:var(--ink)}
@@ -90,6 +102,7 @@ dd{margin:0;min-width:0;overflow-wrap:anywhere}
   </div>
 </header>
 <details id="health" hidden></details>
+<details id="settings" hidden></details>
 <div id="checkbox" hidden>
   Drop a <b>.sng</b>, <b>.zip</b> or <b>.7z</b> here to see whether it would work.
   Nothing is uploaded to your library.
@@ -140,6 +153,92 @@ async function loadLibrary(){
   } catch (_) {
     el("sort").innerHTML = '<option value="name">Name</option>';
   }
+  loadSettings();
+}
+
+// The settings panel: the server's own capabilities, and switches for them when
+// this server says THIS caller may throw them.
+//
+// It asks rather than assumes, for the same reason the drop zone does. A page
+// that showed switches to a phone the server will refuse would turn a
+// deliberate configuration choice into what looks like a broken button.
+let features = [];
+async function loadSettings(){
+  try {
+    const r = await fetch("api/v1/features");
+    if (!r.ok) return;                       // an older server: no panel, no error
+    const body = await r.json();
+    features = body.features || [];
+    if (!features.length) return;
+    renderSettings(body.writable === true, body.writable_reason || "");
+  } catch (_) { /* the library still works without this */ }
+}
+
+function renderSettings(writable, why){
+  const box = el("settings");
+  const rows = features.map(f => {
+    const on = f.enabled === true;
+    const state = on ? "On" : "Off";
+    // Every field here comes from the server, so every field goes through esc().
+    const desc = esc(f.description || "");
+    const where = f.endpoint ? '<div class="ep">' + esc(f.endpoint) + '</div>' : "";
+    const btn = writable
+      ? '<button type="button" class="tog" data-name="' + esc(f.name) + '" ' +
+        'aria-pressed="' + (on ? "true" : "false") + '">' + state + '</button>'
+      : '<span class="d">' + state + '</span>';
+    return '<div class="f"><div class="t"><div class="nm">' + esc(f.name) + '</div>' +
+           '<div class="d">' + desc + '</div>' + where + '</div>' + btn + '</div>';
+  }).join("");
+
+  const foot = writable
+    ? '<div class="note">Changes take effect at once and are <b>lost on restart</b>. ' +
+      'The line to make one permanent appears here after you use a switch.</div>'
+    : '<div class="note">Read-only. ' + esc(why) + '</div>';
+
+  box.innerHTML = "<summary>Server settings</summary>" + rows + foot;
+  box.hidden = false;
+  if (writable) {
+    for (const b of box.querySelectorAll("button.tog")) {
+      b.addEventListener("click", () => toggle(b));
+    }
+  }
+}
+
+async function toggle(btn){
+  const name = btn.dataset.name;
+  const want = btn.getAttribute("aria-pressed") !== "true";
+  btn.disabled = true;
+  try {
+    const r = await fetch("api/v1/features/" + encodeURIComponent(name), {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({enabled: want})
+    });
+    const body = await r.json();
+    if (!r.ok) {
+      note('<span class="warn">' + esc(body.error || ("server said " + r.status)) + '</span>');
+      return;
+    }
+    // Re-read rather than trusting what we just sent: the server is the thing
+    // that decides, and a page that showed its own optimistic guess would look
+    // right while being wrong.
+    await loadSettings();
+    note("Changed. To keep it after a restart, put <code>" +
+         esc(body.make_permanent || "") + "</code> in yarg-song-server.conf.");
+    // A capability the rest of the page depends on may have just moved.
+    if (name === "check_uploads") {
+      if (want) { enableChecking(); } else { el("checkbox").hidden = true; }
+    }
+  } catch (e) {
+    note('<span class="warn">' + esc("could not reach the server: " + e.message) + '</span>');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function note(html){
+  const n = el("settings").querySelector(".note");
+  if (n) n.innerHTML = html;
 }
 
 // The scan already knows what it could not read; until now the page threw that
