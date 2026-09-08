@@ -1217,6 +1217,52 @@ Three things came out of it that matter beyond "it worked", all in
   way to tell it from the official build. That is bad for them and unfair to upstream, who would
   field the bug reports. **A naming decision, and it belongs before anything is handed to anyone.**
 
+## Shipping the server — measured 2026-09-08
+
+**There was no Windows app, and there had never been one.** Measured rather than assumed: no
+tray, service, GUI or installer code anywhere in the repo, and no GUI dependency in `go.mod`.
+What a Windows user could get was a console `.exe` inside a CI artifact that **expired after a
+week**, run from a terminal with flags. That is a build output, not something to hand anyone.
+
+**`cmd/mkrelease` now produces the download.** One archive per platform — `.zip` for Windows,
+`.tar.gz` elsewhere — each carrying **both binaries**, a per-platform README, the config template,
+the licence and a launcher, inside a folder named after itself. Plus `SHA256SUMS`. Artifacts from
+`main` keep 30 days; a tagged build keeps its archives permanently.
+
+Decisions worth keeping:
+
+- **Go, not `zip` and `tar`.** The runner is a shell executor and neither tool is guaranteed to be
+  on the host. "The packaging step failed because the runner lacks a binary" is worth designing
+  out rather than discovering.
+- **The shipped `yarg-song-server.conf` IS `config.Example`**, not a copy kept beside it. A second
+  copy of a settings file agrees with the real one for a while and then quietly stops, and the
+  person it misleads is the one who trusted the file in the download.
+- **Byte-for-byte reproducible.** Every entry is stamped with a fixed date rather than the clock,
+  so two builds of one commit produce identical checksums — otherwise `SHA256SUMS` says nothing,
+  because every rebuild would differ and a real change would be indistinguishable from one.
+- **The launcher does not open a browser for you.** Launching a URL before the server is listening
+  gives connection-refused, and the person then believes the download is broken when it is merely
+  one second early. It prints the address instead.
+- **No GitLab Release object.** That needs `release-cli` on the runner host, which is the
+  gitlab-ce session's box rather than this project's to change.
+
+**The determinism test had to be written twice, and the first one was green against broken code.**
+It built twice in one process and compared bytes — which cannot catch `var epoch = time.Now()`,
+because a package-level var is evaluated once and both runs share it. It now asserts the stored
+timestamps against a date written in the test itself. Third time in this project that a test
+passed against the very defect it existed to catch.
+
+**Verified by doing it, not only in tests:** twelve binaries built, packaged, the Windows zip
+extracted into a clean folder and `start-server.cmd` run as a double-click would. Server up,
+`GET /` 200 at 15,548 bytes, `/api/v1/features` and `/api/v1/library` both 200, version stamped,
+and the startup log naming the config file it read. Then the same thing again in CI.
+
+**Still not an app**, and that is the honest description: it is a proper download. A tray icon, a
+settings window and a service install are the next question, and goal 1's "configuration menu in
+the server app" still wants the write half of `/api/v1/features`.
+
+---
+
 ## Phase 5 — LLM chart generation
 
 The long-term goal, and the phase most likely to move. It depends on every phase above working.
