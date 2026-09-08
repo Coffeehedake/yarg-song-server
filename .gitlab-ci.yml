@@ -177,8 +177,42 @@ container-image:
         set -- "$@" --tag "$CI_REGISTRY_IMAGE:latest"
       fi
       echo "building $VERSION for linux/amd64,linux/arm64"
+      # --provenance=false is a MITIGATION, not a preference, and it is the
+      # difference between this job being reliable and failing at random.
+      #
+      # buildx attaches provenance attestations by default, so you are opted in
+      # unless you say otherwise. With them on, the push to
+      # registry.badassium.com intermittently dies with
+      #
+      #   unknown: blob unknown to registry - sha256:<different every attempt>
+      #
+      # buildkit PUTs a manifest referencing a blob it never uploaded; the
+      # digest appears in the registry's entire access log exactly once, in the
+      # error itself. The registry's refusal is correct. It hit this project
+      # three times on 2026-09-08 (17cdbb39, e8eda83b, fe079f56), hours apart,
+      # with sixteen successes interleaved - the shape that reads as "flaky
+      # network" and is not.
+      #
+      # Measured on the vault2 host by the gitlab-ce session, unique content per
+      # trial, docker login exit code verified 0 each time:
+      #
+      #   --provenance=false   6 PASS  0 FAIL
+      #   --provenance=true    3 PASS  3 FAIL
+      #
+      # The registry's metadata-database migration completed the same morning
+      # and is NOT the fix; the failure rate was unchanged afterwards.
+      #
+      # The cost is that published images carry no provenance/SBOM attestation.
+      # For a self-hosted registry serving one project that is a fair trade
+      # against a pipeline that goes red for reasons unrelated to the code. If
+      # attestations are ever wanted back, this is the line to revisit, and the
+      # thing to check first is whether buildkit still does it.
+      #
+      # Full write-up: fatalexception/gitlab-ce,
+      # docs/incidents/2026-09-08-registry-manifest-blob-unknown.md
       docker buildx build \
         --platform linux/amd64,linux/arm64 \
+        --provenance=false \
         --build-arg VERSION="$VERSION" \
         "$@" \
         --push \
