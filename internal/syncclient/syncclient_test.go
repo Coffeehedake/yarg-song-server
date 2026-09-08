@@ -292,7 +292,14 @@ func TestAmbiguousChartHashIsResolvedDeterministically(t *testing.T) {
 	for h := range fs.songs {
 		hash = h
 	}
-	offered := []choice{{PackageHash: "ffff"}, {PackageHash: "0001"}, {PackageHash: "aaaa"}}
+	// Real-length package hashes: the client refuses anything that is not
+	// hash-shaped, so toy values here would be testing a path no server can
+	// actually reach.
+	offered := []choice{
+		{PackageHash: strings.Repeat("f", 64)},
+		{PackageHash: strings.Repeat("0", 63) + "1"},
+		{PackageHash: strings.Repeat("a", 64)},
+	}
 
 	var chosen []string
 	fs.songHandler = func(w http.ResponseWriter, r *http.Request, h string) bool {
@@ -316,8 +323,64 @@ func TestAmbiguousChartHashIsResolvedDeterministically(t *testing.T) {
 			t.Fatalf("run %d: song not installed: %v", i, err)
 		}
 	}
-	if len(chosen) != 2 || chosen[0] != "0001" || chosen[1] != "0001" {
+	want := strings.Repeat("0", 63) + "1"
+	if len(chosen) != 2 || chosen[0] != want || chosen[1] != want {
 		t.Fatalf("package choices were %v, want the lowest hash both times", chosen)
+	}
+}
+
+// A package hash is a server-supplied string the client puts into a URL. The
+// 300 response is the last place the server names something the client then
+// uses, so it gets the same treatment /api/v1/have got.
+func TestPackageHashesThatAreNotHashesAreRefused(t *testing.T) {
+	srv, fs := newFakeServer(t, "a")
+	good := strings.Repeat("b", 64)
+
+	var chosen []string
+	var offered []choice
+	fs.songHandler = func(w http.ResponseWriter, r *http.Request, h string) bool {
+		if pkg := r.URL.Query().Get("package"); pkg != "" {
+			chosen = append(chosen, pkg)
+			return false
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMultipleChoices)
+		_ = json.NewEncoder(w).Encode(choices{ChartHash: h, Packages: offered})
+		return true
+	}
+
+	// Sorts BELOW the good hash in every case, so a client that did not check
+	// would pick the hostile one - the test fails loudly rather than by luck.
+	for _, bad := range []string{
+		"../../../../etc/passwd",
+		"0000&package=" + strings.Repeat("c", 64),
+		"0000#fragment",
+		"0000 " + strings.Repeat("d", 64),
+		"",
+	} {
+		offered = []choice{{PackageHash: bad}, {PackageHash: good}}
+		chosen = nil
+		dest := t.TempDir()
+
+		res := run(t, srv, dest, nil)
+		if len(res.Downloaded) != 1 || len(res.Failures) != 0 {
+			t.Fatalf("%q: downloaded %d, failures %+v", bad, len(res.Downloaded), res.Failures)
+		}
+		if len(chosen) != 1 || chosen[0] != good {
+			t.Fatalf("%q: client chose %v, want only the well-formed hash", bad, chosen)
+		}
+	}
+
+	// And when NOTHING the server lists is usable, the song fails rather than
+	// the client inventing a request.
+	offered = []choice{{PackageHash: "../../etc/passwd"}}
+	chosen = nil
+	res := run(t, srv, t.TempDir(), nil)
+	if len(res.Downloaded) != 0 || len(res.Failures) != 1 {
+		t.Fatalf("all-bad listing: downloaded %d, failures %+v", len(res.Downloaded), res.Failures)
+	}
+	if len(chosen) != 0 {
+		t.Fatalf("all-bad listing: client still requested %v", chosen)
 	}
 }
 

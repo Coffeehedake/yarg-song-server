@@ -89,6 +89,35 @@ by running exactly this client on two computers and comparing SHA-256s: 16 of 22
 differed. The mask is now derived from the package hash. See
 `docs/TEST-CORPUS.md`, fourth oracle run.
 
+## What the server is trusted for, and what it is not
+
+Choosing a server is not the same as trusting every string it sends. The client
+trusts the server for **content** — which songs exist, and the bytes of each one
+— and verifies even that, because a downloaded archive is only renamed into
+place once its chart hash is re-derived locally. What the server is *not*
+trusted for is **names**: any string that becomes a path, or part of a request
+the client then makes, is checked against a shape before it is used.
+
+There are exactly three such strings, and all three are now checked in both
+clients:
+
+| String | Where it arrives | Check | What it could do without one |
+|---|---|---|---|
+| chart hash | `POST /api/v1/have` → `missing[]` | `^[0-9a-f]{40}$` | Becomes `<hash>.sng` on disk. `filepath.Join` cleans a path but does not confine it, and .NET's `Path.Combine` discards its first argument entirely when the second is rooted — so `../../..` or `C:/Windows/Tasks/x` writes wherever the server said. **A remote arbitrary file write**, and it existed in both clients. |
+| chart hash | again, at the line that builds the path | same | The check does not depend on a caller elsewhere having been careful. |
+| package hash | the `300 Multiple Choices` body | `^[0-9a-f]{16,128}$` | Goes straight into `?package=` on the request that follows. Much smaller: a URL, not a filename, and the chart-hash verification still catches a wrong song. Closed on 2026-09-08 because it was the last server-supplied string used without looking at it. |
+
+A malformed entry is **dropped, not fatal**, in every case: one bad name must
+not cost a sync of ten thousand good ones. Both clients drop rather than
+reject, deliberately — a server sending a bad entry still leaves the two
+clients choosing the same package, which is the entire point of choosing
+deterministically. If a 300 lists *nothing* usable, that song fails and the
+reason says why; the client never invents a request.
+
+The pattern for package hashes is a shape check, not a length assertion tied to
+SHA-256, and it is the same pattern `packcache` enforces server-side before
+opening a cached archive — the lesson pointed inward as well as outward.
+
 ## Windows Defender flagged the binary once, then stopped (false positive)
 
 On 2026-09-05 between 20:26 and 20:27, four Defender detections fired on ENG-1
@@ -195,6 +224,7 @@ against a real library on disk:
 | `TestThePlayersOwnSongsAreNeverTouched` | Nothing unmanaged is altered, including across a `-prune`. |
 | `TestDryRunWritesNothing` | `-dry-run` names every song and writes no entries. |
 | `TestSharedChartHashSyncsOnce` | The 300 Multiple Choices exchange completes and yields one archive. |
+| `TestPackageHashesThatAreNotHashesAreRefused` (unit) | A 300 whose lowest-sorting entry is `../../../../etc/passwd` — or carries `&`, `#` or a space — is skipped for the well-formed one, and a listing with nothing usable fails instead of guessing. |
 
 Each was red-proofed on 2026-09-05 by breaking the code it covers and confirming
 that test, and only that test, failed:
@@ -203,5 +233,8 @@ that test, and only that test, failed:
   `TestThePlayersOwnSongsAreNeverTouched` alone failed.
 - the `-dry-run` guard replaced with `if false` → `TestDryRunWritesNothing`
   alone failed.
+- the `packageHash` filter disabled with `if false &&` →
+  `TestPackageHashesThatAreNotHashesAreRefused` alone failed, reporting that the
+  client had asked the server for `../../../../etc/passwd` (2026-09-08).
 
 A test that has never been seen to fail is a test whose meaning is unmeasured.

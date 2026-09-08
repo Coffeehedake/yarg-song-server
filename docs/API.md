@@ -172,6 +172,22 @@ ServeMux is a catch-all: it would answer every unmatched path with this page and
 turning every 404 documented above into an HTML page that a sync client would try to parse as
 a `.sng`. `TestBrowsePageOnAndOff` pins that, and fails if the pattern is ever loosened.
 
+**Every field it renders is escaped, and that was checked rather than assumed.** The page
+renders song metadata that came out of `song.ini` files inside uploaded archives — content the
+server does not author and cannot vouch for — so a stored-XSS review was done on 2026-09-08.
+`card()` passes every string through `esc()` (`&<>"'`) and builds the download link with
+`encodeURIComponent`. Exactly three interpolations bypass `esc`, and each is safe for a reason
+that does not depend on the value being well-formed:
+
+| Site | Why it is not a hole |
+|---|---|
+| `"<summary>" + n + " items"` | `n` is `problems.length`, a number. |
+| `"api/v1/songs?" + p.toString()` | `URLSearchParams.toString()` percent-encodes. |
+| `'<b>' + p.intensity + '</b>'` | `Parts.Intensity` is a Go `int8`, so it marshals as a JSON number and cannot carry a string. |
+
+Recorded as a **non-finding** so it is not re-investigated: the escaping is correct today, and
+the third row is the one to re-check if `intensity` ever stops being an integer.
+
 **What it deliberately does not have is a queue.** Upstream's open request
 [#860](https://github.com/YARC-Official/YARG/issues/860) asks for search *and queueing* from a
 phone while YARG is running; queueing needs something inside the running game to read a queue,

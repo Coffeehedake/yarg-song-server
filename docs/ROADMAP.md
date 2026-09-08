@@ -743,6 +743,49 @@ already refuses traversal entries inside archives for exactly this reason; **the
 been given the same treatment.** That asymmetry is the lesson worth keeping — the guard was
 written once, on the side where the danger was obvious.
 
+**The last unchecked server string: `package_hash`, both clients, 2026-09-08.** Closing the
+file-write defect above left one server-supplied string still used without looking at it. When a
+chart hash exists in two packages the server answers **300** with the candidates, and the client
+puts the one it picks straight into `?package=` on the request that follows — unchecked, in C#
+and in Go alike.
+
+**Severity is genuinely low, and saying otherwise would be inflating it.** The value reaches a
+URL, not a filename, and `VerifyChartHash` still rejects whatever comes back if it is not the
+song that was asked for. What it could do is put `&`, `#` or whitespace into a request the client
+makes. It is closed because it was the last one, not because it was dangerous — the interesting
+property is that *the same class of bug was written three times, in two languages, by trusting a
+server for names as well as for content*.
+
+Both clients now check `^[0-9a-f]{16,128}$` — the same pattern `packcache` already enforces
+server-side — and both **skip** a malformed entry rather than failing the song, which matters
+more than it looks: skipping keeps the two clients choosing the *same* package, which is the
+entire reason the choice is deterministic. A 300 with nothing usable fails, and says so.
+
+Red-proofed on both sides, because a check nobody has seen fail is a check of unknown meaning:
+
+| Side | Check disabled | Result |
+|---|---|---|
+| Go | `if false && !packageHash.MatchString(...)` | `TestPackageHashesThatAreNotHashesAreRefused` alone failed: *client chose [../../../../etc/passwd]* |
+| C# | `PackageHash.IsMatch` removed from the guard | `HostileServerProbe` failed both new assertions and nothing else: the client asked the server for `../../../../yarg-probe-escape/package`, and for the all-bad listing it asked for the **empty string** — an entry that sorts below everything, which is the sort of value a check written by reasoning alone tends to miss. |
+
+The probe's hostile 300 lists `../../../../yarg-probe-escape/package` **first in sort order**
+(`.` is 0x2E, below `0` at 0x30), so a client that skipped the check would pick it: the
+assertion fails loudly rather than by luck. A second 300 lists nothing usable at all, and the
+client must fail that song without inventing a request — `RequestedPackages` on the fake server
+records what was actually asked for, rather than the probe assuming.
+
+One existing test and the probe both had to be **corrected, not just extended**: they used toy
+package hashes (`aaaa`, `0001`) that the new check rightly refuses. Toy values were testing a
+path no real server can reach.
+
+**The browse page was audited in the same pass and is a non-finding.** It renders `song.ini`
+metadata from uploaded archives — content the server does not author — and `card()` escapes
+every field, with `encodeURIComponent` on the download link. Exactly three interpolations bypass
+`esc()`: a `problems.length` count, a `URLSearchParams.toString()`, and `p.intensity`, which is
+a Go `int8` and so cannot marshal as a string. Recorded in [`API.md`](API.md) as a negative so
+it is not re-investigated, with a note that the third is the one to re-check if `intensity` ever
+stops being an integer.
+
 **The download error branch was dead code, `yarg` `61cf1290`.** Following the hostile probe with
 one more question — what does a *player* read when a download fails — turned up that they read
 `Unknown Error`, and then that the branch meant to say more had never run.

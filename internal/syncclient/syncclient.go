@@ -65,6 +65,17 @@ var managedName = regexp.MustCompile(`^[0-9a-f]{40}\.sng$`)
 // archives for exactly this reason.
 var chartHash = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
+// packageHash is what a package hash may look like. The server sends these in
+// its 300 response and the client puts the one it picks straight into a URL, so
+// it is a server-supplied string crossing into a request the client makes. It
+// is checked for the same reason chart hashes are: choosing a server is not the
+// same as trusting every string it sends.
+//
+// Package hashes are SHA-256 over the archive's contents, so 64 hex characters
+// in practice; the pattern is a shape check rather than a length assertion tied
+// to one hash function, and matches the one packcache enforces server-side.
+var packageHash = regexp.MustCompile(`^[0-9a-f]{16,128}$`)
+
 // Options configures one sync run.
 type Options struct {
 	// ServerURL is the base URL of a yarg-song-server, e.g. http://pi.local:8080
@@ -306,13 +317,16 @@ func fetchOne(ctx context.Context, opt Options, base, hash string) (int64, error
 		return 0, err
 	}
 	if resp.StatusCode == http.StatusMultipleChoices {
-		pkg, err := choosePackage(resp)
+		pkg, err := choosePackage(resp, opt.Log)
 		resp.Body.Close()
 		if err != nil {
 			return 0, err
 		}
 		opt.Log.Info("chart hash is shared by several packages; choosing deterministically",
 			"chart_hash", hash, "package_hash", pkg)
+		// Safe to concatenate only because packageHash has already refused
+		// anything that is not hex - no escaping needed, and nothing that
+		// could carry a "&" or a "#" into the query.
 		resp, err = get(ctx, opt, url+"?package="+pkg)
 		if err != nil {
 			return 0, err
@@ -390,7 +404,7 @@ func verify(path, wantHash string) error {
 // the client does it by the lowest package hash: arbitrary, but STABLE, so two
 // machines syncing the same library end up with the same file rather than
 // disagreeing forever.
-func choosePackage(resp *http.Response) (string, error) {
+func choosePackage(resp *http.Response, log *slog.Logger) (string, error) {
 	var c choices
 	if err := json.NewDecoder(resp.Body).Decode(&c); err != nil {
 		return "", fmt.Errorf("malformed 300 response: %w", err)
@@ -398,11 +412,24 @@ func choosePackage(resp *http.Response) (string, error) {
 	if len(c.Packages) == 0 {
 		return "", fmt.Errorf("server reported several packages but listed none")
 	}
-	best := c.Packages[0].PackageHash
-	for _, p := range c.Packages[1:] {
-		if p.PackageHash < best {
+
+	// Dropped rather than fatal, matching the /have filter: one malformed entry
+	// must not cost a song the server can otherwise serve. Both clients skip,
+	// so a server sending a bad entry still leaves them choosing the same
+	// package - which is the whole reason this function exists.
+	best := ""
+	for _, p := range c.Packages {
+		if !packageHash.MatchString(p.PackageHash) {
+			log.Warn("server listed something that is not a package hash; refusing it",
+				"package_hash", sanitizeName(p.PackageHash))
+			continue
+		}
+		if best == "" || p.PackageHash < best {
 			best = p.PackageHash
 		}
+	}
+	if best == "" {
+		return "", fmt.Errorf("server listed no usable package_hash")
 	}
 	return best, nil
 }
