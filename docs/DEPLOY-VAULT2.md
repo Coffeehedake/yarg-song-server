@@ -496,3 +496,75 @@ Pipeline history for the 17 undeployed commits is 16 `success` and one `failed` 
 a docs commit). Project id is **53**; the credential is Windows Credential Manager
 `dev:gitlab-ce-pat`, read via `CredRead` so the token never reaches a command line or the
 transcript.
+
+## Third deployment, 2026-09-08 — `3f80da0` to `027d331`, and v0.1.0
+
+31 commits, covering the feature registry, the config menu and its persistence, `-trimpath`, and
+the release packaging. **Feature defaults are unchanged**, so this is a code update rather than a
+posture change: `browse_ui` on, `check_uploads` off, `config_writes` off.
+
+**The pull failed first, and the reason is a landmine this document has warned about in general
+terms.** vault2's cached registry credential in `/root/.docker/config.json` had one auth entry and
+was refused (`denied: access forbidden`). `/root` does not survive a reboot on Unraid, so a cached
+docker login is not durable infrastructure — it is something that works until it doesn't, silently,
+at the moment somebody needs to deploy.
+
+**The 1Password item named `GitLab Registry Pull (vault2 deploy token)` is NOT for this project.**
+Its username is `fallout-pull` and it is scoped to fallout-research: `docker login` succeeds with
+it and the very next `docker pull` is denied, which reads like a registry fault rather than a
+scope one. The generic name is the trap. What worked is the documented route — a GitLab PAT with
+`api` scope, `--password-stdin` so the token never reaches `argv`.
+
+**The login was removed again immediately after the pull** (`docker logout`). An `api`-scoped
+token is far more than a pull needs, and leaving one cached on the box is a standing over-grant.
+The container runs from the local image afterwards and needs no registry access. **The right fix
+is a project-scoped `read_registry` deploy token for `fatalexception/yarg-song-server`, stored in
+1Password under a name that says which project it belongs to** — that is a credential change and
+belongs to Jay.
+
+```bash
+docker pull registry.badassium.com/fatalexception/yarg-song-server:027d331f
+docker rm -f yarg-song-server-prev            # the 16h-old rollback, now superseded
+docker rename yarg-song-server yarg-song-server-prev && docker stop yarg-song-server-prev
+docker run -d --name yarg-song-server --restart unless-stopped -p 8099:8080 \
+  -v /mnt/cache/appdata/yarg-song-server/songs:/songs:ro \
+  -v /mnt/cache/appdata/yarg-song-server/data:/data \
+  registry.badassium.com/fatalexception/yarg-song-server:027d331f \
+  --songs /songs --data /data --listen :8080
+```
+
+The container's configuration was **read from `docker inspect`, not recalled from this document** —
+an example here is a record of what was run once, not a description of what is running now.
+
+### Verified after the swap
+
+| Check | Result |
+|---|---|
+| `/version` | `027d331` — the image is the commit it claims to be |
+| Startup log | `songs=23 distinct_charts=23 duplicate_packages=0 problems=0 took=19ms` |
+| `/healthz` | 200 |
+| `GET /` | 200, 19,956 bytes (the page grew with the settings panel) |
+| `GET /nope` | **404** — the root is still an exact match, not a catch-all |
+| `POST /api/v1/check` | **404** — off, and still *absent* rather than forbidden |
+| `PUT /api/v1/features/{name}` | **404** — writes off, so the route is not there |
+| A real song | 200, 8,471 bytes, begins `SNGPKG` |
+
+The last three matter most on this deployment. The routes for `check` and the feature writer are
+now **registered unconditionally** — that changed in this batch so features could be toggled at
+runtime — and the guarantee that a disabled feature is indistinguishable from an absent one is now
+kept by the handlers rather than by the router. Those two 404s are that guarantee, measured on the
+live server rather than only in a test.
+
+**`config_writes` is off here, so nobody can change this server's features over HTTP.** Setting it
+to `local` would only help somebody with a shell on vault2 anyway; `lan` is the one that would
+matter, and on a box reachable from the whole house that is a decision rather than a convenience.
+
+### v0.1.0
+
+Tagged at `027d331`. The `release:tag` job produced all six archives plus `SHA256SUMS` with
+**`artifacts_expire_at = NEVER`**, which is the whole point of tagging.
+
+**A tagged pipeline does NOT build a container image.** `container-image` runs on the default
+branch and on `ci/*`, and a tag has no `CI_COMMIT_BRANCH`, so it is skipped. The image for this
+commit exists as `:027d331f` from the `main` pipeline, so nothing is missing today — but a tag and
+its image are not linked, and anyone expecting `:v0.1.0` in the registry will not find it.
