@@ -8,6 +8,13 @@ That is the whole point of Phase 2b: shared libraries work today, on stock
 YARG, on every platform YARG runs on, with no client fork and no risk to
 anyone's install.
 
+**There are now two clients, and this is the one that needs no modified game.**
+The fork mirrors from a server from inside the game
+([ADR-004](ADR-004-remote-song-source.md)), which is nicer to use and requires a
+build of YARG you made yourself. `yarg-sync` is not superseded by it: it is the
+path for anyone running a release build, and the two agree byte-for-byte on what
+they pull, which is how each one checks the other.
+
 ```
 yarg-sync -server http://pi.local:8080 -songs "%USERPROFILE%\YARG Songs"
 ```

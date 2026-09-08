@@ -848,9 +848,17 @@ stores `8.1.1.1`. The probe pins it so a future change to it is visible. A comme
 `IPv4Setting` claimed the opposite until this was measured.
 
 **Exit criterion:** the fork can browse and play from a server without a sync step, and a
-discussion thread exists upstream. **Half met:** it can play from a server without a separate
-tool, now configured from the menu rather than a text editor; the discussion thread is still
-waiting on Jay to post.
+discussion thread exists upstream.
+
+**Half met, and the built half is finished rather than merely working.** The game mirrors from
+a server with no separate tool, syncs on startup by default so the step is invisible rather
+than absent, and the whole feature is administered from its own settings tab — URL,
+reachability, what this machine holds, progress and cancel — with `server:yes` filtering the
+library to what the mirror brought in. The integrity guarantee is tested against a server that
+lies rather than asserted in a comment.
+
+**The discussion thread is still waiting on Jay to post**, and what it asks has changed: a
+working implementation plus two `git am`-ready bug fixes, rather than a proposal.
 
 ---
 

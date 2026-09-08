@@ -7,13 +7,20 @@ Point it at a folder of songs, run it on whatever is always-on in your house, an
 machine on the network plays from the same library. It is a single static binary — Docker,
 Raspberry Pi, macOS and Windows all run the same code.
 
-> **Status: the server runs and serves songs. There is no sync client yet.**
+> **Status: the server runs, and there are two ways to play from it.**
 >
 > It scans a library, serves a browsable and searchable catalog over HTTP, answers "which of these
 > hashes am I missing?" in bulk, and hands out any song as a `.sng` — packing a loose folder on
-> demand. What is still missing is the small companion that pulls a library into a local songs
-> folder, which is what makes it useful without touching the client. See
-> [`docs/ROADMAP.md`](docs/ROADMAP.md) and [`docs/API.md`](docs/API.md).
+> demand.
+>
+> - **`yarg-sync`** pulls a library into an ordinary songs folder that **unmodified YARG** then
+>   plays. No client changes, every platform YARG runs on. See
+>   [`docs/SYNC-CLIENT.md`](docs/SYNC-CLIENT.md).
+> - **The client fork** does the same thing from inside the game, on a folder it manages itself:
+>   point it at a server URL once and it mirrors on startup. See
+>   [`docs/ADR-004-remote-song-source.md`](docs/ADR-004-remote-song-source.md).
+>
+> See [`docs/ROADMAP.md`](docs/ROADMAP.md) and [`docs/API.md`](docs/API.md).
 >
 > What "works" means here is measured, not asserted. Archives this tool writes are decoded by the
 > reference `SngCli`; **a real YARG install scanned 22 archives served by the running server and
@@ -23,9 +30,12 @@ Raspberry Pi, macOS and Windows all run the same code.
 ## Design in one paragraph
 
 The server is a **content source, not a game modification**. It serves ordinary `.sng` files that
-an unmodified YARG already knows how to read, so the first useful version needs no client changes
-at all — a small sync companion pulls the library into a normal songs folder. Native in-client
-browsing comes later, and separately, as an upstream conversation.
+an unmodified YARG already knows how to read, so the useful version needs no client changes at
+all — a small sync companion pulls the library into a normal songs folder. That remains the
+supported path, and it is the one that works on a YARG you did not build yourself.
+
+The client fork adds the same thing natively, in the Unity layer, **without touching YARG.Core**,
+so it stays a candidate for upstreaming rather than a divergence.
 
 Songs are identified by `SHA1(chart file bytes)`, which is exactly how YARG itself identifies
 them. Client and server therefore agree precisely on "do I already have this song", with no
@@ -69,6 +79,7 @@ heuristics and no fuzzy matching.
 | [`docs/ADR-003-archive-ingest.md`](docs/ADR-003-archive-ingest.md) | Why `.zip`/`.7z` are ingested, what the `.7z` dependency actually costs measured rather than estimated, and why Rock Band packages are refused out loud |
 | [`docs/ADR-004-remote-song-source.md`](docs/ADR-004-remote-song-source.md) | How a YARG client could reach a remote library — the six things YARG.Core's code actually says about it, and why the first increment needs no change to YARG.Core at all |
 | [`docs/SYNC-CLIENT.md`](docs/SYNC-CLIENT.md) | `yarg-sync`: flags, what it refuses to touch, why files are named by chart hash, and the Windows Defender false positive |
+| [`docs/UPSTREAM.md`](docs/UPSTREAM.md) | What YARG's own contribution rules say, what is already in flight upstream, and the bugs and seams we have to offer them |
 | [`docs/DEPLOY-VAULT2.md`](docs/DEPLOY-VAULT2.md) | Running the image as a container — the `chown 65532` and pool-path details that matter, registry auth, and the first end-to-end result off the dev machine |
 | [`docs/SOURCES.md`](docs/SOURCES.md) | What is already documented and where — **read this before reverse-engineering anything** |
 | [`docs/TEST-CORPUS.md`](docs/TEST-CORPUS.md) | Where test input comes from, and what a real YARG install said about it |

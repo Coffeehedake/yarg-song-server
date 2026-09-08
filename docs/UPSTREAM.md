@@ -195,8 +195,13 @@ that is the design commitment in [ADR-001](ADR-001-server-architecture.md), and 
 demonstrated on two machines, two operating systems and two CPU architectures. So we are
 not asking upstream to support a protocol in order to play our songs. They already can.
 
-What a player cannot do today is get those songs **without running a separate sync tool**.
-So the upstream ask is narrow: a way for YARG to discover and fetch songs from a URL.
+What a player cannot do **in stock YARG** is get those songs without running a separate sync
+tool. So the upstream ask is narrow: a way for YARG to discover and fetch songs from a URL.
+
+**Our fork already does it**, which changes what this post is asking for. It is not "would you
+build this" but "we built it, in the Unity layer, touching nothing in YARG.Core — here is the
+shape, would you take it, and which of the two seams below would you want first". A working
+implementation is on the table rather than a proposal.
 
 ### The ask got smaller once the code was read
 

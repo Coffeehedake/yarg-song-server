@@ -161,13 +161,27 @@ ours, and upstream wrote it. What we would be adding is a second producer for th
 of folder — which makes this a much smaller thing to ask about than "support remote
 libraries", and a much smaller thing to review.
 
-**What it costs the player:** the whole library on disk, and a sync that runs before play.
+**What it costs the player:** the whole library on disk, and a sync before play — which is
+automatic since `yarg` `6a6888de`, so it costs waiting rather than remembering.
 
 #### Built, and measured against a real server
 
-`yarg` `6a05002`. `PathHelper.ServerLibraryPath`, `SongServerSync.Sync(url, dest)`, a hidden
-`SongServerUrl` setting and a **Sync From Song Server** button in the Songs tab. Nothing in
-YARG.Core was touched, exactly as this ADR predicted.
+`yarg` `6a05002`, with the menu integration finished over `b0c98f80` … `e346c167`.
+`PathHelper.ServerLibraryPath` and `SongServerSync.Sync(url, dest)` do the work; the player
+sees a **Song Server** settings tab carrying the URL, a live reachability line, what this
+machine holds, a **Sync On Startup** toggle (on by default) and Sync / Cancel. `server:yes`
+filters the music library to what the mirror brought in. **Nothing in YARG.Core was touched**,
+exactly as this ADR predicted.
+
+Two things learned finishing it, both about the client rather than the design:
+
+- **A startup quick scan cannot see new files.** `CacheHandler.QuickScan` only deserialises
+  `songcache.bin` and falls through to a full scan solely when it parses zero entries, so
+  syncing before the ordinary startup scan would have fetched songs that stayed invisible
+  until a manual refresh. The scan mode is chosen by what the sync did.
+- **Reachability needs its own budget**, separate from how long a download may take, or every
+  launch with the server off sits on a frozen loading screen. Five seconds, measured at 5.1 s
+  against an unroutable address.
 
 `Assets/Editor/SongServerSyncSmokeTest.cs` runs a real sync over a real network from batchmode
 and exits non-zero on any failure. Against the vault2 deployment:
@@ -186,7 +200,15 @@ is asserted rather than assumed, because it is the property that makes this safe
 every launch.
 
 **It never deletes.** Only `<40 hex>.sng` is ours; everything else is counted and left alone.
-There is no prune.
+There is no prune. The one exception is a dead `.part` from a failed download, which is swept
+on the next run — it is ours, it is not a song, and left alone it accumulates one per failure.
+
+**The integrity guarantee is tested, not merely written down.**
+`Assets/Editor/HostileServerProbe.cs` serves a body cut in half mid-transfer, a real archive
+under someone else's hash, a 500, and random bytes. No bad archive is ever named, and the one
+good song still arrives after four consecutive failures. It also found two bugs in YARG.Core's
+own `SngFile.TryLoadFromFile` failure path — see [UPSTREAM.md](UPSTREAM.md), which carries a
+`git am`-ready patch.
 
 #### The constraint this ADR missed: Unity blocks plain HTTP
 
