@@ -689,6 +689,26 @@ Set to `DevelopmentOnly` — enough to develop and test, nothing weaker shipped 
 what a release build should do is now question 4 in the Discord post rather than a default
 quietly changed in a fork.
 
+**The same defect in `yarg-sync`, `63c4f31` — because the two clients mirror each other.** Having
+found it in the in-game mirror, the obvious next question was whether the Go client did the same
+thing. It did: `postHave` returned the server's list straight to the caller and every entry
+became both a URL and a path. `filepath.Join` **cleans** a path but does not **confine** it.
+
+**The exposure differs by platform, and the difference is the interesting part.** On POSIX the
+write is *transient* — `fetchOne` downloads to a `.part`, verification rejects the bytes, and
+`os.Remove` succeeds, so nothing is left to find. The identical sequence on Windows leaves the
+file, because YARG.Core holds a non-`.sng` file open and the delete fails. **Two bugs compose on
+one platform and not the other**, which is why the Go test asserts on the *request count* rather
+than on files left behind: a test whose real assertion never fires is decoration. Red-proofed by
+widening the guard — six song requests for names that are not chart hashes.
+
+Go is better off than .NET in exactly one respect: `filepath.Join` does not discard its first
+argument when the second is rooted, so an absolute name cannot escape the way it does in C#.
+
+`prune` was checked and is **not** affected — it iterates the local inventory, which the managed
+-name regex already filters, and only removes hashes the server does not have. A server cannot
+name a file for deletion.
+
 **Remote arbitrary file write in the mirror client, `yarg` `02f23f90`.** The most serious defect
 found in this project so far, and it came from following the hostile server one question further:
 the client asked the server what it was missing and used the answer as **filenames**, unchecked.
