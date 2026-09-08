@@ -158,12 +158,29 @@ func TestAValueTheParserWouldRejectIsRefused(t *testing.T) {
 
 // An unwritable file must fail cleanly and leave the original intact. The
 // runtime change still stands; the caller reports that it was not saved.
+//
+// THIS TEST'S PREMISE IS NOT PORTABLE, and finding that out cost a red
+// pipeline. It makes a directory unwritable and expects the write to fail —
+// which is true for an ordinary user and FALSE FOR ROOT, who ignores the
+// permission bits entirely. It passed on Windows (skipped), passed in the
+// device-bridge Linux VM (an ordinary user), and failed in CI, which runs as
+// root. "It passes on Linux" was not a statement about Linux; it was a
+// statement about the account.
+//
+// The property itself — a failed SetKey leaves the file exactly as it was — is
+// covered portably by TestAValueTheParserWouldRejectIsRefused, which reaches
+// the same guarantee through a refusal that no privilege can bypass. This test
+// adds only the specific case of a filesystem that will not take the write, so
+// it is skipped rather than weakened where it cannot mean anything.
 func TestAnUnwritableFileFailsWithoutDamage(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		// A read-only FILE is still replaceable by a rename on Windows; the
 		// directory permission is what stops it, and emulating that here says
 		// more about the test than the code.
 		t.Skip("directory permissions do not model this the same way on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("running as root, which ignores the directory permission this test relies on")
 	}
 	dir := t.TempDir()
 	p := filepath.Join(dir, "yarg-song-server.conf")
@@ -206,6 +223,8 @@ func TestNoTempFilesAreLeftBehind(t *testing.T) {
 
 // The file keeps the permissions it had. Pressing a switch should not quietly
 // change who can read the config.
+// This one is safe under root: it asserts what the mode IS afterwards, not that
+// a permission stopped something.
 func TestPermissionsAreCarriedOver(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix permission bits are not modelled on Windows")
