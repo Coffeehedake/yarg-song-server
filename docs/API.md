@@ -36,6 +36,7 @@ it rather than incidental, so changing them breaks a shipped binary:
 | `GET` | `/api/v1/songs` | Browse and search. |
 | `GET` | `/api/v1/songs/{chart_hash}` | Every package sharing a chart hash. |
 | `POST` | `/api/v1/have` | Bulk "what am I missing". |
+| `POST` | `/api/v1/check` | Scan an uploaded archive and answer with the verdict. Off by default; keeps nothing. |
 | `GET` | `/song/{chart_hash}.sng` | The bytes. |
 
 ## `GET /api/v1/library`
@@ -142,10 +143,47 @@ bytes, so re-zipping a library does not change what a client downloads.
 - **404** when the hash is unknown, and also when the index points at a file that has since
   moved — with a message saying to rescan, because that is the fix.
 
+## `POST /api/v1/check`
+
+Scans an uploaded archive and answers with the verdict. **Keeps nothing.**
+
+**Off by default** — `check_uploads = yes`, or `--check-uploads`. When it is off the route is
+not registered at all, so a server without it answers **404** rather than 403: a 403 would tell
+the caller the feature exists.
+
+```sh
+curl -s --data-binary @Song.sng \
+  "http://pi.local:8080/api/v1/check?name=Song.sng" | jq
+```
+
+`?name=` is **required**, and only its EXTENSION is used — to pick the reader, exactly as a
+library walk picks it from the filename on disk. The name never reaches the filesystem; the body
+is staged under `<data>/check/` with a name the server chooses, scanned, and deleted before the
+response is written.
+
+| Answer | When |
+|---|---|
+| **200** with `"accepted": true` | the scanner read it; `song` carries the full metadata, parts and issues, and `known` says whether that chart is already in the library |
+| **200** with `"accepted": false` and a `reason` | it is not a song this server would take. **A refusal is not an error**: the request succeeded and the answer was no, and a client has to be able to tell that from "the server broke" |
+| **400** | no `?name=` |
+| **413** | body over `check_max_bytes` (default 128 MiB) |
+| **415** | an extension this server does not read; send `.sng`, `.zip` or `.7z` |
+
+A Rock Band console package is refused from the **name**, before a byte of the body is read,
+with the same reason a library scan gives — nobody should have to upload two gigabytes to be
+told this server will never read one.
+
+The verdict comes from `scan.ScanFile`, the same function `WalkLibrary` calls for a file on
+disk. That is deliberate and load-bearing: two implementations of "what is this file" would
+agree for a while and then quietly stop, and the disagreement would surface as *"the checker
+said it was fine and the library dropped it"*. See
+[ADR-005](ADR-005-upload-check.md).
+
 ## What is not here yet
 
-Ingest (`POST` of a folder, `.sng` or `.zip`) and authentication. See `docs/ROADMAP.md`. The
-server is currently read-only and unauthenticated: run it on a LAN, not on the internet.
+**Storing** an upload (ADR-005 increment 2) and authentication. See `docs/ROADMAP.md`. The
+server is read-only with respect to your library and unauthenticated: run it on a LAN, not on
+the internet.
 
 Settings are a flag or a `key = value` line in `./yarg-song-server.conf`, same name for both, flag
 wins; `--write-config` prints a commented example. An unknown setting in that file is an error

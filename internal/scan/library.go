@@ -50,39 +50,65 @@ func WalkLibrary(root string, emit func(Result)) error {
 			return nil
 		}
 
-		// A console package is REPORTED, not ignored. Decrypting one is a
-		// permanent non-goal, but an operator who drops a 2 GB _rb3con into the
-		// library and sees nothing at all concludes the server is broken. A
-		// stated refusal costs one line and answers the question.
-		if IsRockBandPackage(d.Name()) {
-			emit(Result{Path: rel(root, p), Err: ErrRockBandPackage})
+		song, serr := ScanFile(p)
+		switch {
+		case errors.Is(serr, ErrNotASong):
+			// Not a shape this server reads at all. Silent on purpose: a
+			// library legitimately contains album art, text files and backups.
+			return nil
+		case errors.Is(serr, ErrNoChart) && IsContainer(d.Name()):
+			// A zip of something else entirely. Libraries contain plenty of
+			// archives that are not songs; those are not errors.
+			//
+			// Note this is ErrNoChart specifically, NOT every failure.
+			// ErrUnreadableArchive - an archive that visibly holds a song we
+			// could not read - falls through and is reported, because
+			// swallowing that one is how a legitimate song disappears with no
+			// explanation.
 			return nil
 		}
-
-		if IsContainer(d.Name()) {
-			song, serr := ScanContainer(p)
-			if errors.Is(serr, ErrNoChart) {
-				// A zip of something else entirely. Libraries contain plenty of
-				// archives that are not songs; those are not errors.
-				//
-				// Note this is ErrNoChart specifically, NOT every failure.
-				// ErrUnreadableArchive - an archive that visibly holds a song we
-				// could not read - falls through and is reported, because
-				// swallowing that one is how a legitimate song disappears with
-				// no explanation.
-				return nil
-			}
-			emit(Result{Path: rel(root, p), Song: song, Err: serr})
-			return nil
-		}
-
-		if !strings.EqualFold(filepath.Ext(d.Name()), ".sng") {
-			return nil
-		}
-		song, serr := scanSNGFile(p)
 		emit(Result{Path: rel(root, p), Song: song, Err: serr})
 		return nil
 	})
+}
+
+// ErrNotASong means a file is not a shape this server reads: not a .sng, not a
+// container it opens, not a console package it refuses by name.
+//
+// It exists so ScanFile can say "nothing to do here" without the caller having
+// to re-derive the dispatch from the filename, which is exactly how a second
+// caller ends up disagreeing with the first.
+var ErrNotASong = errors.New("scan: not a song, an archive this server reads, or a console package")
+
+// ScanFile scans ONE file the way a library walk would.
+//
+// WalkLibrary calls this, and so does the upload check endpoint. That is the
+// entire point of it existing: the verdict a person gets by uploading a file
+// has to be the verdict they would get by dropping it in the library, and two
+// implementations of the same dispatch would eventually disagree about some
+// shape nobody thought to test. The dispatch is on the file NAME - a console
+// package is recognised by suffix, a container by extension - so this must stay
+// the one place that reads it.
+//
+// Directories are not handled here; a walk sees those before it sees files, and
+// a single uploaded file cannot be one.
+func ScanFile(p string) (*catalog.Song, error) {
+	name := filepath.Base(p)
+
+	// A console package is REPORTED, not ignored. Decrypting one is a permanent
+	// non-goal, but an operator who drops a 2 GB _rb3con into the library and
+	// sees nothing at all concludes the server is broken. A stated refusal
+	// costs one line and answers the question.
+	if IsRockBandPackage(name) {
+		return nil, ErrRockBandPackage
+	}
+	if IsContainer(name) {
+		return ScanContainer(p)
+	}
+	if !strings.EqualFold(filepath.Ext(name), ".sng") {
+		return nil, ErrNotASong
+	}
+	return scanSNGFile(p)
 }
 
 func scanSNGFile(p string) (*catalog.Song, error) {

@@ -31,6 +31,11 @@ type Config struct {
 	PackCacheMax int64
 	// BrowseUI serves a phone-friendly catalog page at "/".
 	BrowseUI bool
+	// CheckUploads enables POST /api/v1/check, which scans an uploaded archive
+	// and returns the verdict without keeping it. OFF by default: see Defaults.
+	CheckUploads bool
+	// CheckMaxBytes bounds one uploaded body. Ignored when CheckUploads is off.
+	CheckMaxBytes int64
 }
 
 // Defaults are what the server does when told nothing.
@@ -58,6 +63,18 @@ func Defaults() Config {
 		// already made, that this server is read-only and must not be exposed
 		// publicly. An operator who wants the API without a page sets it false.
 		BrowseUI: true,
+		// OFF by default, unlike browse_ui, and the difference is the point.
+		// The browse page shows what the API already served to anyone who could
+		// reach the port; this accepts a large upload and spends CPU and temp
+		// disk on it. That is new surface, not a new view of old surface, so an
+		// existing deployment must not acquire it by being upgraded. One line
+		// of config turns it on.
+		CheckUploads: false,
+		// 128 MiB. A packed song is normally a few MB and the largest in the
+		// real corpus on hand is under 40; 128 leaves room for an album-length
+		// chart with lossless stems without letting one request write a
+		// gigabyte to a Pi's SD card.
+		CheckMaxBytes: 128 << 20,
 	}
 }
 
@@ -126,8 +143,20 @@ func Apply(c *Config, r io.Reader) error {
 				return fmt.Errorf("line %d: browse_ui: %w", line, err)
 			}
 			c.BrowseUI = b
+		case "check_uploads":
+			b, err := parseBool(value)
+			if err != nil {
+				return fmt.Errorf("line %d: check_uploads: %w", line, err)
+			}
+			c.CheckUploads = b
+		case "check_max_bytes":
+			n, err := parseSize(value)
+			if err != nil {
+				return fmt.Errorf("line %d: check_max_bytes: %w", line, err)
+			}
+			c.CheckMaxBytes = n
 		default:
-			return fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max, browse_ui", line, key)
+			return fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max, browse_ui, check_uploads, check_max_bytes", line, key)
 		}
 	}
 	return sc.Err()
@@ -233,4 +262,22 @@ const Example = `# yarg-song-server configuration.
 # can reach this port, so turning it on grants no access that was not already
 # there. Set it to no if you want the API and nothing else.
 # browse_ui = yes
+
+# Accept an uploaded archive at POST /api/v1/check, scan it, and answer with the
+# verdict - the same verdict a library scan would give the same file.
+#
+# OFF by default, and the difference from browse_ui is deliberate. The browse
+# page shows what the API already served to anyone who could reach this port;
+# this accepts a large upload and spends CPU and temporary disk on it. That is
+# new surface rather than a new view of old surface, so an existing server must
+# not acquire it merely by being upgraded.
+#
+# It KEEPS NOTHING. The upload is written to a temporary file, scanned, and
+# deleted before the response is written. This server is still read-only with
+# respect to your library.
+# check_uploads = no
+
+# The largest body POST /api/v1/check will accept. Same size suffixes as
+# pack_cache_max. Anything larger is refused with 413 before it is read.
+# check_max_bytes = 128M
 `

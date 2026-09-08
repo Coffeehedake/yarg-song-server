@@ -1041,6 +1041,43 @@ Where this goes next, all of it server-side and none of it needing the game:
   The page is now `browse.html`, not `party.html`: the name was left over from framing this
   project does not own.
 - **Ingest from the browser** — drop an archive in, watch it scan, see the verdict.
+  **Half of this shipped 2026-09-08: `POST /api/v1/check` answers the verdict and keeps
+  nothing.** It exists because the question people actually arrive with is *"why won't this
+  song work?"*, and until now the only way to ask it was to copy the file onto the server,
+  rescan, and read the log — a shell session, on the machine, for something the scanner
+  answers in milliseconds.
+
+  **Off by default**, unlike `browse_ui`, and the difference is the decision worth keeping:
+  the browse page is a new *view* of surface the API already served to anyone who could reach
+  the port, while this accepts a large upload and spends CPU and temp disk on whoever asks.
+  An existing deployment must not acquire that by being upgraded. When it is off the route is
+  not registered at all, so the answer is 404 — a 403 would tell the caller the feature is
+  there.
+
+  The verdict comes from `scan.ScanFile`, extracted from `WalkLibrary` in the same change so
+  that the dispatch deciding *what a file is* has exactly one implementation. Two would agree
+  for a while and then quietly stop, and the disagreement would read as "the checker said it
+  was fine and the library dropped it" — the failure this project has already paid for in the
+  packcache path and in both sync clients. A test uploads a real `.sng` and compares its chart
+  hash against a library built from the same bytes.
+
+  **The traversal test had to be written twice, and the first version was green for the wrong
+  reason.** It listed the staging directory's parent before and after — and passed against an
+  implementation that really did join the uploaded name onto the staging path, because that
+  implementation created the file outside and then the handler's own cleanup deleted it again
+  before the test looked. Identical listings, green test, a server writing exactly where it was
+  told. The damage `os.Create` actually does is TRUNCATION of a file already there, so the test
+  now plants a sentinel where a traversal would land and asserts it still says what it said.
+  Both plausible buggy implementations fail it now, and the failure message shows the
+  operator's file being deleted outright. Same shape as the first hostile-server test, which
+  proved nothing because the server 404'd the names it was meant to serve — **the second time
+  in this project that a security test passed against the vulnerable code.**
+
+  Storing an upload is [ADR-005](ADR-005-upload-check.md) increment 2 and is deliberately not
+  built: `--songs` is mounted `ro` on the live deployment, an unauthenticated write endpoint is
+  a different risk from an unauthenticated read one, and the in-memory index (ADR-002) would
+  need a rescan path. None of that is hard; it is just undecided, and increment 1 is useful
+  without any of it.
 - **Metadata and playlists**, once multi-user libraries exist (Phase 4 proper).
 
 **What it deliberately does not do: control a running game.** No queue, no remote select, and

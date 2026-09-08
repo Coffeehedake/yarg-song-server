@@ -36,6 +36,19 @@ type Server struct {
 	// nothing the API does not already serve unauthenticated, so it defaults on;
 	// an operator who wants the API and no page can turn it off.
 	BrowseUI bool
+	// CheckUploads enables POST /api/v1/check. OFF unless an operator asks for
+	// it: unlike the browse page, it is new surface rather than a new view of
+	// surface that was already there. The route is not even registered when it
+	// is false, so a disabled server answers 404 rather than 403 - there is
+	// nothing there to be forbidden.
+	CheckUploads bool
+	// CheckMaxBytes bounds one uploaded body; 0 means unbounded.
+	CheckMaxBytes int64
+	// CheckDir is where an upload is staged while it is scanned. Empty means
+	// the OS temp directory. It should be on the data disk rather than in the
+	// library, which is read-only in normal operation and on the live
+	// deployment is literally mounted ro.
+	CheckDir string
 	Version  string
 	Log      *slog.Logger
 }
@@ -56,6 +69,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/songs", s.songs)
 	mux.HandleFunc("GET /api/v1/songs/{hash}", s.song)
 	mux.HandleFunc("POST /api/v1/have", s.have)
+	if s.CheckUploads {
+		mux.HandleFunc("POST /api/v1/check", s.check)
+	}
 	mux.HandleFunc("GET /song/{file}", s.songFile)
 
 	return mux

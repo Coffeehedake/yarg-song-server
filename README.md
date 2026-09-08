@@ -103,6 +103,11 @@ archives packed from loose folders, and must be writable.
 
 **It is unauthenticated and read-only. Run it on your LAN, not on the internet.**
 
+One optional endpoint accepts an upload — `POST /api/v1/check` scans an archive and tells you
+whether it would work, keeping nothing. It is **off by default**; see
+[`docs/ADR-005`](docs/ADR-005-upload-check.md) for why that differs from the browse page, which
+is on.
+
 ### Syncing a library into stock YARG
 
 `yarg-sync` pulls a server's library into an ordinary songs folder. **YARG is not modified and

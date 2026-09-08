@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -48,6 +49,11 @@ func main() {
 		"serve a phone-friendly page listing the library at \"/\"")
 	flag.Int64Var(&flagged.PackCacheMax, "pack-cache-max", def.PackCacheMax,
 		"bound the on-demand pack cache, in bytes; 0 means unbounded")
+
+	flag.BoolVar(&flagged.CheckUploads, "check-uploads", def.CheckUploads,
+		"accept an uploaded archive at POST /api/v1/check, scan it and answer with the verdict; keeps nothing")
+	flag.Int64Var(&flagged.CheckMaxBytes, "check-max-bytes", def.CheckMaxBytes,
+		"largest body POST /api/v1/check will accept, in bytes; 0 means unbounded")
 	flag.Parse()
 
 	if *showVersion {
@@ -141,6 +147,12 @@ func resolve(configPath string, flagged config.Config, given map[string]bool) (c
 	if given["browse-ui"] {
 		cfg.BrowseUI = flagged.BrowseUI
 	}
+	if given["check-uploads"] {
+		cfg.CheckUploads = flagged.CheckUploads
+	}
+	if given["check-max-bytes"] {
+		cfg.CheckMaxBytes = flagged.CheckMaxBytes
+	}
 	return cfg, nil
 }
 
@@ -216,6 +228,26 @@ func run(opt config.Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+
+	// Where an upload is staged while it is scanned. Created eagerly rather
+	// than on the first request, so an unwritable data disk is a start-up
+	// failure an operator sees immediately instead of a 500 the first time
+	// somebody uses the feature.
+	var checkDir string
+	if opt.CheckUploads {
+		checkDir = filepath.Join(opt.Data, "check")
+		if err := os.MkdirAll(checkDir, 0o755); err != nil {
+			return fmt.Errorf("check staging directory: %w", err)
+		}
+		// Anything left behind by a previous run is not ours to keep: this
+		// endpoint promises to keep nothing, and a crash mid-scan is exactly
+		// when that promise would otherwise be broken silently.
+		if n, err := sweepStale(checkDir); err != nil {
+			log.Warn("could not sweep staged uploads", "dir", checkDir, "err", err)
+		} else if n > 0 {
+			log.Info("swept staged uploads left by a previous run", "files", n)
+		}
+	}
 	// Say the bound out loud at start. An operator who set it wrongly, or who
 	// deliberately turned it off, should be able to see which from the log
 	// rather than by watching a disk fill.
@@ -226,11 +258,19 @@ func run(opt config.Config, log *slog.Logger) error {
 	}
 
 	api := &httpapi.Server{
-		Store:    library.NewStore(ix),
-		Packs:    packs,
-		Version:  version,
-		Log:      log,
-		BrowseUI: opt.BrowseUI,
+		Store:         library.NewStore(ix),
+		Packs:         packs,
+		Version:       version,
+		Log:           log,
+		BrowseUI:      opt.BrowseUI,
+		CheckUploads:  opt.CheckUploads,
+		CheckMaxBytes: opt.CheckMaxBytes,
+		// Staged on the DATA disk, not in the library and not in the OS temp
+		// directory. The library is read-only in normal operation - on the live
+		// deployment it is literally mounted ro - and /tmp on a container image
+		// this small may be memory-backed, where a 128 MiB upload is a very
+		// different cost than it looks.
+		CheckDir: checkDir,
 	}
 	// Say which of the two shapes this server is, once, at start. An operator
 	// who cannot find the page needs to know whether it is off or whether they
@@ -240,6 +280,11 @@ func run(opt config.Config, log *slog.Logger) error {
 		log.Info("browse page enabled", "at", "/")
 	} else {
 		log.Info("browse page disabled", "enable_with", "--browse-ui")
+	}
+
+	if opt.CheckUploads {
+		log.Info("upload check enabled", "at", "POST /api/v1/check",
+			"max_bytes", opt.CheckMaxBytes, "staged_in", checkDir)
 	}
 
 	srv := &http.Server{
@@ -268,4 +313,28 @@ func run(opt config.Config, log *slog.Logger) error {
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	}
+}
+
+// sweepStale removes whatever a previous run left in the upload staging
+// directory.
+//
+// The handler deletes its own file in a defer, so this only ever finds
+// something after a crash or a kill mid-scan. It exists because "keeps
+// nothing" is a promise, and a promise that holds only when the process exits
+// cleanly is not the promise that was made.
+func sweepStale(dir string) (int, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), "check-") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err == nil {
+			n++
+		}
+	}
+	return n, nil
 }
