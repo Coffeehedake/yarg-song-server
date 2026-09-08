@@ -1073,6 +1073,22 @@ Where this goes next, all of it server-side and none of it needing the game:
   proved nothing because the server 404'd the names it was meant to serve — **the second time
   in this project that a security test passed against the vulnerable code.**
 
+  **The drop zone followed the same day.** An endpoint with no UI still means a `curl`
+  command, which is not "managing the library without launching YARG" for anyone who is not
+  already at a shell. `GET /` now offers a drop zone, and `/api/v1/library` gained
+  `check_uploads` so the page can ask whether the server will answer rather than assume it —
+  capability from the server, the same rule that already governs `sort_attributes`. Files go
+  one at a time: a dropped folder can be hundreds, and the target is a Pi.
+
+  **Driven in a real browser against a real server**, because reasoning about escaping is
+  exactly how an audit goes wrong. Files were pushed through the page's own input handler, not
+  through `fetch` written for the occasion: a real `.sng` pulled out of that library came back
+  accepted with a matching hash and "Already in this library"; `garbage.sng`,
+  `holiday-photos.rar` and `Some Song_rb3con` were each refused with their own reason; a file
+  named `<img src=x onerror="document.title='PWNED'">.sng` injected **0 elements** and left the
+  title alone; and the staging directory was **empty** afterwards, so "keeps nothing" is now
+  measured on a live server rather than in a unit test.
+
   Storing an upload is [ADR-005](ADR-005-upload-check.md) increment 2 and is deliberately not
   built: `--songs` is mounted `ro` on the live deployment, an unauthenticated write endpoint is
   a different risk from an unauthenticated read one, and the in-memory index (ADR-002) would

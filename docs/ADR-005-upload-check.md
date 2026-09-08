@@ -90,6 +90,47 @@ it said. Both plausible buggy implementations — joining onto the staging path,
 name directly — now fail it, and the failure message shows the operator's file being deleted
 outright rather than merely overwritten.
 
+### The drop zone, and how it knows it may exist
+
+The endpoint without a UI still means a `curl` command, which is not "managing the library
+without launching YARG" for anybody who is not already at a shell. `GET /` now offers a drop
+zone — **and only when the server says it can answer.**
+
+`/api/v1/library` gained `check_uploads`. The page reads it for the same reason it reads
+`sort_attributes` rather than hardcoding them: a page that guessed would offer a drop zone
+against a server that answers 404. Capability comes from the server, never from the page's
+assumptions.
+
+Files are checked **sequentially**. A dropped folder can be hundreds of files and the target
+deployment is a Raspberry Pi; firing them all at once is how one curious drop becomes an
+outage.
+
+The verdict is the least trustworthy content anywhere on this page — a song's name, artist and
+issue text come out of a `song.ini` inside a file a stranger handed over — so every field goes
+through `esc()`, the refusal reason is assigned as `textContent`, and a test names each field
+individually rather than counting `esc(` calls, which would pass while a new raw field was added
+beside them.
+
+#### Measured in a real browser, against a real server
+
+Reasoning about escaping is how the browse page's own audit could have gone wrong, so this was
+driven end to end: the built-in browser at a server started with `--check-uploads` over the
+23-song corpus, files pushed through the page's **own** input handler rather than through
+`fetch` written for the occasion.
+
+| What was driven | What happened |
+|---|---|
+| A real `.sng` pulled out of that library and handed back | accepted, chart hash matched, **"Already in this library."** |
+| `garbage.sng` | refused: *sng: file too small (22 bytes)* |
+| `holiday-photos.rar` | refused: *".rar" is not a shape this server reads* |
+| `Some Song_rb3con` | refused by name, with the console-package reason in full |
+| A file named `<img src=x onerror="document.title='PWNED'">.sng` | **0 elements injected**, title unchanged, rendered as literal text |
+| The staging directory afterwards | **empty** — "keeps nothing", on a live server rather than in a unit test |
+
+One thing that reading alone would have called a bug: the accepted song rendered as
+`known-song.sng` rather than a title. That is correct — the corpus song genuinely has no
+`name`, which the library listing agrees about, and the page falls back to the filename.
+
 ### Increment 2 — keep the file. PROPOSED, not built.
 
 Storing an accepted upload is a different decision and is deliberately not made here. What it

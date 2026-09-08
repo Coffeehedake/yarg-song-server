@@ -66,6 +66,17 @@ dd{margin:0;min-width:0;overflow-wrap:anywhere}
 #health li{padding:3px 0;word-break:break-all}
 #health .why{color:var(--ink-faint)}
 .err{color:var(--warn)}
+#checkbox{margin:8px 12px 0;border:1px dashed var(--line);border-radius:10px;padding:14px 12px;
+  text-align:center;color:var(--ink-dim);font-size:14px}
+#checkbox.over{border-color:var(--accent);color:var(--ink)}
+#checkbox button{margin-top:10px;height:44px}
+#checked{margin:8px 12px 0;padding:0;list-style:none}
+#checked li{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:10px 12px;margin:6px 0;font-size:14px}
+#checked li.no{border-left:3px solid var(--warn)}
+#checked .fn{font-weight:600;word-break:break-all}
+#checked .why{color:var(--ink-dim);font-size:13px;margin-top:4px;overflow-wrap:anywhere}
+#checked .ok{color:var(--accent)}
 </style>
 </head>
 <body>
@@ -79,6 +90,13 @@ dd{margin:0;min-width:0;overflow-wrap:anywhere}
   </div>
 </header>
 <details id="health" hidden></details>
+<div id="checkbox" hidden>
+  Drop a <b>.sng</b>, <b>.zip</b> or <b>.7z</b> here to see whether it would work.
+  Nothing is uploaded to your library.
+  <div><button id="pick" type="button">Choose a file</button></div>
+  <input id="file" type="file" accept=".sng,.zip,.7z" multiple hidden>
+</div>
+<ul id="checked"></ul>
 <div id="count"></div>
 <ul id="list"></ul>
 <button id="more" hidden>Load more</button>
@@ -115,6 +133,10 @@ async function loadLibrary(){
       sel.appendChild(o);
     }
     showProblems(lib.problems);
+    // The server says whether it will take an upload. Guessing would offer a
+    // drop zone against a server that answers 404, and the whole reason this
+    // page reads its vocabulary from /api/v1/library is not to guess.
+    if (lib.check_uploads) enableChecking();
   } catch (_) {
     el("sort").innerHTML = '<option value="name">Name</option>';
   }
@@ -239,6 +261,89 @@ el("order").addEventListener("click", () => {
   load(true);
 });
 more.addEventListener("click", () => load(false));
+
+// ---- "will this song work?" ----------------------------------------------
+//
+// The verdict comes from the server's own scanner, so what is rendered here is
+// exactly what a library scan would say about the same file. Everything in it
+// came out of an uploaded archive - the least trustworthy content on this page -
+// so every field goes through esc(), including the reason.
+function enableChecking(){
+  const box = el("checkbox"), input = el("file"), out = el("checked");
+  box.hidden = false;
+
+  el("pick").addEventListener("click", () => input.click());
+  input.addEventListener("change", () => { queue([...input.files]); input.value = ""; });
+
+  for (const ev of ["dragenter","dragover"]) {
+    box.addEventListener(ev, e => { e.preventDefault(); box.classList.add("over"); });
+  }
+  for (const ev of ["dragleave","drop"]) {
+    box.addEventListener(ev, e => { e.preventDefault(); box.classList.remove("over"); });
+  }
+  box.addEventListener("drop", e => queue([...(e.dataTransfer?.files || [])]));
+
+  // The page must not swallow a file dropped anywhere else: without this the
+  // browser navigates away to the file itself, which looks like a crash.
+  for (const ev of ["dragover","drop"]) {
+    document.addEventListener(ev, e => { if (!box.contains(e.target)) e.preventDefault(); });
+  }
+
+  // Sequential on purpose. A dropped folder can be hundreds of files, and this
+  // server is aimed at a Raspberry Pi - firing them all at once is how one
+  // curious drop becomes an outage.
+  async function queue(files){
+    for (const f of files) {
+      const li = document.createElement("li");
+      li.innerHTML = '<div class="fn">' + esc(f.name) + '</div>' +
+        '<div class="why">checking\u2026</div>';
+      out.prepend(li);
+      await checkOne(f, li);
+    }
+  }
+
+  async function checkOne(file, li){
+    let verdict;
+    try {
+      const r = await fetch("api/v1/check?name=" + encodeURIComponent(file.name),
+        { method: "POST", body: file });
+      verdict = await r.json();
+      if (!r.ok) {
+        // 400/413/415 - the server could not answer, which is a different thing
+        // from answering "no", and the two must not look the same.
+        li.className = "no";
+        li.querySelector(".why").innerHTML =
+          '<span class="err">' + esc(verdict.error || ("server said " + r.status)) + '</span>';
+        return;
+      }
+    } catch (e) {
+      li.className = "no";
+      li.querySelector(".why").innerHTML =
+        '<span class="err">' + esc("could not reach the server: " + e.message) + '</span>';
+      return;
+    }
+
+    if (!verdict.accepted) {
+      li.className = "no";
+      li.querySelector(".why").textContent = verdict.reason || "refused, with no reason given";
+      return;
+    }
+
+    const s = verdict.song || {};
+    const who = [s.artist, s.album].filter(Boolean).join(" \u2014 ");
+    const issues = (s.issues || []).map(i =>
+      '<div class="issue"><code>' + esc(i.code) + '</code> \u2014 ' + esc(i.detail) + '</div>').join("");
+    li.querySelector(".fn").innerHTML =
+      '<span class="ok">\u2713</span> ' + esc(s.name || file.name);
+    li.querySelector(".why").innerHTML =
+      (who ? esc(who) + "<br>" : "") +
+      (verdict.known
+        ? "Already in this library."
+        : "Not in this library yet.") +
+      '<div class="hash">' + esc(verdict.chart_hash || "") + '</div>' +
+      issues;
+  }
+}
 
 loadLibrary().then(() => load(true));
 </script>

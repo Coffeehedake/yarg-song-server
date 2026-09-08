@@ -100,6 +100,10 @@ func (s *Server) libraryInfo(w http.ResponseWriter, r *http.Request) {
 		"built_at":           ix.BuiltAt,
 		"problems":           ix.Problems,
 		"sort_attributes":    library.Attributes,
+		// A capability, not a statistic. The browse page reads it for the same
+		// reason it reads sort_attributes: a page that guessed which endpoints
+		// exist would offer a drop zone against a server that answers 404.
+		"check_uploads": s.CheckUploads,
 	})
 }
 

@@ -210,6 +210,12 @@ ServeMux is a catch-all: it would answer every unmatched path with this page and
 turning every 404 documented above into an HTML page that a sync client would try to parse as
 a `.sng`. `TestBrowsePageOnAndOff` pins that, and fails if the pattern is ever loosened.
 
+**It offers a drop zone when — and only when — `check_uploads` is on.** `/api/v1/library`
+reports the capability and the page reads it, for the same reason it reads `sort_attributes`:
+a page that guessed would offer a drop zone against a server that answers 404. Files are
+checked one at a time, because a dropped folder can be hundreds of files and the target
+deployment is a Raspberry Pi.
+
 **Every field it renders is escaped, and that was checked rather than assumed.** The page
 renders song metadata that came out of `song.ini` files inside uploaded archives — content the
 server does not author and cannot vouch for — so a stored-XSS review was done on 2026-09-08.
@@ -222,6 +228,11 @@ that does not depend on the value being well-formed:
 | `"<summary>" + n + " items"` | `n` is `problems.length`, a number. |
 | `"api/v1/songs?" + p.toString()` | `URLSearchParams.toString()` percent-encodes. |
 | `'<b>' + p.intensity + '</b>'` | `Parts.Intensity` is a Go `int8`, so it marshals as a JSON number and cannot carry a string. |
+
+The drop zone's verdict is the same data one step earlier and gets the same treatment: every
+field through `esc()`, the refusal reason assigned as `textContent`, and each field named
+individually by a test rather than counting `esc(` calls. Driven in a real browser with a file
+named `<img src=x onerror=…>.sng`: **0 elements injected.**
 
 Recorded as a **non-finding** so it is not re-investigated: the escaping is correct today, and
 the third row is the one to re-check if `intensity` ever stops being an integer.
