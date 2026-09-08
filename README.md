@@ -102,15 +102,22 @@ Put songs in `songs/` and reload.
 
 Artifacts from `main` are kept **30 days**; a **tagged** build keeps its archives permanently.
 
-**The packaging is deterministic: given the same binaries it produces byte-identical archives**,
-because every entry is stamped with a fixed timestamp rather than the clock. That is what makes
-`SHA256SUMS` meaningful across a rebuild.
+**The build is reproducible, and that is measured rather than asserted.** A Windows workstation
+and the Linux CI runner produced **byte-identical archives for all six platforms** from commit
+`b90cc3e` — same SHA-256, every file. So a checksum from `SHA256SUMS` means something a reader can
+actually check.
 
-Reproducing a CI archive on your own machine needs the **same Go version** as the pipeline pins,
-and builds go through `-trimpath`. Without `-trimpath` a binary embeds the absolute paths of the
-machine that built it — a plain build of `yarg-sync` carried **906 occurrences of the builder's
-home directory** and 770 of its `GOROOT` — which both leaks the builder's username into a
-publicly-mirrored artifact and guarantees two machines produce different bytes for one commit.
+Four things have to hold for that, and each was a real defect first:
+
+| | |
+|---|---|
+| Same Go version | The pipeline pins it; a workstation on a different patch release produces different binaries. |
+| `-trimpath` | Without it a binary embeds the builder's absolute paths — a plain `yarg-sync` carried **906 occurrences of the builder's home directory** — which also leaked a username into a publicly-mirrored artifact. |
+| A genuinely clean tree | Go stamps `vcs.modified` into the binary. A tree that is dirty *only in git's opinion* still stamps `true`, and that flag alone accounted for 2,916 differing bytes. |
+| LF everywhere (`.gitattributes`) | `web/browse.html` is `go:embed`ed, so a CRLF checkout changed **the page the server serves**: 15,653 bytes from a Windows build against 15,302 from Linux. |
+
+The archives themselves stamp a fixed timestamp rather than the clock, so repacking the same
+binaries always gives the same bytes.
 
 The binaries are **not code-signed yet**, so Windows SmartScreen and macOS Gatekeeper will both
 object on first run. That warning is accurate rather than spurious: nobody has paid a certificate

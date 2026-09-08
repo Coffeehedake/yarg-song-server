@@ -1264,6 +1264,28 @@ Decisions worth keeping:
   and nearly closed the question. Go normalises embedded paths to **forward** slashes; the same
   search for `C:/dev/YARG` returned 18. The size delta between the two builds was the thing that
   said "something is in there", and it was the only honest signal until the separator was fixed.
+
+  **It took four causes, and each of the first three looked like the answer.** The discipline that
+  mattered was refusing to stop at "the archives differ, probably because X" and instead diffing
+  the artifacts until they were identical:
+
+  | # | Hypothesis | Verdict |
+  |---|---|---|
+  | 1 | Go version drift (CI 1.27.1, ENG-1 1.27.0) | Real, fixed — **not the cause**, all six still differed |
+  | 2 | No `-trimpath`, so absolute paths are embedded | Real, fixed — **not the cause either** |
+  | 3 | `vcs.modified=true` from a phantom-dirty tree | Real, fixed — made `yarg-sync.exe` identical, **but not `yarg-song-server.exe`** |
+  | 4 | CRLF reaching embedded content | **The rest of it** — see below |
+
+  The fourth is the one worth the whole exercise, because it was never about checksums.
+  `internal/httpapi/web/browse.html` is `go:embed`ed, and a per-extension `.gitattributes` rule
+  had missed `.html` — so **the browse page the server serves had different bytes depending on
+  which operating system built the binary**: 15,653 from Windows, 15,302 from Linux, same commit.
+  `LICENSE` differed by 164 bytes for the same reason. Fixed with `* text=auto eol=lf`, with the
+  testdata fixtures still excluded and their hashes verified unmoved.
+
+  **Result, measured on `b90cc3e`: a Windows workstation and the Linux CI runner produced
+  byte-identical archives for all six platforms. 6 match, 0 differ.** Reproducibility is now a
+  property this project can check rather than a sentence in a README.
 - **The launcher does not open a browser for you.** Launching a URL before the server is listening
   gives connection-refused, and the person then believes the download is broken when it is merely
   one second early. It prints the address instead.
