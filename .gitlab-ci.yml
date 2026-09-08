@@ -99,8 +99,15 @@ release:
         cmd="$1"; goos="$2"; goarch="$3"; goarm="$4"; suffix="$5"
         out="$cmd-$goos-$goarch${goarm:+v$goarm}$suffix"
         echo "  $out"
+        # -trimpath is not a nicety. Without it every binary embeds the runner's
+        # ABSOLUTE build paths - a plain build of yarg-sync on a workstation
+        # carried 906 occurrences of C:/Users/<name> and 770 of the local GOROOT
+        # (measured 2026-09-08). That ships the builder's username and directory
+        # layout in artifacts this project mirrors publicly, and it makes two
+        # machines building one commit produce different binaries, so
+        # SHA256SUMS cannot be checked against anything but itself.
         GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" \
-          go build -ldflags "-s -w -X main.version=$VERSION" -o "dist/$out" "./cmd/$cmd"
+          go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "dist/$out" "./cmd/$cmd"
       }
       for cmd in yarg-song-server yarg-sync; do
         build "$cmd" linux   amd64 "" ""

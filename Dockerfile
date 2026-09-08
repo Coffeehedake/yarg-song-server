@@ -14,7 +14,7 @@ COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -ldflags "-s -w -X main.version=$VERSION" -o /out/yarg-song-server ./cmd/yarg-song-server
+    go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /out/yarg-song-server ./cmd/yarg-song-server
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/yarg-song-server /usr/local/bin/yarg-song-server

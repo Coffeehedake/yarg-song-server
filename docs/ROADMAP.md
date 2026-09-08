@@ -1241,12 +1241,29 @@ Decisions worth keeping:
   clock, so the same binaries always produce the same archive. Otherwise `SHA256SUMS` says
   nothing: every rebuild would differ, and a real change would be indistinguishable from one.
 
-  **That is a claim about the packaging, not about the whole build, and running it found the
-  difference.** The local and CI archives for `4ddd322` differ by about 2 KB, because **CI pins Go
-  1.27.1 and ENG-1 has 1.27.0** — a compiler drift the CI comment ("keep this in step with the
-  toolchain the workstations use") exists to prevent. Reproducing a CI archive on a workstation
-  needs the toolchains lined up first; until they are, a checksum mismatch between the two is
-  expected rather than suspicious. Recorded because the overclaim was nearly published.
+  **That is a claim about the packaging, not the whole build, and chasing the difference found
+  two real defects — neither of them the one first blamed.**
+
+  The local and CI archives for `4ddd322` did not match. First hypothesis: **CI pinned Go 1.27.1
+  and ENG-1 had 1.27.0**, a drift the CI comment ("keep this in step with the toolchain the
+  workstations use") exists to prevent. Real, and fixed — ENG-1 is now on 1.27.1, installed the
+  same verified way (official zip, SHA-256 checked before extraction, old install kept at
+  `Programs\go-1.27.0` so rollback is a rename).
+
+  **It was not the cause.** All six archives still differed on the matched toolchain. The actual
+  cause is that nothing used **`-trimpath`**, so every binary embedded the absolute paths of the
+  machine that built it: a plain `yarg-sync` carried **906 occurrences of `C:/Users/<name>`**, 770
+  of the local `GOROOT` and 18 of the project directory. With `-trimpath`: zero, and 37,376 fewer
+  bytes.
+
+  That is two problems, not one. Reproducibility was the one being chased; the other is that
+  **artifacts this project mirrors publicly were shipping the builder's username and directory
+  layout**. `-trimpath` is now on every build path — Makefile, the release job and the Dockerfile.
+
+  A note on how the first measurement lied: searching the binary for `C:\dev\YARG` returned **0**
+  and nearly closed the question. Go normalises embedded paths to **forward** slashes; the same
+  search for `C:/dev/YARG` returned 18. The size delta between the two builds was the thing that
+  said "something is in there", and it was the only honest signal until the separator was fixed.
 - **The launcher does not open a browser for you.** Launching a URL before the server is listening
   gives connection-refused, and the person then believes the download is broken when it is merely
   one second early. It prints the address instead.

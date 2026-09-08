@@ -106,12 +106,11 @@ Artifacts from `main` are kept **30 days**; a **tagged** build keeps its archive
 because every entry is stamped with a fixed timestamp rather than the clock. That is what makes
 `SHA256SUMS` meaningful across a rebuild.
 
-It is **not** yet a claim that you can reproduce a CI archive on your own machine, and the
-difference is worth stating rather than discovering. Reproducing one end to end also needs the
-same Go toolchain, and as of 2026-09-08 the two have drifted — CI pins **1.27.1** while ENG-1 has
-**1.27.0**, which is why the local and CI archives for `4ddd322` differ by about 2 KB. The
-compiler changed, not the packaging. Line them up before treating a checksum mismatch as
-tampering.
+Reproducing a CI archive on your own machine needs the **same Go version** as the pipeline pins,
+and builds go through `-trimpath`. Without `-trimpath` a binary embeds the absolute paths of the
+machine that built it — a plain build of `yarg-sync` carried **906 occurrences of the builder's
+home directory** and 770 of its `GOROOT` — which both leaks the builder's username into a
+publicly-mirrored artifact and guarantees two machines produce different bytes for one commit.
 
 The binaries are **not code-signed yet**, so Windows SmartScreen and macOS Gatekeeper will both
 object on first run. That warning is accurate rather than spurious: nobody has paid a certificate

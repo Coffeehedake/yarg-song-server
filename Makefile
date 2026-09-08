@@ -6,12 +6,20 @@ SYNC     := yarg-sync
 SYNCPKG  := ./cmd/yarg-sync
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
+# -trimpath is not a nicety. Without it every binary embeds the ABSOLUTE build
+# paths: a plain build of yarg-sync on ENG-1 carries 906 occurrences of
+# C:/Users/ENG2 and 770 of the local GOROOT, which (a) ships the builder's
+# username and directory layout in an artifact this project mirrors publicly,
+# and (b) makes two machines building one commit produce different binaries, so
+# SHA256SUMS cannot be checked against anything but itself. With it: zero
+# occurrences, and 37,376 fewer bytes. Measured 2026-09-08.
+GOFLAGS_BUILD := -trimpath
 
 .PHONY: build test lint tidy clean release docker
 
 build:
-	go build -ldflags '$(LDFLAGS)' -o bin/$(BINARY) $(PKG)
-	go build -ldflags '$(LDFLAGS)' -o bin/$(SYNC) $(SYNCPKG)
+	go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o bin/$(BINARY) $(PKG)
+	go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o bin/$(SYNC) $(SYNCPKG)
 
 test:
 	go test ./... -race -count=1
@@ -29,18 +37,18 @@ clean:
 ## release: every target platform the project promises to support
 release:
 	@mkdir -p dist
-	GOOS=linux   GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-linux-amd64   $(PKG)
-	GOOS=linux   GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-linux-amd64   $(SYNCPKG)
-	GOOS=linux   GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-linux-arm64   $(PKG)
-	GOOS=linux   GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-linux-arm64   $(SYNCPKG)
-	GOOS=linux   GOARCH=arm GOARM=7 go build -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-linux-armv7 $(PKG)
-	GOOS=linux   GOARCH=arm GOARM=7 go build -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-linux-armv7 $(SYNCPKG)
-	GOOS=darwin  GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-darwin-amd64  $(PKG)
-	GOOS=darwin  GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-darwin-amd64  $(SYNCPKG)
-	GOOS=darwin  GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-darwin-arm64  $(PKG)
-	GOOS=darwin  GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-darwin-arm64  $(SYNCPKG)
-	GOOS=windows GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-windows-amd64.exe $(PKG)
-	GOOS=windows GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-windows-amd64.exe $(SYNCPKG)
+	GOOS=linux   GOARCH=amd64 go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-linux-amd64   $(PKG)
+	GOOS=linux   GOARCH=amd64 go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-linux-amd64   $(SYNCPKG)
+	GOOS=linux   GOARCH=arm64 go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-linux-arm64   $(PKG)
+	GOOS=linux   GOARCH=arm64 go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-linux-arm64   $(SYNCPKG)
+	GOOS=linux   GOARCH=arm GOARM=7 go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-linux-armv7 $(PKG)
+	GOOS=linux   GOARCH=arm GOARM=7 go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-linux-armv7 $(SYNCPKG)
+	GOOS=darwin  GOARCH=amd64 go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-darwin-amd64  $(PKG)
+	GOOS=darwin  GOARCH=amd64 go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-darwin-amd64  $(SYNCPKG)
+	GOOS=darwin  GOARCH=arm64 go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-darwin-arm64  $(PKG)
+	GOOS=darwin  GOARCH=arm64 go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-darwin-arm64  $(SYNCPKG)
+	GOOS=windows GOARCH=amd64 go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-windows-amd64.exe $(PKG)
+	GOOS=windows GOARCH=amd64 go build $(GOFLAGS_BUILD) -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-windows-amd64.exe $(SYNCPKG)
 
 ## package: the downloadable archives - one per platform, both binaries, README,
 ## config template, licence, launcher, plus SHA256SUMS. Run after `make release`.
