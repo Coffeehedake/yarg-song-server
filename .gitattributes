@@ -15,12 +15,24 @@
 # build and the Pi all run on. The failure reads as a reader bug, not as a line
 # ending, which is what makes it worth pinning here rather than remembering.
 
+# EVERY text file is LF in the working tree on every machine, not just in the
+# index. A per-extension list was tried first and was not enough: it missed
+# `LICENSE`, which has no extension, and `web/browse.html`, which is `go:embed`ed
+# into the server binary. That second one is not a tidiness problem —
+#
+#   **the browse page SERVED TO USERS had different bytes depending on which
+#   operating system built the binary.** 15,653 bytes from a Windows build,
+#   15,302 from Linux, same commit. Content-Length differs, and any future ETag
+#   over it would too.
+#
+# `text=auto` still lets git detect binary content and leave it alone, and the
+# testdata rule below overrides this for the fixtures whose bytes are hashed.
+* text=auto eol=lf
+
 **/testdata/** -text
 
-# Source and scripts are LF in the working tree on every machine, not just in the
-# index. `core.autocrlf=true` on the Windows workstations was checking these out
-# as CRLF, and that produced three recurring costs, all of which look like
-# something else:
+# The three recurring costs the CRLF checkout was causing, all of which look
+# like something else:
 #
 #   1. `gofmt -l .` flagged nine files that were perfectly formatted, so the one
 #      real formatting error would have been invisible in the noise.
@@ -35,11 +47,3 @@
 #
 # Test fixtures stay `-text` above and are unaffected; this is only about files
 # whose bytes nobody hashes.
-*.go        text eol=lf
-*.sh        text eol=lf
-*.mod       text eol=lf
-*.sum       text eol=lf
-Makefile    text eol=lf
-Dockerfile  text eol=lf
-*.yml       text eol=lf
-*.md        text eol=lf
