@@ -107,6 +107,23 @@ clients:
 | chart hash | again, at the line that builds the path | same | The check does not depend on a caller elsewhere having been careful. |
 | package hash | the `300 Multiple Choices` body | `^[0-9a-f]{16,128}$` | Goes straight into `?package=` on the request that follows. Much smaller: a URL, not a filename, and the chart-hash verification still catches a wrong song. Closed on 2026-09-08 because it was the last server-supplied string used without looking at it. |
 
+**A server cannot name a file for deletion in either client, and that was checked rather than
+assumed.** `yarg-sync`'s `prune` iterates the LOCAL inventory, which `managedName` has already
+filtered, and removes only hashes the server does not have — the server's list can subtract from
+that set, never add to it. The in-game mirror does not prune at all: deciding what to do about a
+song the server no longer offers is a separate question from getting the ones it does, and
+answering it wrong costs somebody their library.
+
+The mirror does delete one thing, and auditing that turned up a small mismatch worth fixing. Its
+sweep of dead partial downloads took **any** name ending `.part`, while the guarantee written a
+few lines above it says anything not named like ours belongs to the player and is never touched.
+The mirror folder is one the game owns, so a stranger's `.part` sitting in it is unlikely — but
+the claim was wrong, and a guarantee that holds "almost always" is not one. The sweep now matches
+`^[0-9a-f]{40}\.sng\.part$`, exactly the name the download path can write; anything else counts
+as the player's and is left alone. The probe puts three such files in the folder — `stranger.part`,
+`not-a-hash.sng.part`, and one ending `.sng.part.bak` — and asserts all three survive a sync
+against a server that keeps failing.
+
 A malformed entry is **dropped, not fatal**, in every case: one bad name must
 not cost a sync of ten thousand good ones. Both clients drop rather than
 reject, deliberately — a server sending a bad entry still leaves the two

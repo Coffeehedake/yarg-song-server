@@ -778,6 +778,25 @@ One existing test and the probe both had to be **corrected, not just extended**:
 package hashes (`aaaa`, `0001`) that the new check rightly refuses. Toy values were testing a
 path no real server can reach.
 
+**The sweep was broader than the guarantee, `yarg` 2026-09-08.** Auditing what the mirror
+DELETES, rather than only what it writes, turned up a smaller mismatch in the same family. The
+in-game mirror never prunes and `yarg-sync`'s prune iterates the LOCAL inventory, so **a server
+cannot name a file for deletion in either client** — that part held, and is now stated in
+`SYNC-CLIENT.md` rather than left to be re-derived. But the mirror's sweep of dead partial
+downloads took **any** name ending `.part`, while the guarantee three lines above it says
+anything not named like ours belongs to the player and is never touched.
+
+The mirror folder is one the game owns, so a stranger's `.part` in it is unlikely; the claim was
+still wrong, and **a guarantee that holds "almost always" is not one**. The sweep now matches
+`^[0-9a-f]{40}\.sng\.part$`, exactly what the download path can write, and anything else counts
+as the player's. The probe plants `stranger.part`, `not-a-hash.sng.part` and one ending
+`.sng.part.bak`, and asserts all three survive a sync against a server that keeps failing.
+
+**And the instrument was wrong before the code was, for the sixth time.** Planting those files
+made an existing assertion fail — *"3 dead .part file(s) were there to sweep but only 1 were
+swept"* — which reads exactly like a broken sweep. It was `Directory.GetFiles(destination,
+"*.part")` counting the player's files as ours. The measurement was fixed, not the code.
+
 **The browse page was audited in the same pass and is a non-finding.** It renders `song.ini`
 metadata from uploaded archives — content the server does not author — and `card()` escapes
 every field, with `encodeURIComponent` on the download link. Exactly three interpolations bypass
