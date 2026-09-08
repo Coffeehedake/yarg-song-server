@@ -743,6 +743,47 @@ already refuses traversal entries inside archives for exactly this reason; **the
 been given the same treatment.** That asymmetry is the lesson worth keeping — the guard was
 written once, on the side where the danger was obvious.
 
+**The per-song library badge, `yarg` 2026-09-08 — and the blocker turned out to be softer than
+it had been written down.** Every handoff since increment 1 has said the badge "needs the Unity
+editor open, cannot be verified headless". That is true of a badge that is a new object on the
+song-row prefab. It is not true of the badge itself: `GetSecondaryText` already returns rich text
+(`FormatAs` wraps the artist in `<color>` and `<font-weight>`), so a tag appended after it needs
+no prefab change at all — and rich text CAN be measured from batchmode.
+
+So the badge rides on the artist line. That is a stated limit rather than a first draft: the
+prettier version is a prefab change, and a prefab change can only be looked at, never asserted.
+This is the version of the feature that can be checked.
+
+The decision lives in `SongViewType.WithServerBadge`, **static and pure on purpose** — a
+`SongViewType` needs a `MusicLibraryMenu`, so an instance method would have been untestable
+headless, which is precisely how the feature came to be labelled unverifiable in the first place.
+
+`Editor/LibraryBadgeProbe.cs` plants two corpus songs in the game's REAL mirror path
+(`PathHelper.ServerLibraryPath`) and two in an ordinary folder, scans both with YARG.Core's own
+`CacheHandler.RunScan`, and asserts the badge lands on exactly the mirrored ones. Entries built by
+the real scanner, not by hand: a hand-made entry would only prove the string comparison works.
+
+Red-proofed in both directions, because a marker that appears on everything and one that appears
+on nothing fail differently:
+
+| Change | Result |
+|---|---|
+| badge every song | *"2 of 2 songs the player owns were marked as the server's"*, and the null-entry assertion caught it too |
+| badge no song | *"2 of 2 mirrored songs are unmarked"* alone |
+
+**The first version of the probe failed for a reason that had nothing to do with the badge**, and
+it is the harness trap this project has already paid for once. It took the first four `.sng` files
+in the corpus; two of them vanished from the scan and the probe reported *"1 mirrored and 0 local
+entries"*. `badsongs.txt` named the real cause: *"Corruption of either the ini file or chart/mid
+file"* — the message YARG produces when `song.ini` omits `song_length`, the scanner falls back to
+measuring the audio, and **batchmode has no working audio backend**. The probe now picks its songs
+by scanning the corpus first and using what survives, and exits **2 — inconclusive** rather than
+red if too few do.
+
+Measured while doing it, and worth knowing before designing any other batchmode test:
+**only 5 of the 23 corpus songs scan in batchmode at all.** The other 18 are refused for reasons
+that are the harness's, not theirs.
+
 **The last unchecked server string: `package_hash`, both clients, 2026-09-08.** Closing the
 file-write defect above left one server-supplied string still used without looking at it. When a
 chart hash exists in two packages the server answers **300** with the candidates, and the client
