@@ -1358,9 +1358,37 @@ extracted into a clean folder and `start-server.cmd` run as a double-click would
 `GET /` 200 at 15,548 bytes, `/api/v1/features` and `/api/v1/library` both 200, version stamped,
 and the startup log naming the config file it read. Then the same thing again in CI.
 
-**Still not an app**, and that is the honest description: it is a proper download. A tray icon, a
-settings window and a service install are the next question, and goal 1's "configuration menu in
-the server app" still wants the write half of `/api/v1/features`.
+**Still not an app**, and that is the honest description: it is a proper download. A tray icon and
+a service install are the next question. (The configuration menu that goal 1 asks for is now built
+— see phase 4 above.)
+
+### The whole path, run as a new user would, 2026-09-08
+
+Every previous measurement had used a binary built on the machine doing the measuring. This one
+started from the published artifact and touched nothing else.
+
+| Step | Result |
+|---|---|
+| Download the CI artifact | 7,773,966 bytes |
+| Check it against the published `SHA256SUMS` | **match** |
+| Unzip cold | six files, nothing scattered |
+| Put 23 songs in `songs/`, double-click `start-server.cmd` | server up, `songs=23 problems=0` |
+| `yarg-sync.exe -dry-run` from a **separate folder** | "would download 23", **0 files written** |
+| `yarg-sync.exe` for real | 23 songs, **238,215 bytes**, 0 failed |
+| Run it again | **0 downloaded, 23 already present** |
+| What landed | 23 files, every one `<40 hex>.sng`, first bytes `SNGPKG`, **0 leftover `.part`** |
+| Serve the SYNCED folder with a fresh server | `songs=23 distinct_charts=23 problems=0` |
+| Compare chart hashes between the two servers | **identical sets, 23 vs 23** |
+
+Two things worth pulling out. **238,215 bytes is the same total four earlier sync clients pulled**
+and the same the fork's batchmode run reported — reproduced here by a server rebuilt from scratch
+weeks later, which is what deterministic packing was for. And the last two rows are the round trip:
+a loose folder packed to `.sng`, served over HTTP, written by a client, and rescanned by a different
+server still has **the same chart identity**. Identity survives the whole path, measured rather than
+assumed.
+
+The launcher, the README's instructions, the config template and the checksum file were all
+exercised as written. Nothing in the archive needed correcting.
 
 ---
 
