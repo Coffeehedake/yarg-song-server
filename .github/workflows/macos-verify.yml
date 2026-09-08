@@ -1,0 +1,352 @@
+# Execute the darwin binaries on a real Mac.
+#
+# WHY THIS EXISTS, and why it is the one workflow that lives on GitHub.
+#
+# Origin for this project is Vault2 GitLab and GitHub is a force-overwritten
+# downstream mirror; nothing is ever pushed there first, and this file is no
+# exception - it is committed to GitLab like everything else and carried
+# downstream by the mirror. It lives here because GitHub is the only place this
+# project can reach a Mac. Two darwin binaries were cross-compiled by every
+# pipeline for weeks and NOBODY HAD EVER EXECUTED ONE, so every statement the
+# docs made about macOS was inference. "It compiles" is not a measurement.
+#
+# There is no Mac in this project's hardware, and buying an hour of one to test
+# a build by hand proves that build and nothing after it. A free macOS runner
+# that executes every commit is the only version of this that stays true.
+#
+# WHAT IT ACTUALLY PROVES, which is more than "the binary starts":
+#
+#   1. The binary is a real Mach-O for this runner's architecture. A step that
+#      silently ran an amd64 build under Rosetta, or a shell script that never
+#      reached the binary at all, would otherwise look identical to a pass.
+#   2. The server indexes the generated corpus with zero problems.
+#   3. yarg-sync pulls the whole library down over HTTP.
+#   4. Every downloaded .sng hashes to the ETag the server served it with.
+#   5. Rescanning the SYNCED folder yields the identical set of chart hashes,
+#      so song identity survives pack -> HTTP -> client -> rescan on macOS.
+#   6. macOS and Linux agree, byte for byte, on both sets of hashes.
+#
+# (6) is why ubuntu-latest is in the matrix. It is not there to test Linux -
+# Vault2's pipeline already does that - it is the REFERENCE the macOS result is
+# compared against, computed in the same job on the same commit. A committed
+# golden file would have been the obvious alternative and is worse: it drifts,
+# and the first person to see it fail would "fix" it by regenerating it.
+#
+# The comparison is a separate job on purpose. If the two legs disagree, the
+# thing that goes red is named `agree`, not `probe (macos-latest)`, because the
+# failure is a disagreement and not a macOS fault until somebody looks.
+#
+# RED-PROOFED BEFORE IT WAS TRUSTED, one break at a time, by running this exact
+# shell on Linux (2026-09-08). A combined patch of several breaks silently
+# failed to apply once in this project and produced zero failures, which nearly
+# got recorded as proof:
+#
+#   corrupt one .sng in the mirror      -> caught by the serve-vs-disk compare
+#   delete one .sng from the mirror     -> caught by the count check
+#   add a chart nobody served           -> caught by the rescan diff
+#   two legs with differing manifests   -> `agree` exits 1
+#   one leg missing entirely            -> `agree` exits 1, naming the leg
+#
+# The first draft of this file asserted that the ETag equalled the sha256 of
+# the downloaded .sng. That is FALSE on a perfectly healthy server, and the
+# local run is what said so rather than a red build on a Mac.
+
+name: macos-verify
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The mirror is force-pushed, so several commits can arrive as one event and
+# then again as a correction. Superseded runs are not worth a Mac minute.
+concurrency:
+  group: macos-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Keep in step with GO_VERSION in .gitlab-ci.yml. If setup-go cannot supply
+  # this exact version the job fails loudly, which is the intent: a toolchain
+  # that quietly differs from the one that builds the releases is not the thing
+  # under test.
+  GO_VERSION: "1.27.1"
+  # Same as the release job. Never let the toolchain swap itself out.
+  GOTOOLCHAIN: local
+  CGO_ENABLED: "0"
+  PORT_A: "18099"
+  PORT_B: "18100"
+
+jobs:
+  probe:
+    strategy:
+      # One leg failing must not cancel the other. The interesting artifact is
+      # usually the pair, and losing the reference to a macOS failure means
+      # re-running to learn what Linux would have said.
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: false
+
+      - name: Report the toolchain
+        run: |
+          set -euo pipefail
+          go version
+          go env GOOS GOARCH CGO_ENABLED
+          uname -a
+
+      - name: Build both binaries natively
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          # -trimpath matches the release recipe. Without it the binaries embed
+          # the runner's absolute paths, which is a real defect this project has
+          # already measured; building the smoke test differently from the
+          # shipped artifact would test something nobody downloads.
+          for cmd in yarg-song-server yarg-sync; do
+            go build -trimpath \
+              -ldflags "-s -w -X main.version=ci-${GITHUB_SHA:0:8}" \
+              -o "bin/$cmd" "./cmd/$cmd"
+          done
+          ls -l bin
+
+      - name: Assert the binary is a native Mach-O
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          # THE POINT OF THE WHOLE WORKFLOW IS THAT A DARWIN BINARY RAN. If this
+          # ever silently became an x86_64 build under Rosetta, or a universal
+          # stub, every assertion below would still pass and would be saying
+          # something other than what it claims.
+          desc="$(file -b bin/yarg-song-server)"
+          echo "file: $desc"
+          case "$desc" in
+            *"Mach-O"*) ;;
+            *) echo "not a Mach-O binary: $desc" >&2; exit 1 ;;
+          esac
+          want="$(uname -m)"
+          case "$want" in
+            arm64)  need="arm64" ;;
+            x86_64) need="x86_64" ;;
+            *) echo "unrecognised runner arch: $want" >&2; exit 1 ;;
+          esac
+          case "$desc" in
+            *"$need"*) echo "native $need confirmed" ;;
+            *) echo "binary is not $need, so this is not a native run: $desc" >&2; exit 1 ;;
+          esac
+
+      - name: Generate the corpus
+        run: |
+          set -euo pipefail
+          # The corpus is GENERATED, never downloaded: the Official Setlist is
+          # licensed for use in YARG only and community charts carry copyrighted
+          # audio. See docs/TEST-CORPUS.md.
+          #
+          # The expected song count is read out of mkcorpus's own output rather
+          # than written here as 23. A magic number in a test is a second place
+          # to update, and the one that gets missed.
+          go run ./cmd/mkcorpus -out corpus | tee mkcorpus.log
+          cases="$(sed -n 's/^wrote \([0-9][0-9]*\) cases.*/\1/p' mkcorpus.log)"
+          if [ -z "$cases" ] || [ "$cases" -lt 1 ]; then
+            echo "could not read a case count out of mkcorpus" >&2
+            exit 1
+          fi
+          echo "CASES=$cases" >> "$GITHUB_ENV"
+          echo "corpus has $cases cases"
+
+      - name: Serve the corpus and prove the library
+        run: |
+          set -euo pipefail
+          mkdir -p data-a
+          ./bin/yarg-song-server --songs corpus --data data-a \
+            --listen "127.0.0.1:${PORT_A}" >server-a.log 2>&1 &
+          echo $! > server-a.pid
+
+          # Poll rather than sleep. A fixed sleep is either flaky or slow, and
+          # when it is flaky the failure reads as "the server is broken".
+          up=""
+          for _ in $(seq 1 60); do
+            if [ "$(curl -fsS "http://127.0.0.1:${PORT_A}/healthz" 2>/dev/null || true)" = "ok" ]; then
+              up=yes; break
+            fi
+            sleep 1
+          done
+          if [ -z "$up" ]; then
+            echo "server never became healthy" >&2
+            cat server-a.log >&2
+            exit 1
+          fi
+
+          curl -fsS "http://127.0.0.1:${PORT_A}/api/v1/library" > library.json
+          songs="$(jq -r '.songs' library.json)"
+          problems="$(jq -r '.problems | length' library.json)"
+          echo "songs=$songs problems=$problems (expected $CASES / 0)"
+          [ "$songs" = "$CASES" ] || { echo "indexed $songs of $CASES cases" >&2; exit 1; }
+          [ "$problems" = "0" ] || { jq -r '.problems' library.json >&2; exit 1; }
+
+      - name: Sync the whole library down, and verify what arrived
+        run: |
+          set -euo pipefail
+          mkdir -p mirror
+          ./bin/yarg-sync -server "http://127.0.0.1:${PORT_A}" -songs mirror
+
+          got="$(find mirror -name '*.sng' -type f | wc -l | tr -d ' ')"
+          echo "mirror holds $got .sng files (expected $CASES)"
+          [ "$got" = "$CASES" ] || { ls -lR mirror >&2; exit 1; }
+
+          # sha256sum on Linux, shasum on macOS. Picking the tool by name rather
+          # than by OS keeps this honest if a runner image changes.
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha() { sha256sum "$1" | cut -d' ' -f1; }
+          else
+            sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+          fi
+
+          # A client that trusts the server for CONTENT must still check the
+          # bytes: fetch each song independently with curl and compare against
+          # what yarg-sync wrote. That is what says the file on disk is the file
+          # the server sent, rather than merely that something with the right
+          # name appeared.
+          #
+          # NOTE, because the obvious shortcut is wrong and was written here
+          # first: the ETag is the PACKAGE HASH, not a sha256 of the .sng bytes
+          # (api.go sets it from entry.Song.PackageHash). Comparing it to the
+          # downloaded file's hash fails on a perfectly healthy server. All that
+          # can be asserted about it here is that it is present and has the
+          # shape of a package hash.
+          : > sng-hashes.txt
+          for f in $(find mirror -name '*.sng' -type f | sort); do
+            h="$(basename "$f" .sng)"
+            etag="$(curl -fsSI "http://127.0.0.1:${PORT_A}/song/${h}.sng" \
+                    | tr -d '\r' | sed -n 's/^[Ee][Tt][Aa][Gg]: "\(.*\)"$/\1/p')"
+            if [ "${#etag}" != 64 ]; then
+              echo "$h: ETag is not a package hash: '$etag'" >&2; exit 1
+            fi
+            curl -fsS -o fetched.sng "http://127.0.0.1:${PORT_A}/song/${h}.sng"
+            mine="$(sha "$f")"; theirs="$(sha fetched.sng)"
+            if [ "$mine" != "$theirs" ]; then
+              echo "$h: synced file is $mine but the server serves $theirs" >&2; exit 1
+            fi
+            echo "$h $mine" >> sng-hashes.txt
+          done
+          rm -f fetched.sng
+          sort -o sng-hashes.txt sng-hashes.txt
+          wc -l sng-hashes.txt
+
+      - name: Rescan the synced folder - identity must survive the round trip
+        run: |
+          set -euo pipefail
+          # This is the assertion that has caught real bugs elsewhere in this
+          # project: a song's identity is SHA1 of the chart bytes, so packing,
+          # serving, downloading and re-indexing must return the SAME hashes.
+          # Anything that rewrote a chart in transit - line endings being the
+          # obvious macOS-adjacent risk - shows up here and nowhere else.
+          #
+          # CHART hashes, and deliberately not PACKAGE hashes. Measured on the
+          # 23-case corpus: 22 of 23 package hashes CHANGE across this round
+          # trip, because a folder carries song.ini as a file while the packed
+          # .sng carries that metadata in its header. The single stable case is
+          # `17-no-song-ini`, which is the one folder with no song.ini to move.
+          # Comparing package hashes here would fail on a healthy server.
+          mkdir -p data-b
+          ./bin/yarg-song-server --songs mirror --data data-b \
+            --listen "127.0.0.1:${PORT_B}" >server-b.log 2>&1 &
+          echo $! > server-b.pid
+
+          up=""
+          for _ in $(seq 1 60); do
+            if [ "$(curl -fsS "http://127.0.0.1:${PORT_B}/healthz" 2>/dev/null || true)" = "ok" ]; then
+              up=yes; break
+            fi
+            sleep 1
+          done
+          [ -n "$up" ] || { echo "rescan server never became healthy" >&2; cat server-b.log >&2; exit 1; }
+
+          curl -fsS "http://127.0.0.1:${PORT_A}/api/v1/songs" \
+            | jq -r '.songs[].chart_hash' | sort -u > charts-before.txt
+          curl -fsS "http://127.0.0.1:${PORT_B}/api/v1/songs" \
+            | jq -r '.songs[].chart_hash' | sort -u > charts-after.txt
+
+          if ! diff -u charts-before.txt charts-after.txt; then
+            echo "chart identity did not survive the round trip" >&2
+            exit 1
+          fi
+          echo "identical chart-hash sets: $(wc -l < charts-after.txt)"
+
+      - name: Stop the servers
+        if: always()
+        run: |
+          for f in server-a.pid server-b.pid; do
+            if [ -f "$f" ]; then kill "$(cat "$f")" 2>/dev/null || true; fi
+          done
+          exit 0
+
+      - name: Collect what this leg measured
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          # Only the hash manifests go into the comparison. Logs are attached
+          # for a human, never diffed - they carry runner paths and timings and
+          # would make `agree` red for reasons that are not disagreements.
+          cp -f sng-hashes.txt out/ 2>/dev/null || true
+          cp -f charts-after.txt out/ 2>/dev/null || true
+          cp -f library.json server-a.log server-b.log mkcorpus.log out/ 2>/dev/null || true
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-${{ matrix.os }}
+          path: out/
+          if-no-files-found: error
+
+  agree:
+    # Runs even when a leg failed, so the summary says WHICH leg was missing
+    # rather than the whole thing disappearing from the checks list.
+    if: always()
+    needs: probe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: legs
+
+      - name: macOS and Linux must agree on every hash
+        run: |
+          set -euo pipefail
+          mac=legs/probe-macos-latest
+          lin=legs/probe-ubuntu-latest
+          for d in "$mac" "$lin"; do
+            if [ ! -f "$d/sng-hashes.txt" ] || [ ! -f "$d/charts-after.txt" ]; then
+              echo "missing results from $d - that leg did not get far enough to compare" >&2
+              exit 1
+            fi
+          done
+
+          # Two files, not one, because they fail for different reasons. A
+          # chart-hash difference means the two platforms disagree about what a
+          # SONG IS; a .sng difference with matching chart hashes means they
+          # agree about the song and disagree about the ARCHIVE, which is a
+          # packing-determinism bug. Collapsing them would lose that.
+          bad=0
+          if ! diff -u "$lin/charts-after.txt" "$mac/charts-after.txt"; then
+            echo "::error::macOS and Linux disagree about song identity"; bad=1
+          fi
+          if ! diff -u "$lin/sng-hashes.txt" "$mac/sng-hashes.txt"; then
+            echo "::error::macOS and Linux pack different bytes for the same songs"; bad=1
+          fi
+          exit "$bad"

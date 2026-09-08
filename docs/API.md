@@ -285,6 +285,18 @@ bytes, so re-zipping a library does not change what a client downloads.
 
 - `ETag` is the package hash — a hash of the content, so it is the same on every server
   holding the same package and survives a rescan, a restart and a cache wipe.
+
+  **It does NOT survive a mirror, and that surprises people.** A server whose library is a
+  folder serves a different ETag from a server whose library is the `.sng` that was synced
+  out of it, because the folder carries `song.ini` as a file while the packed `.sng` carries
+  that metadata in its header. Measured on the 23-case corpus: **22 of 23 package hashes
+  change across pack → sync → rescan.** The one that does not is `17-no-song-ini`, which has
+  no `song.ini` to move.
+
+  So `ETag` answers "are these the same package", not "are these the same song". **The
+  identity that survives a mirror is the chart hash**, which is what `/api/v1/have` and the
+  sync client compare. Do not write a tool that decides two libraries differ because their
+  ETags do.
 - `Range` is supported, so an interrupted download resumes rather than starting again.
 - **300 Multiple Choices** when the chart hash is shared by several packages. The response
   lists them; `?package=<package_hash>` names one. The server does not choose, because

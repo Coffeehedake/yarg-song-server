@@ -1,13 +1,13 @@
 {
   "_comment": "sha256 of each source .md at the time its PDF was last rendered. Written by build-pdfs.py; verified by --verify. Do not hand-edit.",
   "sources": {
-    "README.md": "37eba6c50652a30d2d92d0c60132036bfe16606682c1aebb7a96071dd945b561",
+    "README.md": "017d166611bfc4dbeaf4dd28e0b7e3a4f2eeee0535b58f0e4ee54037cc2267fc",
     "docs/ADR-001-server-architecture.md": "efac771cc5499c44def053278310b39e882e6463fd37a2723104e28f72c74596",
     "docs/ADR-002-v1-store.md": "6189374a44630cde315a1b7bf18323d2422a6f936ac450490e46156660955e80",
     "docs/ADR-003-archive-ingest.md": "07edb93d8403ea1edc76dc888644c7b23baabb1b5e062cc2d44882a3ef64c618",
     "docs/ADR-004-remote-song-source.md": "0c7de4d72a5c9f83626f3236e96259945ce6d40b953dce891ae0acccf8723ac4",
     "docs/ADR-005-upload-check.md": "8afe6d0d7105eddc35becc3b4193fc7ae41337f496f2971be9c395257a7399e5",
-    "docs/API.md": "a141de59e9f94a01bf71df2db1cb56b57f9a4bf646cbbce8156c364b1ddfefe0",
+    "docs/API.md": "b05357804f04193ef3f065a8df7f519f0c154514dbe04c8f7e6ae75af97b3f4e",
     "docs/BUILD.md": "39b54db3cf756572f5b230849811bc798b23add397ecb87d54b980eaaf26c936",
     "docs/DEPLOY-VAULT2.md": "cdd3377deca11b0d84aa2715c217b94000d3b2b63183fc52907bc5440db3d179",
     "docs/ROADMAP.md": "5e9bacc973413af50ea94c4f1d58058cd74e1ec328a2ea2d71d702437fb69059",

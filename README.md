@@ -53,7 +53,9 @@ heuristics and no fuzzy matching.
 - Run on `linux/amd64`, `linux/arm64` (Raspberry Pi), macOS and Windows — the arm64 half is
   measured rather than assumed: a Raspberry Pi 4 has run both the binary and the published
   container image, and the archives it served were byte-identical to the x86-64 ones
-  (`docs/TEST-CORPUS.md`, "The ARM leg")
+  (`docs/TEST-CORPUS.md`, "The ARM leg"). **macOS is still inference** — the darwin binaries
+  are cross-compiled and have never been executed. `.github/workflows/macos-verify.yml` is
+  the fix and has not produced a result yet.
 
 **Will not, ever**
 
