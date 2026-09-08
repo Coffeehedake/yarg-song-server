@@ -1097,10 +1097,33 @@ The point at which the server stops being one feature and becomes a platform.
     would make `local` a suggestion: anybody on the LAN types one line and is treated as sitting at
     the machine. Red-proofed — trusting the header fails the test.
 
-  **Nothing is persisted yet, and the response says so** (`persisted: false`) along with the exact
-  config line to write. A settings menu that silently forgets is a trap. Writing an operator's
-  commented config file in place is its own increment with its own risk, and is deliberately not
-  bundled in here.
+  **A change is written back to the config file, so it survives a restart** — added in a second
+  increment, deliberately separate because editing an operator's commented file in place carries
+  its own risk. `config.SetKey` changes one line and leaves every other byte alone.
+
+  The rule that took thinking: **last one wins in this format**, because `Apply` walks the file in
+  order, so the LAST uncommented line for the key is the one rewritten. Rewriting the first would
+  leave a later line silently overriding it, and the operator's file would say one thing while the
+  server did another. Red-proofing "first match" fails exactly that test and nothing else, which is
+  what makes the test worth having. With no uncommented line the setting is appended with a dated
+  comment, leaving the commented template — which is documentation — untouched. The value is parsed
+  back before anything is written, because persisting a line that stops the server starting next
+  time is the worst outcome a convenience feature can have. Atomic via a temp file in the same
+  directory; permissions and line endings preserved.
+
+  **A failed save is not a failed toggle.** The runtime change stands either way and the response
+  reports the two halves separately. The server never *creates* a config file: settings written
+  into whatever directory it happens to be running from would land somewhere nobody would look.
+
+  A test caught a bug that reading the code twice had not — the rewrite emitted the captured
+  pre-`=` whitespace *and* a space of its own, giving `check_uploads  = yes`. The alignment there
+  is the operator's, not ours.
+
+  **Verified through a restart**, which is the only thing that proves persistence: clicking the
+  page's own switch wrote `check_uploads = yes` under a dated comment, the template's
+  `# check_uploads = no` survived with all 73 comment lines intact, and the restarted server
+  reported `feature=check_uploads enabled source=file`. That last word is the confirmation — the
+  registry's provenance says the value came from the file, because it now does.
 
   The page **asks whether it may write** rather than assuming, the same rule as the drop zone, and
   re-reads the server after a change rather than trusting what it just sent. Verified in a real

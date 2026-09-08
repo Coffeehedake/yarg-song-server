@@ -137,15 +137,28 @@ Turns one capability on or off, immediately, with no restart. Body:
     "endpoint": "POST /api/v1/check",
     "enable_with": "--check-uploads / check_uploads = yes"
   },
-  "persisted": false,
+  "persisted": true,
+  "config_file": "yarg-song-server.conf",
   "make_permanent": "check_uploads = yes"
 }
 ```
 
-**`persisted` is always `false` today, and saying so is the point.** The change is real and
-takes effect at once; it does not survive a restart. `make_permanent` is the exact line to put in
-the config file. A settings menu that silently forgets is a trap, so the response admits it rather
-than letting an operator find out later.
+**The change is written back to the config file the server read**, so it survives a restart.
+`persisted` says whether that worked and `config_file` names the file; when it did not,
+`persist_error` says why and `make_permanent` is the line to add by hand.
+
+**A failed save is not a failed toggle.** The runtime change stands either way and the response
+reports the two halves separately — conflating them would send somebody looking for a bug that is
+not there. The server never *creates* a config file: settings written into whatever directory it
+happens to be running from would land somewhere nobody would think to look, so if no config file
+was read, `persisted` is false and the response says so.
+
+Only one line moves. The last **uncommented** line for that key is rewritten — last one wins in
+this format, so rewriting the first would leave a later line silently overriding it — and when
+there is none, the setting is appended with a dated comment, leaving the commented template intact.
+The value is parsed back before anything is written, because persisting a line that stops the
+server starting next time is the worst outcome a convenience feature can have. The write is atomic
+through a temp file in the same directory, and keeps the file's permissions and line endings.
 
 ### Who may call it
 
