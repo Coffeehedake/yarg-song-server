@@ -689,6 +689,26 @@ Set to `DevelopmentOnly` — enough to develop and test, nothing weaker shipped 
 what a release build should do is now question 4 in the Discord post rather than a default
 quietly changed in a fork.
 
+**The download error branch was dead code, `yarg` `61cf1290`.** Following the hostile probe with
+one more question — what does a *player* read when a download fails — turned up that they read
+`Unknown Error`, and then that the branch meant to say more had never run.
+
+UnityWebRequest reports a non-200 in two ways and the difference is not obvious. A 4xx/5xx or a
+dropped connection makes UniTask **throw** from the await, so everything written after it — the
+`if (request.result != Success)` check this code used to report failures — is **unreachable**.
+A **300 comes back as success** with `responseCode 300`, because there is no `Location` header to
+follow, so the duplicate-package case must be checked after a normal return. Both are now handled
+on both paths so neither assumption is load-bearing. A cut-off download now says
+*"the connection ended after 4317 of 8634 bytes (HTTP 200)"*.
+
+**The 300 path had never met a 300.** The live corpus has `duplicate_packages: 0`, so nothing had
+ever served this client one. The probe now does — declining to choose, listing two packages, and
+serving bytes only when asked for one by name — and it earned itself immediately: the first
+version of the fix assumed a 300 also arrived as an exception, which broke the duplicate-package
+path. **A regression introduced and caught inside the same change**, in a path that would
+otherwise have made every song existing in two packages permanently unfetchable, silently, until
+somebody had a duplicate.
+
 **The mirror's integrity guarantee, tested against a hostile server.** `SongServerSync` claimed
 in its own comment that "a crash or a dropped link mid-download cannot leave a truncated archive
 under a name the scanner will trust" — true by inspection, never reproduced, which is precisely
