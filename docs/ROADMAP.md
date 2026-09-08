@@ -689,7 +689,30 @@ Set to `DevelopmentOnly` — enough to develop and test, nothing weaker shipped 
 what a release build should do is now question 4 in the Discord post rather than a default
 quietly changed in a fork.
 
-**Server status in the menu, `yarg` `c025a98a`.** Settings -> Song Manager shows a live line
+**A Song Server tab, `yarg` `fbb36f3a`.** The feature now has its own settings tab rather than
+three rows wedged under a header on Song Manager: URL, reachability, what this machine holds,
+the startup toggle, and Sync / Cancel. During a sync the mirror line becomes live progress.
+
+**A tab rather than a Main Menu screen, decided on cost.** Menus are `MenuObject` children
+inside `Scenes/MenuScene.unity` keyed by a `MenuManager.Menu` enum, so a Main Menu entry means
+hand-building a GameObject subtree in a scene file — the one kind of change in this work that
+cannot be checked by measuring, only by looking at it. A tab follows the `SongManagerTab`
+precedent and inherits navigation, layout and controller input. **It needs no new prefab**:
+every row is a type that already existed, including the live text row added with the status
+line and a `ButtonRowMetadata` that already took `params string[]`.
+
+Two new kinds of check came out of it, both worth reusing:
+
+- **Tab icons are validated against the real sprite atlas.** They are Addressables lookups by
+  string (`TabIcons[Import]`), so a name that is not in the atlas compiles, runs, and produces
+  a tab with no icon that nobody notices until a screenshot.
+- **The mirror row is counted against a folder that really holds songs**, not only the empty
+  case: "Mirrored: 23 songs, 233 KB on disk" against 23 files, and 238,215 bytes is 233 KB.
+
+End-to-end against vault2 after the `Sync` signature changes: `server=23 had=0 downloaded=23
+failed=0 bytes=238215` — byte-identical to the baseline from when the mirror first shipped.
+
+**Server status in the menu came first, `yarg` `c025a98a`.** Settings -> Song Manager shows a live line
 under the URL: connected and how many songs, or not reachable and why, plus the last sync's
 outcome. Before this, the only way to learn whether a URL worked was to press Sync and read an
 error dialog — a typo, a sleeping NAS and a healthy server were indistinguishable until you
