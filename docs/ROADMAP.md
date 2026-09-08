@@ -689,7 +689,34 @@ Set to `DevelopmentOnly` — enough to develop and test, nothing weaker shipped 
 what a release build should do is now question 4 in the Discord post rather than a default
 quietly changed in a fork.
 
-**A Song Server tab, `yarg` `fbb36f3a`.** The feature now has its own settings tab rather than
+**A `server:` search filter, `yarg` `a31ddef7`.** `server:yes` shows only what the mirror
+brought in, `server:no` only what was already yours, and it composes with everything else
+(`artist:queen;server:yes`).
+
+**The signal is the path, and that was measured before anything was written.** A probe scanned
+a real 23-song mirror and printed what a mirrored song looks like to the library. Both obvious
+candidates fail: `Source` is "Unknown Source" — it belongs to whoever charted the song — and
+`Playlist` is "Unknown Playlist" for every one, because a loose `.sng` takes its playlist from
+its own metadata rather than the folder it sits in. Playlist matched the mirror folder's name
+for **0 of 5** scanned entries; `ActualLocation` was under the mirror for **5 of 5**.
+
+That also answered the question worth asking first: **YARG already has a `folder:` filter, and
+it matches on playlist** — so `folder:serverlibrary` does not do this today and the new filter
+is not a duplicate. Had it come back the other way, the right move would have been to write
+nothing and document the filter that already existed; this project has already once designed a
+fix whose second half turned out to be unnecessary.
+
+**Not a new `SortAttribute`, deliberately.** The search pipeline keys filters on that enum, but
+the enum is also what the library sorts and groups by and several values already have no
+comparer; adding one for something that can never *be* a sort order would put a value in it
+that half the code must remember to ignore. `server:` is lifted out of the query before the
+pipeline runs and applied as one pass over the already-narrowed result.
+
+**Still open: the per-song badge.** Marking mirrored songs visually in the library rows needs
+UI work whose result cannot be verified from a headless session. The filter is the verifiable
+half, and it is the half that answers "show me what came from the server".
+
+**A Song Server tab came first, `yarg` `fbb36f3a`.** The feature now has its own settings tab rather than
 three rows wedged under a header on Song Manager: URL, reachability, what this machine holds,
 the startup toggle, and Sync / Cancel. During a sync the mirror line becomes live progress.
 
