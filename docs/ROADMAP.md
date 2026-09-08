@@ -689,6 +689,40 @@ Set to `DevelopmentOnly` — enough to develop and test, nothing weaker shipped 
 what a release build should do is now question 4 in the Discord post rather than a default
 quietly changed in a fork.
 
+**Remote arbitrary file write in the mirror client, `yarg` `02f23f90`.** The most serious defect
+found in this project so far, and it came from following the hostile server one question further:
+the client asked the server what it was missing and used the answer as **filenames**, unchecked.
+
+```csharp
+foreach (var entry in json.Value<JArray>("missing") ?? new JArray())
+    missing.Add(entry.ToString());          // no validation
+...
+string part = Path.Combine(destination, hash + ".sng.part");
+```
+
+`../..` escapes the mirror folder, and an **absolute** path is worse, because `Path.Combine`
+discards its first argument when the second is rooted — the file goes exactly where the server
+said. **Demonstrated with the guard temporarily widened**: a 2,048-byte attacker-controlled file
+written to an attacker-chosen absolute path, persisting on disk. With the guard restored:
+`rejected=6`, nothing outside the mirror, sync still completes.
+
+**What was shown, precisely.** Only the absolute-path case was observed to land, because that
+directory existed; the `../../../..` names resolved to directories that do not, and
+`DownloadHandlerFile` does not create them. That is a limit of the demonstration, not a defence —
+an attacker picks a directory that exists. The first version of the test proved nothing at all,
+because the server 404'd the hostile names and no bytes were ever served.
+
+**The persistence needs a second bug.** The download succeeds so the file is written;
+verification rejects it; and the cleanup delete is the one that *cannot* succeed, because
+YARG.Core keeps a non-`.sng` file locked. Two known bugs compose into a durable write.
+
+**"The player chose this server" is not an answer.** The connection is plain HTTP on a LAN by
+design, so anything on the path can supply that list, and a server trusted for *content* should
+still not be trusted to name files on every machine that syncs from it. The server-side scanner
+already refuses traversal entries inside archives for exactly this reason; **the client had never
+been given the same treatment.** That asymmetry is the lesson worth keeping — the guard was
+written once, on the side where the danger was obvious.
+
 **The download error branch was dead code, `yarg` `61cf1290`.** Following the hostile probe with
 one more question — what does a *player* read when a download fails — turned up that they read
 `Unknown Error`, and then that the branch meant to say more had never run.
