@@ -1,7 +1,7 @@
 {
   "_comment": "sha256 of each source .md at the time its PDF was last rendered. Written by build-pdfs.py; verified by --verify. Do not hand-edit.",
   "sources": {
-    "README.md": "017d166611bfc4dbeaf4dd28e0b7e3a4f2eeee0535b58f0e4ee54037cc2267fc",
+    "README.md": "1a7ca11088c2b5788b931eaccff2d0a545de4748f3afc38ec8bccd4551e50e17",
     "docs/ADR-001-server-architecture.md": "efac771cc5499c44def053278310b39e882e6463fd37a2723104e28f72c74596",
     "docs/ADR-002-v1-store.md": "6189374a44630cde315a1b7bf18323d2422a6f936ac450490e46156660955e80",
     "docs/ADR-003-archive-ingest.md": "07edb93d8403ea1edc76dc888644c7b23baabb1b5e062cc2d44882a3ef64c618",
@@ -14,7 +14,7 @@
     "docs/SCALE.md": "9dd3bb689586721efd7433deddf8c910854173f02a1c0d3bc53b9911359dd1e2",
     "docs/SOURCES.md": "ae8f29dc86ef0df75a7dbca575ef59a4c9c73f8cfa4c44b5a003facaf1627ad5",
     "docs/SYNC-CLIENT.md": "427b98bad55524117abb9e0fc7dd0c40803991eb4943c1c9a7b3c88fe9ad2065",
-    "docs/TEST-CORPUS.md": "35323d5cd5139b1129efff24bf23226f931bf5888ba9adf189646041ee04c74e",
+    "docs/TEST-CORPUS.md": "4e1ae11cd91df466329a8d8a9ba04dc01bba8017f12d179287c0f123fcb87d94",
     "docs/UPSTREAM.md": "e4228ee88be36395610000b6b66e387db8f191adaab60e494703f094008c1fa0",
     "docs/WORKSPACE.md": "b29a192569773008f436068e62f6ea8c84093191517386c345db3a3cb882a38e",
     "docs/research/chart-preparsing.md": "5bbb0183f6b574ed54a215e48f7b3069aeedde551d7579438c68f270f5ec6e92",

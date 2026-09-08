@@ -514,6 +514,46 @@ Three caveats, stated rather than buried:
   is identical either way, so what ran is the published image; only its transport differed. The
   multi-arch manifest itself was separately confirmed to carry both `amd64` and `arm64`.
 
+### The macOS leg — 2026-09-08, and it runs on every commit rather than once
+
+macOS was the last platform this project claimed and had never executed. Two darwin binaries came
+out of every pipeline for weeks; everything said about them was inference from a successful
+cross-compile.
+
+There is no Mac here, and renting one by the hour proves the build it was rented for and nothing
+after it. `.github/workflows/macos-verify.yml` runs on GitHub's free macOS runners instead — the
+one workflow that lives on GitHub, still committed to origin and carried downstream by the
+mirror, because GitHub is the only place this project can reach a Mac.
+
+First result, run #1 on `cb2a2ef`:
+
+| What ran | Evidence |
+|---|---|
+| A native Apple-silicon build | `go version go1.27.1 darwin/arm64`; the runner's own `file`: `Mach-O 64-bit executable arm64`; `Darwin Kernel 25.6.0 … RELEASE_ARM64_VMAPPLE arm64` |
+| The server, against the generated corpus | `songs=23 problems=0` |
+| `yarg-sync`, over HTTP | `downloaded 23 song(s) … 0 failed, 238215 bytes` |
+| A rescan of what it downloaded | `identical chart-hash sets: 23` |
+| Agreement with Linux | the `agree` job compared both hash manifests and found no difference |
+
+**238,215 bytes is the same total the Windows, Linux and Unity-batchmode runs produce for this
+corpus**, so the macOS leg lands on the number the rest of the project already agreed on rather
+than merely being self-consistent.
+
+Two things this deliberately does NOT claim:
+
+- **It is not the release artifact.** The job builds natively on the runner; the shipped darwin
+  binaries are cross-compiled on Linux. This proves the code runs on macOS, not that the exact
+  file in `release/` does. Closing that would mean checksumming a cross-compiled binary against a
+  natively built one, and Go does not promise those match.
+- **Nothing here has been run by a person on a Mac.** No Finder, no Gatekeeper prompt, no
+  double-click. A CI runner executes the binary from a shell with the quarantine attribute never
+  applied, which is not the first-run experience a downloader gets.
+
+The assertions were red-proofed on Linux before the workflow was trusted — a corrupted `.sng`, a
+missing `.sng`, an unserved chart, two disagreeing manifests and a missing leg each produce the
+failure they are meant to. That local run also killed a wrong assertion in the first draft, which
+had the ETag equal to the sha256 of the downloaded archive. It is not: it is the package hash.
+
 ## Hostile archives — 2026-09-06, probed rather than reasoned about
 
 The oracle runs above validate songs that are *supposed* to work. Archive ingest also

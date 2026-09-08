@@ -183,6 +183,12 @@ shell predates the PATH change — open a new one.
   is really arm64.
 - `make release` must succeed for every promised platform — linux/amd64, linux/arm64, linux/armv7,
   darwin/amd64, darwin/arm64, windows/amd64. The Pi target is a project promise, not a bonus.
+  **Cross-compiling is not evidence a platform works**: arm64 was verified by running it on a Pi,
+  and darwin by `.github/workflows/macos-verify.yml`, which executes the binary on a real Mac on
+  every commit to `main` and fails if macOS and Linux disagree hash for hash. That workflow is the
+  ONE thing this project keeps on GitHub, and it is still committed to origin and mirrored
+  downstream — never pushed to GitHub first. If it goes red, macOS is broken; do not disable it or
+  reduce its assertions to get a green.
 - Any `.sng` writer must be validated two ways: round-trip through the reference `SngCli`, **and**
   a real YARG install scanning the output and reporting the same hash and metadata. Round-tripping
   against our own reader only proves our reader and writer agree with each other.
