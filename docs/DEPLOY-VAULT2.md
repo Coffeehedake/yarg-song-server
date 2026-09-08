@@ -605,7 +605,58 @@ matter, and on a box reachable from the whole house that is a decision rather th
 Tagged at `027d331`. The `release:tag` job produced all six archives plus `SHA256SUMS` with
 **`artifacts_expire_at = NEVER`**, which is the whole point of tagging.
 
-**A tagged pipeline does NOT build a container image.** `container-image` runs on the default
-branch and on `ci/*`, and a tag has no `CI_COMMIT_BRANCH`, so it is skipped. The image for this
-commit exists as `:027d331f` from the `main` pipeline, so nothing is missing today — but a tag and
-its image are not linked, and anyone expecting `:v0.1.0` in the registry will not find it.
+**A tagged pipeline did NOT build a container image**, and "skipped" understates it: `container-image`
+ran on the default branch and on `ci/*`, a tag has no `CI_COMMIT_BRANCH`, so the job was **absent
+from the pipeline entirely** — not listed with a reason. Pipeline 2383 is green with four check jobs
+and `release:tag` and nothing else. The image for this commit exists as `:027d331f` from the `main`
+pipeline, so nothing was missing that day, but `:v0.1.0` is not in the registry and never will be.
+
+**Fixed on 2026-09-08 by `- if: '$CI_COMMIT_TAG'`.** It cannot be applied retroactively: a tag
+pipeline builds from the tag's own commit, and `v0.1.0` points at `027d331f`, which predates the
+rule. Re-running it reproduces the same imageless pipeline. **`v0.1.1` is the first release with an
+image.**
+
+## Fourth deployment, 2026-09-08 — `027d331` to `v0.1.1`, and the first release-pinned container
+
+The first deployment that pins a **release** rather than a commit, and the first where `/version`
+answers with a version number instead of a sha.
+
+**Pinned by DIGEST, not by tag**, and that is a change of practice with a reason measured the same
+day: the `:<short sha>` tag is NOT immutable. Commit `1ef7598e` was built twice — once by its `main`
+pipeline, once by the `v0.1.1` tag pipeline — and the second push moved `:1ef7598e` to the newer
+image, so `:main` and `:1ef7598e` now name one commit and resolve to different digests. A digest is
+the only reference that cannot move under a running deployment.
+
+```bash
+docker pull registry.badassium.com/fatalexception/yarg-song-server@sha256:a127c732b8b58614…
+docker stop yarg-song-server && docker rename yarg-song-server yarg-song-server-prev
+docker run -d --name yarg-song-server --restart unless-stopped -p 8099:8080 \
+  -v /mnt/cache/appdata/yarg-song-server/songs:/songs:ro \
+  -v /mnt/cache/appdata/yarg-song-server/data:/data \
+  registry.badassium.com/fatalexception/yarg-song-server@sha256:a127c732b8b58614… \
+  --songs /songs --data /data --listen :8080
+```
+
+| Check | Before (`027d331f`) | After (`v0.1.1`) |
+|---|---|---|
+| Image id | `c45f8b9c…` | `f323f3b8…`, `arch=amd64` |
+| `/version` | `027d331` | **`v0.1.1`** |
+| `/healthz` | 200 | 200 |
+| Index | 23 songs, 23 charts, 0 problems | 23 songs, 23 charts, 0 problems, **9 ms** |
+| `restarts` | 0 | 0 |
+| Features | `browse_ui` on, `check_uploads` off, `config_writes` off | unchanged |
+
+**One song was fetched from the running release**, not just counted:
+`dc079fac…` returned 200 and 8,471 bytes hashing to
+`e9948d1e85f9317b22fd95af9e3230224d8dc050adb0cc7570e2d774738022eb` — **byte-identical to the same
+song served by a local Linux build earlier that day**. Determinism now holds across the shipped
+release image as well as across machines and architectures.
+
+The previous container is kept stopped as `yarg-song-server-prev` on `:027d331f`; rollback is
+`docker stop yarg-song-server && docker start yarg-song-server-prev` after a rename.
+
+**Registry auth is still an open gap.** The pull was denied until a login, and the credential used
+was the `api`-scope GitLab PAT again. It was fed over SFTP to a `600` file, consumed by
+`--password-stdin`, shredded, and `docker logout` ran immediately — `/root/.docker/config.json` is
+16 bytes afterwards, so **no registry credential is stored on vault2**. The durable fix is still a
+project-scoped `read_registry` deploy token, which nobody has created.
