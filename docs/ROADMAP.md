@@ -1132,8 +1132,17 @@ Where this goes next, all of it server-side and none of it needing the game:
 
   **Upstream contact is deferred to the bottom of the queue** (Jay, 2026-09-08): nothing goes to
   YARG's team until there is something to show, and that means a public beta. See
-  [`UPSTREAM.md`](UPSTREAM.md) — it also settles ADR-004 increments 2 and 3, which were parked
-  "waiting on upstream" and are now simply **not yet**.
+  [`UPSTREAM.md`](UPSTREAM.md).
+
+  **And upstream is a collaborator we would welcome, not a gate we are waiting at** — Jay, the
+  same day. ADR-004 increments 2 and 3 are ours to decide, and the first thing that produced was
+  a measurement rather than a decision: **increment 2 does not need `YARG.Core` after all, and
+  should be SKIPPED anyway.** An entry survives a quick scan with its file deleted, so the Unity
+  layer could fetch on play with no upstream change — but every player-facing refresh in the game
+  is a FULL rescan (four call sites, all `quick: false`), which drops every unfetched entry, and
+  the game's own *"Chart requires a rescan!"* path sends players straight at the button that does
+  it. Increment 2 is increment 1 plus a trick the game itself undoes. The `YARG.Core` conversation
+  belongs at increment 3, where entries would come from the scanner rather than from the cache.
 
   Storing an upload is [ADR-005](ADR-005-upload-check.md) increment 2 and is deliberately not
   built: `--songs` is mounted `ro` on the live deployment, an unauthenticated write endpoint is

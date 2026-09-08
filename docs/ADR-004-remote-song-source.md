@@ -273,8 +273,12 @@ in a fork.
 
 ### Increment 2 — fetch a song when it is played.
 
-This is the increment that needs YARG.Core, and finding 3 says exactly how much: two seams,
-not a redesign.
+> **MEASURED 2026-09-08, and the claim below is wrong.** `Editor/FetchOnPlayProbe.cs`. The
+> correction and what replaced it are immediately after this block; the original text is kept
+> so the mistake is legible rather than quietly edited away.
+
+~~This is the increment that needs YARG.Core, and finding 3 says exactly how much: two seams,
+not a redesign.~~
 
 - `SngFile.TryLoadFromStream(Stream, bool loadMetadata)` beside the existing file loader.
   `FixedArray` already reads from streams; this is plumbing, and it is useful to upstream
@@ -290,6 +294,59 @@ have *played*, not every song in the catalog.
 
 **Not committed to.** It is written down here so that the seam is chosen deliberately when
 the time comes, rather than discovered under pressure.
+
+#### What the measurement actually found
+
+Increment 2 needs two things to be true. Only one of them was ever in doubt, and the ADR did not
+separate them.
+
+**1. A place in the Unity layer to fetch from, after the song is chosen and before anything reads
+its bytes.** There is one, and it is the same shape increment 1 already uses.
+`GameManager.Loading.Start` holds a `LoadingContext` and queues `LoadChart` and `LoadAudio` onto
+it *afterwards*; nothing between the top of that method and those two lines touches the song's
+file — the only use of `Song` before them is a log line reading `Name` and `Artist` from metadata
+already in memory. Established by reading, and stated as reading.
+
+**2. A `SongEntry` that exists while its file does not.** Without this there is nothing to fetch
+on play: the entry only exists because the file already does, and the increment collapses into
+increment 1. **This was measured, and the answer is yes** — with a condition that turns out to
+matter more than the seam ever did.
+
+| Measured | Result |
+|---|---|
+| Full scan, both files present | 2 entries |
+| Delete one file, then **quick** scan | **2 entries.** The deleted song survives, `ActualLocation` still points at it, `File.Exists` there is `false` |
+| Delete one file, then **full** scan | 1 entry. It is gone |
+
+So `YARG.Core` does **not** need changing for increment 2. `QuickScan` deserialises
+`songcache.bin` and never walks the filesystem, so an entry outlives its bytes, and the Unity
+layer can put the file back before the loader ever looks.
+
+#### The cost that replaces the one the ADR was worried about
+
+**Every player-facing refresh in this game is a FULL rescan.** Four call sites, all passing
+`quick: false`: the music library's own refresh, the Song Manager settings header, a settings
+change that touches song folders, and our own startup path when it fetched something. A full
+rescan drops every entry whose file is absent.
+
+That is worse than it sounds, because **the game's own error path tells the player to do it**: a
+chart that fails to load raises *"Chart requires a rescan!"* and sends them straight to the Song
+Manager tab. A player following the game's advice would silently lose every song they had not yet
+played.
+
+So the honest verdict is not "increment 2 is cheaper than we thought". It is:
+
+- **The `YARG.Core` seam was never the blocker.** That claim was reasoned and is now retracted.
+- **Increment 2 as written is not a stable middle step.** It is increment 1 plus a cache trick,
+  and the trick is undone by an ordinary, documented, game-suggested action.
+- **The real question is where entries come from across a rescan**, and there are only two
+  answers: files on disk (which is increment 1, working today), or the *scanner* learning about
+  the server — which is increment 3, and which is where the `YARG.Core` conversation genuinely
+  belongs.
+
+**Recommendation: skip increment 2.** Not "defer" — skip. It buys disk savings in exchange for a
+catalog that evaporates on an action the game itself recommends, and the seam it was going to
+justify buying is actually needed one increment further along.
 
 ### Increment 3 — server-supplied entries, skipping the scan entirely.
 
@@ -351,7 +408,12 @@ genuine dependency named as what it is.
    in `docs/UPSTREAM.md` and is deferred to the bottom of the queue until there is a public beta
    to show; nothing here waits on it.
 
-   **What replaces it as the real question: do increments 2 and 3 actually need `YARG.Core`
+   **ANSWERED for increment 2 on 2026-09-08, and the answer was no.** It does not need
+   `YARG.Core` — and measuring that turned up a bigger problem than the one it settled, which is
+   why increment 2 is now recommended for SKIPPING rather than building. See the increment 2
+   section above. Increment 3 is where the `YARG.Core` conversation actually belongs.
+
+   **The question as it was posed: do increments 2 and 3 actually need `YARG.Core`
    changes at all?** This has not been measured, and the badge on 2026-09-08 is the reason to
    measure it rather than inherit the answer — that blocker was recorded as "needs the Unity
    editor" through four handoffs and turned out to be false of the feature, only true of one
