@@ -89,12 +89,37 @@ heuristics and no fuzzy matching.
 Read the research document before writing any parser code. It is the reason the scope is what it
 is.
 
+## Getting it
+
+Every pipeline builds a downloadable archive per platform — **linux** amd64/arm64/armv7,
+**macOS** amd64/arm64, and **Windows** amd64 — attached to the pipeline's `release` job together
+with `SHA256SUMS`. Each archive carries **both binaries** (`yarg-song-server` and `yarg-sync`), a
+README, the commented config template and the licence, inside a folder named after itself.
+
+Unzip it and run `start-server.cmd` on Windows or `./start-server.sh` elsewhere: it creates
+`songs/` and `data/` beside itself, starts the server on `:8080`, and prints the address to open.
+Put songs in `songs/` and reload.
+
+Artifacts from `main` are kept **30 days**; a **tagged** build keeps its archives permanently.
+The archives are byte-for-byte reproducible — every file is stamped with a fixed timestamp rather
+than the clock — so two builds of one commit produce identical checksums, which is what makes
+`SHA256SUMS` worth publishing.
+
+The binaries are **not code-signed yet**, so Windows SmartScreen and macOS Gatekeeper will both
+object on first run. That warning is accurate rather than spurious: nobody has paid a certificate
+authority to vouch for them. The archive's README says so and explains how to check the checksum.
+
+`docker pull registry.badassium.com/fatalexception/yarg-song-server:latest` is the other route,
+for amd64 and arm64.
+
 ## Running it
 
 ```sh
 make build
 ./bin/yarg-song-server --songs /path/to/songs --data ./data --listen :8080
 ```
+
+`make package` builds every platform and produces the archives above into `release/`.
 
 Then `GET /api/v1/library` to see what it indexed, `GET /api/v1/songs?q=&sort=artist` to browse,
 and `GET /song/{chart_hash}.sng` to pull a song. Every endpoint is in [`docs/API.md`](docs/API.md).

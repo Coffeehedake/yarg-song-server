@@ -111,10 +111,49 @@ release:
         build "$cmd" windows amd64 "" ".exe"
       done
     - ls -l dist
+    # Turn the loose binaries into archives somebody can actually download: one
+    # per platform, each carrying BOTH binaries, a README, the config template
+    # and the licence, inside a folder named after itself. Twelve loose files in
+    # an expiring artifact is a build output, not a release.
+    #
+    # mkrelease is Go rather than `zip`/`tar` because this is a shell executor
+    # and neither tool is guaranteed to be on the host. "The packaging step
+    # failed because the runner lacks a binary" is worth designing out.
+    - go run ./cmd/mkrelease -dist dist -out release -version "$VERSION"
+    - ls -l release
+  artifacts:
+    # The archives, not dist/ - every binary in dist/ is already inside one, and
+    # publishing both would double what this keeps on a box whose array is
+    # already at 99%.
+    paths:
+      - release/
+    # Long enough to be useful, short enough not to accumulate forever on every
+    # commit to main. A TAGGED build is the one that keeps its artifacts: see
+    # release:tag below.
+    expire_in: 30 days
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: never
+    - when: always
+
+# The same build, for a tag, keeping its artifacts permanently.
+#
+# Two jobs rather than one with a conditional `expire_in`, because expire_in
+# does not take a variable and a release that silently expired would be
+# discovered by somebody trying to download it months later.
+#
+# This does NOT create a GitLab Release object - that needs `release-cli` on the
+# runner host, which is the gitlab-ce session's box rather than this project's
+# to change. The archives and their SHA256SUMS are attached to the tag's
+# pipeline and do not expire, which is the part that matters.
+release:tag:
+  extends: release
   artifacts:
     paths:
-      - dist/
-    expire_in: 1 week
+      - release/
+    expire_in: never
+  rules:
+    - if: '$CI_COMMIT_TAG'
 
 # The container image: one manifest covering linux/amd64 and linux/arm64.
 #

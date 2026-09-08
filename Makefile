@@ -24,7 +24,7 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -rf bin dist
+	rm -rf bin dist release
 
 ## release: every target platform the project promises to support
 release:
@@ -41,6 +41,11 @@ release:
 	GOOS=darwin  GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-darwin-arm64  $(SYNCPKG)
 	GOOS=windows GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o dist/$(BINARY)-windows-amd64.exe $(PKG)
 	GOOS=windows GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o dist/$(SYNC)-windows-amd64.exe $(SYNCPKG)
+
+## package: the downloadable archives - one per platform, both binaries, README,
+## config template, licence, launcher, plus SHA256SUMS. Run after `make release`.
+package: release
+	go run ./cmd/mkrelease -dist dist -out release -version $(VERSION)
 
 docker:
 	docker buildx build --platform linux/amd64,linux/arm64 -t yarg-song-server:$(VERSION) .
