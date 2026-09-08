@@ -264,6 +264,13 @@ Two things about that VM that cost time:
 
   The general rule this is an instance of: **`-Filter` is not a glob and not a regex.** When a
   delete is involved, list first, read the list, then delete by name.
+- **Never ask "is this directory empty?" with `ls -la … | head`.** `total N`, `.` and `..` are
+  three lines before any content, so `head -3` shows exactly what an empty directory shows.
+  Measured 2026-09-08, expensively: a registry storage directory read that way was reported as
+  empty, and the conclusion drawn from it — that every image in the GitLab-CE registry might be
+  gone — went into a handoff, two project messages and a status report before being retracted.
+  It held **84 GB** and twelve repositories, starting on line 4. Use `ls -A | wc -l`, or `du -sh`
+  when the answer should be a size.
 - **Git run from the mount cannot remove its own `.git/index.lock`** (same "Operation not
   permitted"), so a stale zero-byte lock is left behind and blocks the next commit. Check for
   a running `git` process, then remove it from PowerShell.
