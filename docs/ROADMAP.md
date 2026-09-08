@@ -1043,8 +1043,38 @@ working implementation plus two `git am`-ready bug fixes, rather than a proposal
 
 The point at which the server stops being one feature and becomes a platform.
 
-- Feature registry: each capability is opt-in and independently enable-able.
-- Config UI in the server app, so a user turns on only what they want.
+- ~~Feature registry: each capability is opt-in and independently enable-able.~~ **Built
+  2026-09-08.** `config.Resolved` now carries, alongside the settings, **where each one came
+  from** — `default`, `file` or `flag` — and `Features()` turns that into one ordered list of
+  capabilities. It feeds two consumers so they cannot disagree: the startup log, which now
+  reports **every** feature including the ones that are off, and `GET /api/v1/features`.
+
+  Two things this fixes that were not on anyone's list. **The server never named the config
+  file it read**, so an operator who edited a file the server never opened — wrong path, wrong
+  working directory, a bind mount that landed elsewhere — got a server behaving exactly as if
+  the file did not exist and saying nothing about it. And **a feature that was OFF logged
+  nothing at all**, so "off because you turned it off" and "off because nothing you wrote was
+  ever read" were the same silence. Both are the shape this project keeps paying for:
+  *detecting something and reporting nothing is indistinguishable from not detecting it.*
+
+  Provenance is recorded by the parser rather than derived by diffing the config before and
+  after, because a file setting a key to the value it already had is **still the file
+  speaking** — and that is precisely the case an operator asks about. A test pins it.
+
+  The registry is **descriptive, not the gate**: the route is still registered from the
+  resolved config, and a test asserts the registry and the routes agree in both directions,
+  because a page reading "check_uploads: enabled" and then getting a 404 turns a configuration
+  mistake into an apparent server bug. Red-proofed: breaking `Features()` fails tests in all
+  three packages.
+
+  Paths and the listen address are deliberately **absent** from the registry. They are settings,
+  not capabilities, and the endpoint is unauthenticated — which capabilities exist is already
+  discoverable, a server's filesystem layout is not. Asserted, because "just return the config"
+  is the obvious future shortcut.
+- Config UI in the server app, so a user turns on only what they want. **The read half exists**
+  (above); writing is not built and is not a small decision — an unauthenticated write surface
+  that toggles capabilities is a different animal from an unauthenticated read one, which is the
+  same reasoning that keeps `check_uploads` off by default.
 - Candidate modules: multi-user libraries and permissions, playlists/setlists shared across
   clients, scores and leaderboards, library health reporting.
 

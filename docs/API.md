@@ -33,6 +33,7 @@ it rather than incidental, so changing them breaks a shipped binary:
 | `GET` | `/healthz` | Liveness. Returns `ok`. |
 | `GET` | `/version` | The build's version string. |
 | `GET` | `/api/v1/library` | What was indexed, and what could not be. |
+| `GET` | `/api/v1/features` | Which optional capabilities are on, and why. |
 | `GET` | `/api/v1/songs` | Browse and search. |
 | `GET` | `/api/v1/songs/{chart_hash}` | Every package sharing a chart hash. |
 | `POST` | `/api/v1/have` | Bulk "what am I missing". |
@@ -60,6 +61,58 @@ differ whenever two packages share a chart.
 read. A library that quietly indexes 9,000 of 10,000 songs is indistinguishable from one that
 has 9,000 songs, and an operator has no way to find out which — so failures are surfaced here
 rather than logged once at start and forgotten.
+
+## `GET /api/v1/features`
+
+Every optional capability, whether it is on, and **which of the three configuration sources
+decided it**.
+
+```json
+{
+  "features": [
+    {
+      "name": "browse_ui",
+      "enabled": true,
+      "default": true,
+      "source": "default",
+      "description": "Phone-friendly page listing the library.",
+      "endpoint": "GET /",
+      "enable_with": "--browse-ui / browse_ui = yes"
+    },
+    {
+      "name": "check_uploads",
+      "enabled": false,
+      "default": false,
+      "source": "default",
+      "description": "Scan an uploaded archive and answer with the verdict, keeping nothing.",
+      "endpoint": "POST /api/v1/check",
+      "enable_with": "--check-uploads / check_uploads = yes"
+    }
+  ]
+}
+```
+
+`source` is `default`, `file` or `flag`. It is the field that earns this endpoint: *"check_uploads
+is off"* is a fact, while *"check_uploads is off and nothing you wrote mentions it"* tells an
+operator their config file was never read — the failure that otherwise costs an afternoon, because
+a file the server never opened produces a server that behaves exactly as if the file did not
+exist. The startup log now names the file it actually loaded for the same reason.
+
+`enable_with` is present whether the feature is on or off. The reader who needs it is the one
+looking at a feature that is **off**.
+
+**What is deliberately not here: the listen address, the library path and the data path.** Those
+are settings, not capabilities. This endpoint is unauthenticated like the rest, and while which
+capabilities exist is not a secret — a caller can already tell by fetching `/` or by watching
+`POST /api/v1/check` answer 404 — a server's filesystem layout is nobody's business on a LAN. That
+omission is load-bearing rather than an oversight to tidy up later by "just returning the config",
+and a test asserts it.
+
+`features` is always an array, never `null`.
+
+This is the read half of the config menu in [`ROADMAP.md`](ROADMAP.md) phase 4. A menu has to
+render the current state, and where that state came from, before anything can sensibly change it.
+**Nothing here writes**; changing a setting is still a config file or a flag and a restart.
 
 ## `GET /api/v1/songs`
 

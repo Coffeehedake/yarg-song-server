@@ -101,7 +101,7 @@ func main() {
 	given := map[string]bool{}
 	flag.Visit(func(f *flag.Flag) { given[f.Name] = true })
 
-	opt, err := resolve(configPath, flagged, given)
+	opt, err := resolveAll(configPath, flagged, given)
 	if err != nil {
 		log.Error("configuration", "err", err)
 		os.Exit(1)
@@ -122,38 +122,82 @@ func main() {
 // malformed file is fatal either way - a settings file the server could not
 // read is not a settings file it should guess around.
 func resolve(configPath string, flagged config.Config, given map[string]bool) (config.Config, error) {
-	cfg := config.Defaults()
+	res, err := resolveAll(configPath, flagged, given)
+	return res.Config, err
+}
+
+// resolveAll is resolve, and also records which of the three sources each
+// setting's value came from, and which config file was actually read.
+//
+// That record is what lets the server answer "why is this off?" rather than
+// only "this is off". An operator who edits a config file the server never
+// looked at gets a server behaving exactly as if the file did not exist, and
+// until the file it read is named in the log, those two are the same silence.
+//
+// Provenance is keyed by the CONFIG-FILE spelling (underscores), not the flag
+// spelling (hyphens), because the config file keys are the names the feature
+// registry and the API use. One vocabulary, as the config package already
+// insists.
+func resolveAll(configPath string, flagged config.Config, given map[string]bool) (config.Resolved, error) {
+	res := config.Resolved{
+		Config:     config.Defaults(),
+		Provenance: map[string]config.Source{},
+	}
+
+	// Two cases that look alike and are not: a config file NAMED on the command
+	// line and missing is a mistake and stops the server, while the
+	// conventional file simply not being there is the normal first run and is
+	// silent. A malformed file is fatal either way - a settings file the server
+	// could not read is not a settings file it should guess around.
+	load := func(path string, optional bool) error {
+		keys, err := config.LoadFileTracked(&res.Config, path)
+		if err != nil {
+			if optional && errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		res.File = path
+		for _, k := range keys {
+			res.Provenance[k] = config.FromFile
+		}
+		return nil
+	}
 
 	if configPath != "" {
-		if err := config.LoadFile(&cfg, configPath); err != nil {
-			return cfg, err
+		if err := load(configPath, false); err != nil {
+			return res, err
 		}
-	} else if err := config.LoadFile(&cfg, config.DefaultPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return cfg, err
+	} else if err := load(config.DefaultPath, true); err != nil {
+		return res, err
 	}
 
-	if given["listen"] {
-		cfg.Listen = flagged.Listen
+	flagKeys := map[string]string{
+		"listen":          "listen",
+		"songs":           "songs",
+		"data":            "data",
+		"pack-cache-max":  "pack_cache_max",
+		"browse-ui":       "browse_ui",
+		"check-uploads":   "check_uploads",
+		"check-max-bytes": "check_max_bytes",
 	}
-	if given["songs"] {
-		cfg.Songs = flagged.Songs
+	apply := func(name string, set func()) {
+		if !given[name] {
+			return
+		}
+		set()
+		res.Provenance[flagKeys[name]] = config.FromFlag
 	}
-	if given["data"] {
-		cfg.Data = flagged.Data
-	}
-	if given["pack-cache-max"] {
-		cfg.PackCacheMax = flagged.PackCacheMax
-	}
-	if given["browse-ui"] {
-		cfg.BrowseUI = flagged.BrowseUI
-	}
-	if given["check-uploads"] {
-		cfg.CheckUploads = flagged.CheckUploads
-	}
-	if given["check-max-bytes"] {
-		cfg.CheckMaxBytes = flagged.CheckMaxBytes
-	}
-	return cfg, nil
+
+	apply("listen", func() { res.Listen = flagged.Listen })
+	apply("songs", func() { res.Songs = flagged.Songs })
+	apply("data", func() { res.Data = flagged.Data })
+	apply("pack-cache-max", func() { res.PackCacheMax = flagged.PackCacheMax })
+	apply("browse-ui", func() { res.BrowseUI = flagged.BrowseUI })
+	apply("check-uploads", func() { res.CheckUploads = flagged.CheckUploads })
+	apply("check-max-bytes", func() { res.CheckMaxBytes = flagged.CheckMaxBytes })
+
+	return res, nil
 }
 
 func runPack(src, dst string) error {
@@ -198,7 +242,7 @@ func runScan(root string) error {
 	return err
 }
 
-func run(opt config.Config, log *slog.Logger) error {
+func run(opt config.Resolved, log *slog.Logger) error {
 	// A missing library is refused at start rather than served as an empty one.
 	// "The server is up and has no songs" and "the path is wrong" look
 	// identical from a client, and only one of them is the operator's fault.
@@ -271,20 +315,44 @@ func run(opt config.Config, log *slog.Logger) error {
 		// this small may be memory-backed, where a 128 MiB upload is a very
 		// different cost than it looks.
 		CheckDir: checkDir,
+		Features: opt.Features(),
 	}
-	// Say which of the two shapes this server is, once, at start. An operator
-	// who cannot find the page needs to know whether it is off or whether they
-	// are on the wrong port, and guessing between those costs more than a line
-	// of log.
-	if opt.BrowseUI {
-		log.Info("browse page enabled", "at", "/")
+
+	// Name the config file that was actually read, or say that none was.
+	//
+	// This is the one thing the old startup log could not tell you. A file the
+	// server never looked at - wrong path, wrong working directory, a container
+	// whose bind mount landed elsewhere - produces a server that behaves
+	// exactly as if the file did not exist, and says nothing about it. The
+	// operator then reads their own file, sees check_uploads = yes, and gets a
+	// 404. One line ends that.
+	if opt.File != "" {
+		log.Info("config file loaded", "path", opt.File)
 	} else {
-		log.Info("browse page disabled", "enable_with", "--browse-ui")
+		log.Info("no config file read; using defaults and flags only",
+			"looked_for", config.DefaultPath, "in", workingDir())
+	}
+	// Say what shape this server is, once, at start - EVERY optional
+	// capability, on or off, and which of the three sources decided it.
+	//
+	// Driven from the registry rather than written out by hand, so a capability
+	// added later cannot be silently absent from the log: the thing that
+	// enables it and the thing that reports it are now the same list. An
+	// operator who cannot find the page needs to know whether it is off or
+	// whether they are on the wrong port, and guessing between those costs more
+	// than a line of log. A feature that is OFF is exactly the case where the
+	// line is worth most, which is why "off" is logged too.
+	for _, f := range api.Features {
+		if f.Enabled {
+			log.Info("feature enabled", "feature", f.Name, "at", f.Endpoint, "source", f.Source)
+		} else {
+			log.Info("feature disabled", "feature", f.Name,
+				"enable_with", f.EnableWith, "source", f.Source)
+		}
 	}
 
 	if opt.CheckUploads {
-		log.Info("upload check enabled", "at", "POST /api/v1/check",
-			"max_bytes", opt.CheckMaxBytes, "staged_in", checkDir)
+		log.Info("upload check limits", "max_bytes", opt.CheckMaxBytes, "staged_in", checkDir)
 	}
 
 	srv := &http.Server{
@@ -337,4 +405,16 @@ func sweepStale(dir string) (int, error) {
 		}
 	}
 	return n, nil
+}
+
+// workingDir is only ever used to make a log line actionable: "I looked for
+// yarg-song-server.conf HERE" is the sentence that ends the hunt. It reports
+// "?" rather than failing, because not being able to name the directory must
+// never be the thing that stops a server starting.
+func workingDir() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "?"
+	}
+	return wd
 }

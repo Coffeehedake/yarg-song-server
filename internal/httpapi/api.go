@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/coffeehedake/yarg-song-server/internal/catalog"
+	"github.com/coffeehedake/yarg-song-server/internal/config"
 	"github.com/coffeehedake/yarg-song-server/internal/library"
 	"github.com/coffeehedake/yarg-song-server/internal/packcache"
 )
@@ -49,6 +50,13 @@ type Server struct {
 	// library, which is read-only in normal operation and on the live
 	// deployment is literally mounted ro.
 	CheckDir string
+	// Features is the resolved feature registry, served at GET /api/v1/features
+	// and used for the startup log. It is DESCRIPTIVE: the fields above are
+	// what actually gate the routes, and this says what those fields came out
+	// as and why. Keeping the gate and the description separate is deliberate -
+	// a Server built without a registry then reports nothing rather than
+	// reporting everything as off, which is the honest failure.
+	Features []config.Feature
 	Version  string
 	Log      *slog.Logger
 }
@@ -66,6 +74,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /version", s.versionInfo)
 	mux.HandleFunc("GET /api/v1/library", s.libraryInfo)
+	mux.HandleFunc("GET /api/v1/features", s.features)
 	mux.HandleFunc("GET /api/v1/songs", s.songs)
 	mux.HandleFunc("GET /api/v1/songs/{hash}", s.song)
 	mux.HandleFunc("POST /api/v1/have", s.have)
@@ -105,6 +114,29 @@ func (s *Server) libraryInfo(w http.ResponseWriter, r *http.Request) {
 		// exist would offer a drop zone against a server that answers 404.
 		"check_uploads": s.CheckUploads,
 	})
+}
+
+// features answers what this server can do, and why each capability is on or
+// off. It is the read half of the config menu ROADMAP phase 4 describes: a menu
+// has to render the current state, and where that state came from, before
+// anyone can sensibly change it.
+//
+// Unauthenticated, like everything else here, and that is a decision rather
+// than an oversight. It reveals no capability a caller could not already
+// determine by asking - the browse page is either served at "/" or it is not,
+// and POST /api/v1/check either exists or answers 404. What it does NOT carry
+// is the listen address, the library path or the data path: those are settings
+// rather than features, and a server's filesystem layout is nobody's business
+// on a LAN. That omission is load-bearing, not an oversight to be tidied up
+// later by "just returning the config".
+func (s *Server) features(w http.ResponseWriter, r *http.Request) {
+	// Never nil in the body: an empty list is a server that reports no optional
+	// capabilities, and "features": null reads as a broken endpoint.
+	list := s.Features
+	if list == nil {
+		list = []config.Feature{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"features": list})
 }
 
 // songsResponse is one page of a browse.

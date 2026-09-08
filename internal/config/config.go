@@ -87,15 +87,27 @@ const DefaultPath = "yarg-song-server.conf"
 // Only keys present in the file are touched, so the file overrides defaults and
 // leaves everything else alone. Flags are applied after this and therefore win.
 func LoadFile(c *Config, path string) error {
+	_, err := LoadFileTracked(c, path)
+	return err
+}
+
+// LoadFileTracked is LoadFile, and also reports which keys the file set.
+//
+// The error from a missing file is returned unwrapped so a caller can still
+// test it with errors.Is(err, fs.ErrNotExist) — the conventional file simply
+// not being there is a normal first run, and only the caller knows whether this
+// path was named on the command line or guessed at.
+func LoadFileTracked(c *Config, path string) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer f.Close()
-	if err := Apply(c, f); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+	keys, err := ApplyTracked(c, f)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	return nil
+	return keys, nil
 }
 
 // Apply parses `key = value` lines from r onto c.
@@ -105,6 +117,23 @@ func LoadFile(c *Config, path string) error {
 // something they did not, and the server behaving in a way its own config file
 // contradicts. Refusing to start is the kinder failure.
 func Apply(c *Config, r io.Reader) error {
+	_, err := ApplyTracked(c, r)
+	return err
+}
+
+// ApplyTracked is Apply, and also reports which keys the file actually set.
+//
+// It exists so the feature registry can say WHERE a value came from rather than
+// only what it is. Deriving that by diffing the config before and after would
+// be wrong in the case that matters most - a file setting a key to the value it
+// already had is still the file speaking, and a diff would report it as a
+// default.
+//
+// Apply delegates here rather than the two parsing separately. Two parsers for
+// one format agree for a while and then quietly stop, which is the failure this
+// project has already paid for in the packcache path and in both sync clients.
+func ApplyTracked(c *Config, r io.Reader) ([]string, error) {
+	var keys []string
 	sc := bufio.NewScanner(r)
 	line := 0
 	for sc.Scan() {
@@ -116,7 +145,7 @@ func Apply(c *Config, r io.Reader) error {
 
 		key, value, ok := strings.Cut(text, "=")
 		if !ok {
-			return fmt.Errorf("line %d: %q is not `key = value`", line, text)
+			return nil, fmt.Errorf("line %d: %q is not `key = value`", line, text)
 		}
 		key = strings.ToLower(strings.TrimSpace(key))
 		value = strings.TrimSpace(value)
@@ -134,32 +163,36 @@ func Apply(c *Config, r io.Reader) error {
 		case "pack_cache_max":
 			n, err := parseSize(value)
 			if err != nil {
-				return fmt.Errorf("line %d: pack_cache_max: %w", line, err)
+				return nil, fmt.Errorf("line %d: pack_cache_max: %w", line, err)
 			}
 			c.PackCacheMax = n
 		case "browse_ui":
 			b, err := parseBool(value)
 			if err != nil {
-				return fmt.Errorf("line %d: browse_ui: %w", line, err)
+				return nil, fmt.Errorf("line %d: browse_ui: %w", line, err)
 			}
 			c.BrowseUI = b
 		case "check_uploads":
 			b, err := parseBool(value)
 			if err != nil {
-				return fmt.Errorf("line %d: check_uploads: %w", line, err)
+				return nil, fmt.Errorf("line %d: check_uploads: %w", line, err)
 			}
 			c.CheckUploads = b
 		case "check_max_bytes":
 			n, err := parseSize(value)
 			if err != nil {
-				return fmt.Errorf("line %d: check_max_bytes: %w", line, err)
+				return nil, fmt.Errorf("line %d: check_max_bytes: %w", line, err)
 			}
 			c.CheckMaxBytes = n
 		default:
-			return fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max, browse_ui, check_uploads, check_max_bytes", line, key)
+			return nil, fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max, browse_ui, check_uploads, check_max_bytes", line, key)
 		}
+		keys = append(keys, key)
 	}
-	return sc.Err()
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return keys, nil
 }
 
 // parseBool accepts the spellings a person actually writes in a settings file.
