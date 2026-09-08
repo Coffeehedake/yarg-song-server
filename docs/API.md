@@ -34,6 +34,7 @@ it rather than incidental, so changing them breaks a shipped binary:
 | `GET` | `/version` | The build's version string. |
 | `GET` | `/api/v1/library` | What was indexed, and what could not be. |
 | `GET` | `/api/v1/features` | Which optional capabilities are on, and why. |
+| `PUT` | `/api/v1/features/{name}` | Turn one on or off. Off by default; see `config_writes`. |
 | `GET` | `/api/v1/songs` | Browse and search. |
 | `GET` | `/api/v1/songs/{chart_hash}` | Every package sharing a chart hash. |
 | `POST` | `/api/v1/have` | Bulk "what am I missing". |
@@ -108,11 +109,93 @@ capabilities exist is not a secret — a caller can already tell by fetching `/`
 omission is load-bearing rather than an oversight to tidy up later by "just returning the config",
 and a test asserts it.
 
-`features` is always an array, never `null`.
+`features` is always an array, never `null`. The response also carries `writable` — whether
+THIS caller may change a feature, not merely whether writing is switched on — plus
+`writable_reason` when it is false. A page that offered switches to a caller the server will
+refuse would turn a deliberate configuration choice into what looks like a broken button.
 
 This is the read half of the config menu in [`ROADMAP.md`](ROADMAP.md) phase 4. A menu has to
 render the current state, and where that state came from, before anything can sensibly change it.
 **Nothing here writes**; changing a setting is still a config file or a flag and a restart.
+
+## `PUT /api/v1/features/{name}`
+
+Turns one capability on or off, immediately, with no restart. Body:
+
+```json
+{ "enabled": true }
+```
+
+```json
+{
+  "feature": {
+    "name": "check_uploads",
+    "enabled": true,
+    "default": false,
+    "source": "default",
+    "description": "Scan an uploaded archive and answer with the verdict, keeping nothing.",
+    "endpoint": "POST /api/v1/check",
+    "enable_with": "--check-uploads / check_uploads = yes"
+  },
+  "persisted": false,
+  "make_permanent": "check_uploads = yes"
+}
+```
+
+**`persisted` is always `false` today, and saying so is the point.** The change is real and
+takes effect at once; it does not survive a restart. `make_permanent` is the exact line to put in
+the config file. A settings menu that silently forgets is a trap, so the response admits it rather
+than letting an operator find out later.
+
+### Who may call it
+
+Controlled by `config_writes`, which is **`off` by default**:
+
+| `config_writes` | Result |
+|---|---|
+| `off` | The route is not there. **404**, byte-identical to any unknown path. |
+| `local` | Only a caller from this machine. Anyone else gets **403**. |
+| `lan` | Any caller that can reach the port. |
+
+It is not a yes/no because "yes" would have had to mean `lan`, and on a home network that is every
+device including the ones nobody is thinking about. This server has no authentication, so `lan`
+means exactly what it says and is a choice an operator should make deliberately.
+
+**Locality is read from the socket's own `RemoteAddr`, never from `X-Forwarded-For` or
+`X-Real-IP`.** Those headers are supplied by the caller; trusting one would let anybody on the
+network claim to be local by typing a line, turning `local` into a suggestion. This server is
+documented as not belonging behind a reverse proxy, so there is no legitimate case where the socket
+lies. A test asserts the spoof fails.
+
+### What can be changed
+
+Only capabilities: `browse_ui` and `check_uploads`. Everything else answers 404 — paths, the listen
+address and cache sizes are settings rather than features, and the registry has never carried them.
+
+**`config_writes` itself is not writable**, and answers 403 with that reason. A write surface that
+can widen its own access has no bound at all: one call turning `local` into `lan` and the "only from
+this machine" promise is gone, made by whoever was already inside it. Who may configure this server
+stays a decision made at the machine, in the file.
+
+### A disabled feature is absent, not forbidden
+
+Every optional capability answers **404** when it is off, and that 404 is byte-for-byte the one Go's
+mux sends for a path that does not exist — same status, same body, same content-type. A 403 would
+tell the caller the feature exists, which is a different fact than the one they asked for.
+
+This used to be true by construction: the route was simply never registered. A feature that can be
+switched on at runtime cannot work that way, because a route that does not exist cannot be switched
+on, so the routes are now always registered and the handlers answer instead. The observable contract
+is unchanged and a test compares the two responses rather than trusting that it is.
+
+### Errors
+
+| Status | When |
+|---|---|
+| 400 | Body is not JSON, or `enabled` is missing. Absent and `false` are different intents, and a missing field must not silently disable something. |
+| 403 | The caller is not permitted, or the name is `config_writes`. |
+| 404 | Writing is off, or the name is not a capability. |
+
 
 ## `GET /api/v1/songs`
 

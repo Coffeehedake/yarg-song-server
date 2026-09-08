@@ -143,6 +143,11 @@ archives packed from loose folders, and must be writable.
 
 **It is unauthenticated and read-only. Run it on your LAN, not on the internet.**
 
+Features can also be turned on and off from the browse page itself, without a restart, when
+`config_writes` is set to `local` (this machine) or `lan` (anyone who can reach the port).
+**It is `off` by default**, it can never widen its own access, and a change is not yet written
+back to the config file — the server tells you the line to add. See [`docs/API.md`](docs/API.md).
+
 One optional endpoint accepts an upload — `POST /api/v1/check` scans an archive and tells you
 whether it would work, keeping nothing. It is **off by default**; see
 [`docs/ADR-005`](docs/ADR-005-upload-check.md) for why that differs from the browse page, which

@@ -1071,10 +1071,42 @@ The point at which the server stops being one feature and becomes a platform.
   not capabilities, and the endpoint is unauthenticated — which capabilities exist is already
   discoverable, a server's filesystem layout is not. Asserted, because "just return the config"
   is the obvious future shortcut.
-- Config UI in the server app, so a user turns on only what they want. **The read half exists**
-  (above); writing is not built and is not a small decision — an unauthenticated write surface
-  that toggles capabilities is a different animal from an unauthenticated read one, which is the
-  same reasoning that keeps `check_uploads` off by default.
+- ~~Config UI in the server app, so a user turns on only what they want.~~ **Built 2026-09-08.**
+  `PUT /api/v1/features/{name}` changes a capability with no restart, and the browse page carries a
+  settings panel with a switch per feature. That closes the last clause of goal 1.
+
+  **`config_writes = off | local | lan`, default `off`.** Not a bool, and that is the decision
+  worth keeping: "yes" would have had to mean `lan`, and on a home network that is every device
+  including the ones nobody is thinking about. This server has no authentication, so `lan` means
+  exactly what it says and belongs to an operator who chose it on purpose. `local` — a settings
+  page that works at the machine and not from a phone — is the useful middle.
+
+  Three properties, each asserted rather than assumed:
+
+  - **A disabled feature is still ABSENT, not forbidden.** That used to be true by construction:
+    the route was never registered. A runtime toggle cannot work that way, because a route that
+    does not exist cannot be switched on, so the routes are always registered now and the handlers
+    answer with `http.NotFound`. The observable contract is unchanged and only the mechanism moved.
+    The test compares a disabled feature's WHOLE response — status, body, content-type — against a
+    path that genuinely does not exist. A status-only check would have passed against a JSON error
+    body, which would still have told the caller the feature was there.
+  - **The write surface cannot widen itself.** `config_writes` is not writable. One call turning
+    `local` into `lan` would end the "only from this machine" promise, made by whoever was already
+    inside it.
+  - **Locality comes from `RemoteAddr`, never `X-Forwarded-For`.** A header the caller supplies
+    would make `local` a suggestion: anybody on the LAN types one line and is treated as sitting at
+    the machine. Red-proofed — trusting the header fails the test.
+
+  **Nothing is persisted yet, and the response says so** (`persisted: false`) along with the exact
+  config line to write. A settings menu that silently forgets is a trap. Writing an operator's
+  commented config file in place is its own increment with its own risk, and is deliberately not
+  bundled in here.
+
+  The page **asks whether it may write** rather than assuming, the same rule as the drop zone, and
+  re-reads the server after a change rather than trusting what it just sent. Verified in a real
+  browser both ways: with `local`, clicking the page's own switch flipped the server and the drop
+  zone appeared with no reload; at the default, the panel showed state, offered **zero** switches,
+  and a PUT from that page answered 404.
 - Candidate modules: multi-user libraries and permissions, playlists/setlists shared across
   clients, scores and leaderboards, library health reporting.
 
