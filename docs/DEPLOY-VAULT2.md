@@ -404,3 +404,47 @@ concurrently with packing. The fix is covered by
 single archive to provoke it at all. **A green deployment here is not evidence about the
 race.** The place the two conditions actually meet is a Pi with a small card and a large
 library, and that is still unmeasured on real hardware.
+
+## Second deployment, 2026-09-08 — `a5f98c4` to `3f80da0`
+
+The live server had drifted a day behind `main`, so it was missing the browse page's scan-health
+view among other things. Updated in place, verified rather than assumed.
+
+**The image tag is the EIGHT-character short sha**, which is the thing most likely to trip
+somebody up: `3f80da0ad757…` publishes as `:3f80da0a`, not `:3f80da0`. A seven-character pull
+fails with `manifest unknown`, which reads like a missing image rather than a typo.
+
+**The old container's configuration was read, not recalled.** `docker inspect` gave the exact
+`Cmd`, port bindings, restart policy and mounts, and the new container was created from those
+rather than from the example earlier in this document. An example in a doc is a record of what was
+run once, not a description of what is running now.
+
+```bash
+docker pull registry.badassium.com/fatalexception/yarg-song-server:3f80da0a
+docker rename yarg-song-server yarg-song-server-prev && docker stop yarg-song-server-prev
+docker run -d --name yarg-song-server --restart unless-stopped -p 8099:8080 \
+  -v /mnt/cache/appdata/yarg-song-server/songs:/songs:ro \
+  -v /mnt/cache/appdata/yarg-song-server/data:/data \
+  registry.badassium.com/fatalexception/yarg-song-server:3f80da0a \
+  --songs /songs --data /data --listen :8080
+```
+
+**The previous container is renamed and stopped, not deleted.** Rolling back is
+`docker rm yarg-song-server && docker rename yarg-song-server-prev yarg-song-server && docker start
+yarg-song-server`. Delete it once the new one has been trusted for a while.
+
+### Verified after the swap
+
+| Check | Result |
+|---|---|
+| `/version` | `3f80da0` — the image is the commit it claims to be |
+| Startup log | `songs=23 distinct_charts=23 duplicate_packages=0 problems=0 took=19ms` |
+| Browse page carries the health machinery | all four markers present |
+| Browse page still self-contained | **0** external references |
+| A real song downloads | `200`, 8,471 bytes, begins `SNGPKG` |
+| `/nope` | `404` — the root is still an exact match, not a catch-all |
+
+The last two matter more than they look. A deployment that serves a page but not a song is a
+deployment that passes a health check and fails a player; and the `GET /{$}` versus `GET /`
+distinction is the kind of thing an image rebuild could quietly undo, turning every 404 into HTML
+that a sync client would try to parse as a `.sng`.
