@@ -1429,6 +1429,73 @@ Can be picked up at any time; does not block the server.
 - **Graphics** — general rendering and visual improvements.
 - Both are ordinary upstream contributions: fork, branch off `dev`, PR to `dev`.
 
+### Remote queue — upstream issue #860, built 2026-09-09 (fork `4973e679`)
+
+[#860](https://github.com/YARC-Official/YARG/issues/860) asks for *"remote Library Search/Queue
+management from a Webpage whilst YARG is running"* — karaoke, couch participation, parties. Open
+since August 2024, four hearts, and one comment pointing at a Discord proposal that adds up/down
+votes.
+
+**Most of it already existed, which is why the change is small.** Measured before writing anything:
+
+| What #860 needs | What YARG already has |
+|---|---|
+| A queue | `Playlist` — `AddSong`, `RemoveSong`, `MoveSongUp`, `MoveSongDown` |
+| A setlist being built | `MusicLibraryMenu.ShowPlaylist` (ephemeral), with Add/Start already in the UI |
+| A queue during play | `GlobalVariables.State.ShowSongs` + `ShowIndex`, advanced by the pause menu |
+| Search | `SortString.SearchStr`, the same normalised text the library matches on |
+| A background network service | `DataStreamController`'s thread + cancellation pattern |
+| Main-thread marshalling | `UnityMainThreadCallback.QueueEvent`, already trusted by the audio callbacks |
+| **An HTTP listener** | **nothing — there is none anywhere in the shipped client** |
+
+So the build was the listener, the page, and the seams. Four new files, three public methods on
+`MusicLibraryMenu`, two settings lines. **No scene, prefab or asset changes**, which keeps the
+diff against upstream small if this ever becomes a PR.
+
+**`HttpListener`, and that was measured rather than reasoned about.** On stock .NET for Windows it
+is backed by http.sys, where binding anything but loopback needs an administrator or a URL ACL —
+a trap that fails only on players' machines, after the feature looks finished. Unity ships Mono's
+managed implementation: `Assets/Editor/HttpListenerProbe.cs` binds `127.0.0.1`, `+` and `*`, drives
+a real request through each, and all three pass with no elevation (Mono 6.13.0, Unity 6000.3.5f2).
+
+**The part that would have silently not worked: there are two queues.** In the menu it is
+`ShowPlaylist`; once the setlist starts, gameplay runs off a *snapshot* in `State.ShowSongs`.
+Adding to the wrong one is indistinguishable from success to the guest — the request returns 200
+and the song never plays. Adds are routed by what is actually happening, and when neither queue is
+reachable the song is held and flushed into the setlist as soon as the menu exists again. Edits to
+a running show refuse to touch the current song or anything behind it, because reordering those
+would leave `ShowIndex` pointing at a different song.
+
+**Security follows this project's own `config_writes` shape**: off by default; three values rather
+than a bool, because "on" would have had to mean *anybody on the wifi*; `Local` binds loopback so
+it is unreachable rather than reachable-and-refusing; locality comes from the socket's remote
+address and **never** from a header; and LAN mode refuses non-private addresses, so an accidental
+port-forward is a 403 rather than the internet queueing songs on somebody's TV.
+
+**17 checks over real HTTP** in `Assets/Editor/RemoteQueueSmokeTest.cs`, red-proofed with one
+break — making `Local` bind `+` fails exactly one assertion, *"Local: the LAN address does NOT
+answer"*, and nothing else.
+
+**The test found two real things.** One was the harness: it called the requests from
+`EditorApplication.update` while the main-thread pump ran on the same callback, so the two
+marshalling endpoints deadlocked and looked broken — they were fine. The other is in the shipped
+code: this machine's only non-loopback address is Tailscale (`100.79.53.15`), which is CGNAT and
+not RFC1918, so LAN mode refused the player's own network. `100.64.0.0/10` is now allowed.
+
+**Not proven, and stated rather than left to be assumed:**
+
+- Batchmode has no menu scene and no song library, so **the two-queue routing is not exercised**.
+  Until somebody plays it, "a queued song appears in the setlist" is inference from the code.
+- The `HttpListener` result is the **editor**, which is Mono. A shipped player is IL2CPP with
+  managed stripping — a different harness, and it needs its own measurement.
+- The smoke test pumps `UnityMainThreadCallback`'s queue from the editor loop rather than from
+  `MonoBehaviour.Update`, so a defect that only appears under the real update loop would not show.
+
+**This is a fork prototype, not a PR.** Upstream's `CONTRIBUTING.md` says to raise a feature on
+Discord first, and the tier decides whether a PR is read at all; #860's comment points at a
+Feb 2025 Discord proposal, so somebody may already be building it. Asking is the next step, and
+now there is something to show — which was Jay's condition for making contact.
+
 ---
 
 ## Blockers
