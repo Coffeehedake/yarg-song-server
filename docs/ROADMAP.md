@@ -1544,6 +1544,46 @@ falls back to defaults.
 The queue plumbing these votes drive — insert-at-top, reorder, play-next during a show — is still
 **inference**, for the same reason as increment 1: no menu scene and no library in batchmode.
 
+#### Increment 4 — the vote needs a moment to happen in (fork `d2d52fd0`)
+
+Jay's observation, and it undercut an argument from increment 3: **while a song is playing,
+everybody's hands are on an instrument.** Nobody is holding a phone. So voting is not a continuous
+background activity — it happens in the gap between songs or it does not happen. Which also means a
+countdown belongs here after all; a vote with a dedicated window wants a clock, where a vote running
+under a song did not.
+
+**What it turned out not to need, measured rather than assumed.** The instruction was to stop the
+setlist progressing until the vote concludes. **YARG does not progress on its own** —
+`ScoreScreenMenu` advances only when a human presses Green, with no auto-advance and no timer
+anywhere in it. There is nothing automatic to block.
+
+What there *is* to prevent is the habitual press: somebody hits Green from muscle memory before
+anyone has voted, and the suggestion is silently discarded. So while a vote is open the button reads
+*"Voting… (press to settle)"*, **the first press settles the vote and redraws rather than
+advancing**, the second press is an ordinary Continue, and if nobody presses anything the window
+closes itself after 30 s. Two independent ways out, so a room where somebody wandered off cannot be
+stuck — and the console keeps the last word, because it is somebody's living room.
+
+**On expiry** the leading suggestion wins if the room actually wanted it. One already at the second
+vote outranks a higher-scoring suggestion that has not got there yet — the room has spoken about it
+once — and its own play-next/setlist lead decides where it lands, a tie going to the setlist as the
+less disruptive option. Suggestions nobody wanted are dropped; **everything else survives to the
+next gap**, because throwing away cast votes teaches people not to bother.
+
+**The insert point needed no change.** At the score screen `ShowIndex` is still the song just
+played, and Continue does `ShowIndex++` before loading — so inserting at `ShowIndex + 1`, which a won
+play-next vote already did, is exactly "the song that plays when Continue is pressed".
+
+Still no prefab or scene changes: the button label is a `NavigationScheme` entry, so the voting
+state is one new key in `en-US.json`, and `Update()` goes on a `MonoBehaviour` that already exists.
+
+**46 checks, 0 failures.** One defect fixed before committing rather than after: `ShouldHold()` was
+calling `Suggestions()`, which builds and sorts a list — from `Update`, sixty times a second for the
+length of the window. It now asks a count.
+
+The hook itself — does the button really relabel, does the first press really settle without
+advancing — is **inference** until somebody plays a setlist. Batchmode has no score screen.
+
 ---
 
 ## Blockers
