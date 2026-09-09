@@ -1496,6 +1496,54 @@ Discord first, and the tier decides whether a PR is read at all; #860's comment 
 Feb 2025 Discord proposal, so somebody may already be building it. Asking is the next step, and
 now there is something to show — which was Jay's condition for making contact.
 
+#### Increment 3 — the room votes (fork `997c2330`)
+
+#860's one comment points at a Discord proposal that *"adds up/down votes to the queue"*. This is
+that, plus the half Jay asked for: **anybody can put a song forward from the library, and the room
+decides whether it gets in at all.**
+
+Two stages, because suggesting and queueing are different things:
+
+1. Somebody searches and **suggests**. It does not enter the queue. Suggesting counts as the
+   suggester's own upvote — nobody suggests a song they would not vote for, and making them tap
+   twice just produces a board of zero-score suggestions.
+2. At the threshold it is **promoted**, and a **second vote** decides where it lands: play next, or
+   on the end of the setlist. First side to the threshold wins.
+
+**First-to-threshold rather than a countdown.** A timer means a clock running against game state,
+and *"we are still waiting for the vote to close"* is a worse party than *"three people tapped, it
+is happening"*.
+
+**Play next, not play now.** The request said "play it now"; this plays it *next*. Cutting off
+whoever is mid-song is not a party feature. That is a deliberate reading of the request, and a
+one-line change if it is the wrong one.
+
+Songs already queued can be voted on, and the unplayed queue reorders by score. **The sort is
+stable, and that is load-bearing**: with no votes every score is zero, so the order comes back
+untouched and a hand-arranged queue survives until somebody actually votes. Only the unplayed part
+moves — during a show everything up to and including `ShowIndex` is left alone, because `ShowIndex`
+is a position rather than a reference.
+
+**Voting state touches none of YARG's data model** — no `Playlist` change, no save format, nothing
+persisted; a restart starts a fresh room. Small diff, and a party's argument does not outlive the
+party. Identity is a random id the page keeps in the browser: enough to stop a double-tap and one
+phone voting twenty times, not enough to stop somebody clearing storage — which is the right amount
+of ceremony for a living room.
+
+**33 checks, 0 failures.** The 12 new ones are the valuable ones: unlike the queue plumbing, the
+voting rules are plain data with no Unity in them, so batchmode can check them properly — one voter
+cannot vote twice, changing your mind moves your vote, the threshold promotes exactly once, the
+second vote settles only at the threshold, switching sides moves the vote, and the sort is stable
+without votes and ordered with them.
+
+**The test found a real defect again.** Every voting endpoint was a 500 in batchmode because it read
+`SettingsManager.Settings` unguarded — and the mode callback deliberately runs when a *saved*
+setting is loaded, so the listener really can be answering requests before settings exist. It now
+falls back to defaults.
+
+The queue plumbing these votes drive — insert-at-top, reorder, play-next during a show — is still
+**inference**, for the same reason as increment 1: no menu scene and no library in batchmode.
+
 ---
 
 ## Blockers
