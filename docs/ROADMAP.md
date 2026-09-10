@@ -1584,11 +1584,65 @@ length of the window. It now asks a count.
 The hook itself — does the button really relabel, does the first press really settle without
 advancing — is **inference** until somebody plays a setlist. Batchmode has no score screen.
 
+#### Increment 5 — a real phone app (new repo `yarg-remote`, `a18c3b8`)
+
+Jay: *"build an iOS and Android app instead of the web app"*, then *"check how we did this for the
+ShopStack app"*. So it follows the house pattern that is already in daily use on this workstation:
+**Capacitor 8 + React 18 + TypeScript + Vite**, a bundled web UI inside a native shell, with the
+server address typed into the app once and remembered.
+
+"Instead of the web app" turned out to be less of a rewrite than it sounds, because Capacitor
+*wraps* a web app — the built-in page the server already serves stays exactly where it is, for
+anyone who would rather open a browser.
+
+| | |
+|---|---|
+| GitLab | `fatalexception/yarg-remote`, project 57 |
+| Mirror | `github.com/Coffeehedake/yarg-remote`, GitLab mirror 13, verified with `git ls-remote` |
+| Tabs | Find / Up next / Suggestions, matching the built-in page |
+| Tests | 21 unit tests green; `tsc` and `vite build` clean |
+
+**Two things are load-bearing and neither is visible at a call site.** `X-Yarg-Remote` goes on
+*every* request including reads — losing it would break every write while every read kept working,
+which is the worst possible failure to debug on a phone at a party, so a test asserts it.
+And `CapacitorHttp` routes `fetch()` through the native stack, so requests carry
+`capacitor://localhost` or `http://localhost` as their origin; the server allows exactly those
+(`IsNativeShellOrigin`), and that allowance is what makes the app work at all.
+
+**Discovery is a follow-on, not a prerequisite** — a claim this session made and then withdrew.
+The argument was that the server needs mDNS before an app is usable. ShopStack Mobile has **no
+discovery at all**: its server URL is typed into Settings, and it is in daily use. Manual entry is
+the proven house pattern; mDNS makes the connect screen optional and nothing more.
+
+**What is NOT verified, and it is more than usual:**
+
+- **Nothing has run against a live console.** Every route, method and query parameter in the app
+  was read off the C# by hand and asserted against a stub we wrote ourselves, which can only
+  confirm that the client sends what we *think* the server wants. The instrument for settling it
+  exists — `Editor.RemoteQueueHost` in the fork (`f33483e0`) holds a real listener up, and
+  `yarg-remote/src/live.test.ts` drives the app's own client against it — and **has never been
+  run**, because the Unity editor will not start on this workstation. See Blockers.
+- **No `cap add` has been run.** iOS and Android are untested and the two cleartext exceptions
+  (`NSAllowsLocalNetworking`; an Android network-security-config) are written down in the repo's
+  README rather than applied.
+- Codemagic is not wired up.
+
 ---
 
 ## Blockers
 
-**None.**
+**The Unity editor will not start on ENG-1** (2026-09-10, OPEN, needs Jay).
+`UnityPackageManager.exe` fails to come up — *"Could not connect to IPC stream Upm-&lt;pid&gt; after
+30.0 seconds"* — on five attempts across three spawn paths. `upm.log` shows it last started
+successfully at 04:25 UTC that day and has had no entry since, so our launches never reach it. No
+Unity process is running to be holding it, `-noUpm` is not a way around it (it disables real
+dependencies and dies on `TMP_Text`), and reading the Defender exclusion list needs an
+administrator.
+
+**What it costs:** every editor harness in the fork. `RemoteQueueSmokeTest`, `RemoteQueueHost`,
+and the phone app's contract test are all blocked, so anything asserted about the remote queue's
+HTTP surface after 04:25 UTC on 2026-09-10 is inference from source rather than measurement.
+Nothing in the server track (phases 1–2) is affected.
 
 ## Toolchain and credentials, as measured
 

@@ -19,16 +19,37 @@ config menu in the server app.
 
 ## Repos and where they push
 
-Two repos live under this folder. Both are personal, so they follow the personal chain.
+Three repos live under this folder. All are personal, so they follow the personal chain.
 
 | Folder | GitLab (origin, source of truth) | Public mirror |
 |---|---|---|
 | `yarg-song-server/` | `gitlab.badassium.com/fatalexception/yarg-song-server` (project 53) | `github.com/Coffeehedake/yarg-song-server` (GitLab mirror 10) |
 | `yarg/` | `gitlab.badassium.com/fatalexception/yarg` (project 55) | `github.com/Coffeehedake/yarg` (GitLab mirror 11) |
+| `yarg-remote/` | `gitlab.badassium.com/fatalexception/yarg-remote` (project 57) | `github.com/Coffeehedake/yarg-remote` (GitLab mirror 13) |
 
-Both mirrors are one-way, all branches, divergent refs not kept, and were verified end to end on
-2026-09-05. `Coffeehedake/yarg` is a real GitHub **fork** of `YARC-Official/YARG` — the only shape
-GitHub accepts an upstream pull request from.
+All three mirrors are one-way, all branches, divergent refs not kept. 10 and 11 were verified end
+to end on 2026-09-05; 13 on 2026-09-10. `Coffeehedake/yarg` is a real GitHub **fork** of
+`YARC-Official/YARG` — the only shape GitHub accepts an upstream pull request from.
+
+- **`yarg-remote/` is the phone app** (Capacitor + React + TypeScript) for the in-game remote
+  song queue, which is upstream issue #860. Its server is inside the fork, at
+  `yarg/Assets/Script/Integration/RemoteQueue/` — so a change to a route or a DTO there is a
+  change to this repo's contract, and `yarg-remote/src/types.ts` is a transcription of
+  `RemoteQueueBridge.cs` rather than a design of its own. Read `yarg-remote/CLAUDE.md` first.
+
+**A NEW MIRROR DOES NOT RUN UNTIL SOMETHING PUSHES.** Mirror 13 was created after the first push
+to project 57 and therefore sat at `update_status=none` with an empty `last_error` — which looks
+exactly like a healthy mirror that has simply never had anything to do. Force it with
+`POST /projects/:id/remote_mirrors/:mirror_id/sync` (GitLab 16.7+). The project-level
+`POST /projects/:id/mirror/push` is for PULL mirroring and 404s here, which reads like a
+permissions problem and is not one.
+
+**And verify the far end with `git ls-remote`, not the GitHub REST API.** Straight after mirror 13
+reported `finished`, `GET /repos/Coffeehedake/yarg-remote/commits/main` answered **409 "Git
+Repository is empty"** while `git ls-remote` showed `refs/heads/main` at the correct commit. The
+REST repository record had not caught up with a push that had already landed. Believing the API
+there would have meant re-running a sync that had worked — the same family as "a directory
+listing under a service's storage is not that service's inventory", further down this file.
 
 Rules:
 
@@ -63,10 +84,14 @@ Rules:
   song library; those are worth revisiting, since this project has one. Do not report "YARG.Core
   is green" as a baseline; it is not, and a new failure would hide in that assumption.
 
-  **The Unity Editor is NOT installed, and is not needed yet.** `ProjectSettings/ProjectVersion.txt`
-  pins **6000.3.5f2**; installing it means Unity Hub, several GB, and a signed-in Unity account,
-  so it needs Jay. It is only required for the game project itself — scenes, UI, play mode — not
-  for the library where the interesting work starts.
+  **The Unity Editor IS now installed** at `C:\Program Files\Unity\Hub\Editor\6000.3.5f2`,
+  matching the pin in `ProjectSettings/ProjectVersion.txt`. *(This paragraph used to say it was
+  not installed and not needed yet; that is stale.)* **It does not currently start** — see the
+  UPM gotcha below, which blocks every editor harness in the fork.
+
+  **`ProjectSettings/ProjectSettings.asset` must be `git checkout --` reverted after EVERY
+  editor run**, including ones that die: Unity re-adds a VisionOS icon block whether or not the
+  run got anywhere.
 - **You do not need a GitHub credential for either repo, and should not go looking for one.**
   GitLab owns the mirror credential and pushes for us. Measured 2026-09-06: mirror 10 on
   project 53 last succeeded at `20:42:42`, the same minute as that push to origin, with an
@@ -178,6 +203,8 @@ All per-user under `%LOCALAPPDATA%\Programs\`, no elevation, each deletable as o
 | **YARG v0.15.0** | `Programs\YARG\YARG.exe` | The oracle. The only thing that can say whether a package we produced is really acceptable |
 | **SngCli v0.3.0** | `Programs\sngcli\win-x64\SngCli.exe` | The reference `.sng` encoder/decoder |
 | Go 1.27.0, mingw-w64 GCC 16.2.0 | `Programs\go`, `Programs\mingw64` | Toolchain; the GCC is what makes `go test -race` work at all |
+| **Unity 6000.3.5f2** | `C:\Program Files\Unity\Hub\Editor\6000.3.5f2` | The fork's pinned editor. Installed since the note above was written — but see the UPM gotcha, it does not currently start |
+| Node 24.15.0, npm 11.12.1 | system | `yarg-remote`. **Install with `--include=dev`** — see below |
 
 **Running the oracle** — worth knowing, because it has found bugs no unit test did:
 
@@ -192,6 +219,44 @@ go run ./cmd/mkcorpus -out $env:USERPROFILE\yarg-test\corpus
 strings show which titles it accepted. That loop found three real bugs our tests had passed.
 
 ## Gotchas
+
+### The Unity editor will not start on this workstation (2026-09-10, OPEN)
+
+Every launch dies the same way, about 30 seconds in:
+
+```
+[Package Manager] Could not connect to IPC stream "Upm-<pid>" after 30.0 seconds.
+[Package Manager] Failed to start the Unity Package Manager local server process ...
+                  blocked by Windows Defender or any other anti-virus configuration
+```
+
+Five attempts across three spawn paths — detached `Start-Process`, foreground child, and
+`-noUpm` — all fail. What is known:
+
+- `%LOCALAPPDATA%\Unity\Editor\upm.log` shows the UPM server **last started successfully at
+  04:25 UTC on 2026-09-10** and has had no entry since. Our launches never reach it; it is not
+  starting and failing, it is not starting.
+- No `Unity.exe`, `UnityPackageManager.exe` or `UnityShaderCompiler.exe` is running, so nothing
+  is holding the port or the named pipe.
+- **`-noUpm` is not a way around it.** It gets past this and then fails on `TMP_Text` — the
+  packages it disables (TextMeshPro among them) are real dependencies of the fork.
+- Reading the Defender exclusion list needs an administrator, so the obvious next check needs
+  Jay.
+
+**The consequence, and it is the expensive part:** the fork's editor harnesses cannot run.
+`RemoteQueueSmokeTest`, the new `RemoteQueueHost`, and the phone app's contract test
+(`yarg-remote/src/live.test.ts`) are all blocked on this. Anything asserted about the remote
+queue's HTTP surface since 04:25 UTC on 2026-09-10 is inference from source, not measurement.
+
+### `npm install` here installs NO build tooling and exits 0
+
+`npm config get omit` returns `dev` on this machine, from the **global** npmrc
+(`%APPDATA%\npm\etc\npmrc`), not from any project. So a plain `npm install` in `yarg-remote`
+reports "added 10 packages", exits 0, and leaves no vite, no typescript and no vitest — 8
+directories in `node_modules` instead of 316. Nothing says the word "dev".
+
+The failure surfaces much later, as `'vite' is not recognized`, which reads like a broken
+`package.json` or a corrupt install. **Use `npm install --include=dev`.**
 
 ### The folder name has spaces
 
