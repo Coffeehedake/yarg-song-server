@@ -86,8 +86,8 @@ Rules:
 
   **The Unity Editor IS now installed** at `C:\Program Files\Unity\Hub\Editor\6000.3.5f2`,
   matching the pin in `ProjectSettings/ProjectVersion.txt`. *(This paragraph used to say it was
-  not installed and not needed yet; that is stale.)* **It does not currently start** — see the
-  UPM gotcha below, which blocks every editor harness in the fork.
+  not installed and not needed yet; that is stale.)* **Launch it with `Win32_Process.Create`** —
+  see the gotcha below, or every run dies blaming anti-virus.
 
   **`ProjectSettings/ProjectSettings.asset` must be `git checkout --` reverted after EVERY
   editor run**, including ones that die: Unity re-adds a VisionOS icon block whether or not the
@@ -220,9 +220,9 @@ strings show which titles it accepted. That loop found three real bugs our tests
 
 ## Gotchas
 
-### The Unity editor will not start on this workstation (2026-09-10, OPEN)
+### Unity batchmode must be launched with `Win32_Process.Create`
 
-Every launch dies the same way, about 30 seconds in:
+Not `Start-Process`, and the failure blames the wrong thing:
 
 ```
 [Package Manager] Could not connect to IPC stream "Upm-<pid>" after 30.0 seconds.
@@ -230,23 +230,32 @@ Every launch dies the same way, about 30 seconds in:
                   blocked by Windows Defender or any other anti-virus configuration
 ```
 
-Five attempts across three spawn paths — detached `Start-Process`, foreground child, and
-`-noUpm` — all fail. What is known:
+**It is not anti-virus.** A process started from a Cowork bridge call inherits a **job object**,
+and that job object kills Unity's Package Manager *child*. Detach the launch and it works:
 
-- `%LOCALAPPDATA%\Unity\Editor\upm.log` shows the UPM server **last started successfully at
-  04:25 UTC on 2026-09-10** and has had no entry since. Our launches never reach it; it is not
-  starting and failing, it is not starting.
-- No `Unity.exe`, `UnityPackageManager.exe` or `UnityShaderCompiler.exe` is running, so nothing
-  is holding the port or the named pipe.
-- **`-noUpm` is not a way around it.** It gets past this and then fails on `TMP_Text` — the
-  packages it disables (TextMeshPro among them) are real dependencies of the fork.
-- Reading the Defender exclusion list needs an administrator, so the obvious next check needs
-  Jay.
+```powershell
+$cmd = '"' + $unity + '" -batchmode -nographics' +
+       ' -projectPath "' + $proj + '"' +
+       ' -logFile "' + $log + '"' +
+       ' -executeMethod Editor.RemoteQueueHost.RunLocal'
+Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmd }
+```
 
-**The consequence, and it is the expensive part:** the fork's editor harnesses cannot run.
-`RemoteQueueSmokeTest`, the new `RemoteQueueHost`, and the phone app's contract test
-(`yarg-remote/src/live.test.ts`) are all blocked on this. Anything asserted about the remote
-queue's HTTP surface since 04:25 UTC on 2026-09-10 is inference from source, not measurement.
+Quote the project path inside the command line — the folder name has spaces, and unquoted it
+becomes three arguments that Unity resolves against `C:\Windows\System32`.
+
+**`-noUpm` is not a workaround.** It gets past this and then dies on `TMP_Text`: the packages it
+disables are real dependencies of the fork.
+
+**This cost an hour on 2026-09-10, and it was already written down** — in the Cowork project-state
+doc, in almost these words, which was not read first. Five failed launches, a "blocker" filed
+against the whole editor track, and a wrong cause (Defender) published in a commit message and a
+roadmap entry, all retracted the moment the existing note was found. The rule this is an instance
+of is already further down this file as *"the answer is often already in the Arbiter inbox"* — it
+applies to the project's own documents just as much.
+
+`%LOCALAPPDATA%\Unity\Editor\upm.log` is the evidence either way: a launch that fails this way
+leaves **no entry at all**, because the child never ran.
 
 ### `npm install` here installs NO build tooling and exits 0
 

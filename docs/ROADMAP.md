@@ -1614,14 +1614,35 @@ The argument was that the server needs mDNS before an app is usable. ShopStack M
 discovery at all**: its server URL is typed into Settings, and it is in daily use. Manual entry is
 the proven house pattern; mDNS makes the connect screen optional and nothing more.
 
-**What is NOT verified, and it is more than usual:**
+**The wire contract is MEASURED, not inferred.** `Editor.RemoteQueueHost` in the fork
+(`f33483e0`) holds a real listener up in batchmode; `yarg-remote/src/live.test.ts` drives the
+app's own client against it. **12 cases, 12 pass.** They are written to distinguish *why* a call
+failed, because the status code alone does not say it:
 
-- **Nothing has run against a live console.** Every route, method and query parameter in the app
-  was read off the C# by hand and asserted against a stub we wrote ourselves, which can only
-  confirm that the client sends what we *think* the server wants. The instrument for settling it
-  exists — `Editor.RemoteQueueHost` in the fork (`f33483e0`) holds a real listener up, and
-  `yarg-remote/src/live.test.ts` drives the app's own client against it — and **has never been
-  run**, because the Unity editor will not start on this workstation. See Blockers.
+| The case | What a failure would have meant |
+|---|---|
+| `POST /api/queue` → 404 **"no song with that hash"** | a wrong path gives 404 *"no such endpoint"*; a wrong method 405; a missing mark header, refusal before the hash is read |
+| `DELETE` must not give 400 *"a 'hash' is required"* | the hash went in the body, where HttpListener cannot see it |
+| `?on=queued` → 404 | the suggestion branch answers 200 for anything, so a 200 means the parameter never arrived |
+| `?choice=sideways` → 400 | proves the choice parameter is read rather than defaulted |
+| a mutating request with no `X-Yarg-Remote` is refused | the whole CSRF story |
+
+**Red-proofed both ways.** Against a dead port every case fails; breaking one route spelling in
+`api.ts` (`/api/queue` → `/api/queues`) turns exactly the queue cases red with *"no such
+endpoint"* instead of *"hash"*.
+
+**And the first green was partly false, which is the part worth keeping.** The dead-port run
+initially left **2 of 12 passing**: both asserted only `status !== 400`, and an unreachable
+console is `status 0`, which is not 400. A wrong answer and *no answer* satisfied the same
+assertion. Both now require a real answer, and the dead-port run is 12 red.
+
+**What the contract test still cannot prove:** batchmode has no song library, so every hash is
+unknown and nothing can actually be queued. It settles that we ask the right questions at the
+right addresses and read the answers correctly. *"Queueing a real song works"* remains inference
+until somebody plays the game — the same gap increments 2–4 already carry.
+
+**What is NOT verified:**
+
 - **No `cap add` has been run.** iOS and Android are untested and the two cleartext exceptions
   (`NSAllowsLocalNetworking`; an Android network-security-config) are written down in the repo's
   README rather than applied.
@@ -1631,18 +1652,16 @@ the proven house pattern; mDNS makes the connect screen optional and nothing mor
 
 ## Blockers
 
-**The Unity editor will not start on ENG-1** (2026-09-10, OPEN, needs Jay).
-`UnityPackageManager.exe` fails to come up — *"Could not connect to IPC stream Upm-&lt;pid&gt; after
-30.0 seconds"* — on five attempts across three spawn paths. `upm.log` shows it last started
-successfully at 04:25 UTC that day and has had no entry since, so our launches never reach it. No
-Unity process is running to be holding it, `-noUpm` is not a way around it (it disables real
-dependencies and dies on `TMP_Text`), and reading the Defender exclusion list needs an
-administrator.
+**None.**
 
-**What it costs:** every editor harness in the fork. `RemoteQueueSmokeTest`, `RemoteQueueHost`,
-and the phone app's contract test are all blocked, so anything asserted about the remote queue's
-HTTP surface after 04:25 UTC on 2026-09-10 is inference from source rather than measurement.
-Nothing in the server track (phases 1–2) is affected.
+*(A "the Unity editor will not start on ENG-1" blocker was filed here on 2026-09-10 and withdrawn
+the same hour. It was real in the sense that five launches failed, and wrong in every other sense:
+the cause was not Windows Defender, it was that a process started from a Cowork bridge call
+inherits a job object which kills Unity's Package Manager child. **Launch with
+`Win32_Process.Create` and it works.** That was already written down in the project-state doc, in
+almost those words, and was not read first. Kept here as a dated retraction rather than deleted,
+because "a blocker survives on being repeated, not on being true" is already lesson 9 below and
+this is the same mistake made forward instead of backward.)*
 
 ## Toolchain and credentials, as measured
 
