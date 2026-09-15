@@ -1,7 +1,7 @@
 {
   "_comment": "sha256 of each source .md at the time its PDF was last rendered. Written by build-pdfs.py; verified by --verify. Do not hand-edit.",
   "sources": {
-    "README.md": "83721c6ba0ef86b09d258f2c5f5b840b08ce5ef030113baa8a508156bfef8ee8",
+    "README.md": "3ac841d2c2aa301a17def177f5c17bbbbac54ec8edecc5b320ec1e85d9dc3c83",
     "docs/ADR-001-server-architecture.md": "efac771cc5499c44def053278310b39e882e6463fd37a2723104e28f72c74596",
     "docs/ADR-002-v1-store.md": "6189374a44630cde315a1b7bf18323d2422a6f936ac450490e46156660955e80",
     "docs/ADR-003-archive-ingest.md": "07edb93d8403ea1edc76dc888644c7b23baabb1b5e062cc2d44882a3ef64c618",
@@ -9,7 +9,7 @@
     "docs/ADR-005-upload-check.md": "8afe6d0d7105eddc35becc3b4193fc7ae41337f496f2971be9c395257a7399e5",
     "docs/API.md": "b05357804f04193ef3f065a8df7f519f0c154514dbe04c8f7e6ae75af97b3f4e",
     "docs/BUILD.md": "39b54db3cf756572f5b230849811bc798b23add397ecb87d54b980eaaf26c936",
-    "docs/DEPLOY-VAULT2.md": "77f28ad282daae25ff05840da42fd0ff38f638b928e24536b4683ecb55e0e797",
+    "docs/DEPLOY-VAULT2.md": "51969720506b77ffe66bea9ca41c3917d9332c7bea9c1f4ddbbb34b2a010bc54",
     "docs/ROADMAP.md": "872ca02978ffad7668957b49652ec295f04a25f9a47ec2f896d77a1e86c043e8",
     "docs/SCALE.md": "9dd3bb689586721efd7433deddf8c910854173f02a1c0d3bc53b9911359dd1e2",
     "docs/SOURCES.md": "ae8f29dc86ef0df75a7dbca575ef59a4c9c73f8cfa4c44b5a003facaf1627ad5",

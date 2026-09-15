@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<!--
+  Unraid Docker template for the YARG song server.
+
+  WHY THIS FILE EXISTS. The container on vault2 was created with a hand-rolled
+  `docker run`, which works but leaves it an ORPHAN in Unraid's Docker tab: no
+  edit form, no update button, no autostart toggle, and a GUI "recreate" would
+  not know about the mounts at all. This template is what makes it a
+  first-class container. It describes the container EXACTLY as it already
+  runs, so installing it changes nothing about the running service.
+
+  Install: copy to /boot/config/plugins/dockerMan/templates-user/ and xmllint
+  it. See deploy/README.md.
+-->
+<Container version="2">
+  <Name>yarg-song-server</Name>
+  <Repository>registry.badassium.com/fatalexception/yarg-song-server:latest</Repository>
+  <Registry>https://registry.badassium.com/</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Privileged>false</Privileged>
+  <Support>https://gitlab.badassium.com/fatalexception/yarg-song-server</Support>
+  <Project>https://github.com/Coffeehedake/yarg-song-server</Project>
+  <Category>MediaApp:Music Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8099]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/Coffeehedake/yarg-song-server/main/deploy/unraid/icon.svg</Icon>
+  <DateInstalled>1788902406</DateInstalled>
+  <Overview>
+    Self-hosted song server for YARG. Serves a song library over HTTP as ordinary
+    .sng packages that an unmodified YARG client can already read, with a browse
+    page for searching and checking the library without launching the game.&#13;
+    &#13;
+    READ-ONLY AND UNAUTHENTICATED BY DESIGN. Do not put this behind SWAG and do
+    not expose it to the internet. It is meant for a LAN.&#13;
+    &#13;
+    The song library is mounted READ-ONLY on purpose - the server never writes
+    there. Point it at your own library; it will index what it finds on start.&#13;
+    &#13;
+    The image is distroless (about 10 MB) and contains no shell, so the Console
+    button will not work. That is correct behaviour, not a fault - use the WebUI,
+    /healthz, or the container log instead.&#13;
+    &#13;
+    :latest means THE NEWEST RELEASE, deliberately behind the main branch. If it
+    looks old, cut a tag - do not repoint it at a branch. For a deployment that
+    must not move at all, replace the tag with a @sha256: digest, which is what
+    this container ran before this template existed.
+  </Overview>
+  <PostArgs>--songs /songs --data /data --listen :8080</PostArgs>
+  <Config Name="WebUI / API port" Target="8080" Default="8099" Mode="tcp"
+          Description="Host port for the browse page and the HTTP API. LAN only."
+          Type="Port" Display="always" Required="true" Mask="false">8099</Config>
+  <Config Name="Song library" Target="/songs" Default="" Mode="ro"
+          Description="Your song library, mounted READ-ONLY - the server never writes here. Loose folders and .sng both work."
+          Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/yarg-song-server/songs</Config>
+  <Config Name="Server data" Target="/data" Default="" Mode="rw"
+          Description="Catalog and packed-archive cache. MUST be owned by 65532:65532 - the image runs as nonroot, and getting this wrong starts fine and then fails the first time a song needs packing. On the host: chown -R 65532:65532 &lt;this path&gt;"
+          Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/yarg-song-server/data</Config>
+</Container>

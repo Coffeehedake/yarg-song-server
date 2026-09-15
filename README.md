@@ -136,6 +136,31 @@ one that merely compiled. `:main` is there if you actually want the newest devel
 `:vX.Y.Z` names a release, and `:<eight-character sha>` names one exact build and never moves —
 **pin that one** for anything you intend to keep running.
 
+### Hosting it with Docker
+
+**[`deploy/README.md`](deploy/README.md) is the one to read.** Two ways in:
+
+| You have | Use |
+|---|---|
+| **Unraid** | [`deploy/unraid/my-yarg-song-server.xml`](deploy/unraid/my-yarg-song-server.xml) — a proper template, so the container gets an edit form, an update button and an autostart toggle instead of showing up as an orphan |
+| Any other Docker host | [`docker-compose.yml`](docker-compose.yml) — `SONGS_DIR=/srv/music docker compose up -d` |
+
+Two things apply either way, and the second is the one that bites silently:
+
+- **The song library is mounted READ-ONLY.** The server never writes to it. It is
+  somebody's music folder.
+- **`/data` must be owned by `65532:65532`.** The image is distroless and runs as `nonroot`.
+  Get it wrong and the server starts perfectly, serves the browse page, and then fails the
+  *first time a song actually needs packing* — which reads as a broken song rather than a
+  directory permission.
+
+The image has **no shell in it**, so `docker exec` and Unraid's Console button cannot give you
+one. That is the distroless base doing its job, not a fault — use `/healthz` and the container
+log.
+
+**Read-only and unauthenticated by design: keep it on a LAN.** Do not put it behind a reverse
+proxy and do not expose it to the internet.
+
 ## Running it
 
 ```sh

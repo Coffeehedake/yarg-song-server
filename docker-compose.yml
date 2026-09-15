@@ -1,0 +1,47 @@
+# Run the YARG song server with Docker Compose.
+#
+#   docker compose up -d
+#
+# On UNRAID, use deploy/unraid/my-yarg-song-server.xml instead - a compose stack
+# is still an orphan in the Docker tab, which is the whole problem the template
+# solves. This file is for everything else: a Pi, a NAS, a plain Linux box, or
+# Docker Desktop on Windows or macOS.
+#
+# BEFORE THE FIRST RUN, two things, and the second one bites silently:
+#
+#   1. Point SONGS_DIR at your library. It is mounted READ-ONLY; the server
+#      never writes there.
+#   2. `mkdir -p ./data && sudo chown -R 65532:65532 ./data`. The image is
+#      distroless and runs as `nonroot` (uid 65532). Get this wrong and the
+#      server starts perfectly, serves the browse page, and then fails the
+#      first time a song actually needs packing - which looks like a bug in
+#      the song rather than a permission on a directory.
+
+services:
+  yarg-song-server:
+    # :latest means THE NEWEST RELEASE, deliberately behind the main branch.
+    # Pin a @sha256: digest instead if this deployment must never move on its
+    # own - image digests identify a BUILD, not a commit, and the same commit
+    # built twice gives two digests.
+    image: registry.badassium.com/fatalexception/yarg-song-server:latest
+    container_name: yarg-song-server
+    restart: unless-stopped
+    ports:
+      # Host 8099 -> container 8080. LAN only: the server is read-only and
+      # UNAUTHENTICATED BY DESIGN and must not be exposed to the internet.
+      - "8099:8080"
+    volumes:
+      - "${SONGS_DIR:-./songs}:/songs:ro"
+      - "${DATA_DIR:-./data}:/data"
+    command:
+      - "--songs"
+      - "/songs"
+      - "--data"
+      - "/data"
+      - "--listen"
+      - ":8080"
+    # No healthcheck: the image is distroless, so there is no shell, no curl
+    # and no wget inside it to run one with. Check /healthz from the host
+    # instead - `curl -s -o /dev/null -w '%{http_code}' http://localhost:8099/healthz`
+    # should answer 200. For the same reason `docker exec` cannot give you a
+    # shell in here, and that is correct behaviour rather than a fault.

@@ -660,3 +660,89 @@ was the `api`-scope GitLab PAT again. It was fed over SFTP to a `600` file, cons
 `--password-stdin`, shredded, and `docker logout` ran immediately — `/root/.docker/config.json` is
 16 bytes afterwards, so **no registry credential is stored on vault2**. The durable fix is still a
 project-scoped `read_registry` deploy token, which nobody has created.
+
+---
+
+## Current state, measured 2026-09-15
+
+Read directly off the box rather than inherited from an earlier section of this
+document, because the two had drifted — everything above was written while the
+container was still on `027d331f`, and this file went on saying so.
+
+```
+yarg-song-server   Up 6 days   restarts=0   restart=unless-stopped
+image   registry.badassium.com/fatalexception/yarg-song-server@sha256:a127c732…
+        (= :v0.1.1 = :latest, pinned by DIGEST, not by a floating tag)
+started 2026-09-08T21:20:06Z
+ports   8099 -> 8080          /healthz = 200
+mounts  /mnt/cache/appdata/yarg-song-server/songs -> /songs   ro
+        /mnt/cache/appdata/yarg-song-server/data  -> /data    rw  (65532:65532)
+args    --songs /songs --data /data --listen :8080
+image size   10,183,116 bytes (9.7 MiB)
+library      23 songs, 568 KB — still the mkcorpus TEST CORPUS, not a real library
+```
+
+**So the "deploy vault2 to v0.1.1" item was already done on 2026-09-08** and had
+been sitting open in two places since. There is also a stopped
+`yarg-song-server-prev` on the old `027d331f`, kept deliberately as a rollback.
+
+**`/songs` holds the 23-case synthetic corpus.** Pointing this at a real library
+is a mount change and a restart, not a migration — the server re-indexes on
+start and never writes to that directory.
+
+## The Unraid template (2026-09-15)
+
+**The container was an ORPHAN in Unraid's Docker tab for ten days.** It was
+created with the hand-rolled `docker run` at the top of this document, and a
+container with no template gets no edit form, no update button and no autostart
+toggle — and a GUI "recreate" would not have known about the mounts at all.
+Nothing was broken; it simply could not be managed from the UI, and the only
+record of how to reproduce it was this file.
+
+`deploy/unraid/my-yarg-song-server.xml` fixes that. It describes the container
+**exactly as it already runs**, so installing it changed nothing about the
+running service — verified after the install: `healthz=200`, still `Up 6 days`,
+`restarts=0`.
+
+Installed and checked:
+
+| | |
+|---|---|
+| `xmllint --noout` on the template | VALID |
+| the validator itself, against deliberate garbage | rejects it (so VALID means something) |
+| `<Name>` matches the running container | `yarg-song-server` |
+| `<DateInstalled>` vs `State.StartedAt` | both `2026-09-08T21:20:06Z` |
+| Config `Target=` / `Mode=` vs the container's mounts | `/songs` ro, `/data` rw — match |
+| Port Config vs `HostPort` | 8099 — match |
+| file mode vs the neighbouring templates | `600 root` — match |
+| `docker update --restart unless-stopped` | set |
+| `/var/lib/docker/unraid-autostart` | `yarg-song-server` added (72 entries → 73) |
+
+**Autostart is two independent mechanisms and both are now set.** The docker
+restart policy is what actually survives a reboot; the autostart file is what
+makes the WebUI toggle agree and sets start order. Setting only one gives a
+container that comes back but shows as disabled, or a toggle that lies.
+
+**The template uses `:latest`, not the digest the container currently runs.**
+Deliberate: a digest cannot be updated from the UI, and `:latest` already means
+*the newest release* rather than the newest commit, which is the right thing for
+a button a person presses. The running container keeps its digest pin until
+something recreates it. For a deployment that must not move at all, put the
+digest back in the template's `<Repository>` and accept that the update button
+becomes decorative.
+
+### Two things the UI will do that look like faults
+
+- **The Console button fails**: `exec: "sh": executable file not found in $PATH`.
+  Measured, not assumed. The image is distroless — there is no shell in it. Use
+  the WebUI, `/healthz`, or the container log.
+- **`:latest` will look stale** whenever `main` has moved and no tag has been
+  cut. That is the tag doing its job. Cut a release; never repoint `:latest` at
+  a branch.
+
+### For anything that is not Unraid
+
+`docker-compose.yml` at the repo root, and `deploy/README.md` for both paths.
+Compose works on Unraid too and is still the wrong answer there — a compose
+stack is an orphan in the Docker tab, which is the whole problem the template
+solves.
