@@ -50,8 +50,8 @@
           Description="Host port for the browse page and the HTTP API. LAN only."
           Type="Port" Display="always" Required="true" Mask="false">8099</Config>
   <Config Name="Song library" Target="/songs" Default="" Mode="ro"
-          Description="Your song library, mounted READ-ONLY - the server never writes here. Loose folders and .sng both work."
-          Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/yarg-song-server/songs</Config>
+          Description="Your song library, mounted READ-ONLY - the server never writes here. Loose folders and .sng both work. This is the YARG share, so you can drop songs in over SMB at \\vault2\YARG\songs and restart to re-index."
+          Type="Path" Display="always" Required="true" Mask="false">/mnt/user/YARG/songs</Config>
   <Config Name="Server data" Target="/data" Default="" Mode="rw"
           Description="Catalog and packed-archive cache. MUST be owned by 65532:65532 - the image runs as nonroot, and getting this wrong starts fine and then fails the first time a song needs packing. On the host: chown -R 65532:65532 &lt;this path&gt;"
           Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/yarg-song-server/data</Config>
