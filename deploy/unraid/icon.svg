@@ -1,1 +1,24 @@
-²ø1šYì
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="YARG song server">
+  <!-- Original mark, deliberately not YARG's: a stack of server shelves with a
+       note riding above them. Upstream's logo is theirs, and this template is
+       ours, so the icon is drawn here rather than borrowed. Palette matches the
+       remote-queue page (#12121a / #ffd23f) so the pieces look related. -->
+  <rect width="128" height="128" rx="26" fill="#12121a"/>
+  <g fill="none" stroke="#2e2e3d" stroke-width="5">
+    <rect x="24" y="72" width="80" height="20" rx="6"/>
+    <rect x="24" y="98" width="80" height="20" rx="6"/>
+  </g>
+  <g fill="#4ade80">
+    <circle cx="36" cy="82" r="4"/>
+    <circle cx="36" cy="108" r="4"/>
+  </g>
+  <g stroke="#9a9aae" stroke-width="4" stroke-linecap="round">
+    <line x1="52" y1="82" x2="92" y2="82"/>
+    <line x1="52" y1="108" x2="92" y2="108"/>
+  </g>
+  <g fill="#ffd23f">
+    <rect x="72" y="18" width="6" height="34" rx="3"/>
+    <path d="M78 18c10 2 18 5 18 12 0-9-8-13-18-15z"/>
+    <ellipse cx="66" cy="52" rx="13" ry="10" transform="rotate(-18 66 52)"/>
+  </g>
+</svg>
