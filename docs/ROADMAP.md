@@ -1711,8 +1711,16 @@ its keep:
   lives in the music-library menu and a pending song cannot be moved. With the music library open the
   target is `setlist`, three songs queued in order, and moving one down reordered them. The game's own
   `setListNotEmpty` flag flipped on screen (the button went from "Play Song" to "Add to Setlist / (Hold)
-  Start the Set"), which is the game confirming its setlist received them. The 409's wording blames the
-  song when the cause is the closed menu; that message is misleading and is not fixed.
+  Start the Set"), which is the game confirming its setlist received them. That 409's wording blamed the
+  song when the cause was the closed menu; **fixed in `yarg` `61d2bc55`** — `Move` now says why, with the
+  same status and the original wording kept for the other refusals (checked on a rebuilt game: a queued
+  song with the library closed names the closed library; a never-queued real song and an unknown hash do
+  not). **A related inaccuracy was found while checking and is NOT fixed:** with the library *open*, `Move`
+  answers `200 moved: true` for a move that moves nothing — a real song that was never queued, and (by the
+  code, not measured) a song already at the end of the setlist — because `MoveSongInSetlistRemotely`
+  returns nothing and `Move` returns success unconditionally. It predates that fix. Making it honest
+  changes what the phone app sees (an up-arrow on the first song would start erroring), so it is a
+  decision, not a tidy-up.
 - **The Remote Queue settings showed raw localization keys** (`SETTINGS.SETTING.REMOTEQUEUE.NAME`):
   `en-US.json` never had entries for `RemoteQueue`, `RemoteQueueVoting` or `RemoteQueueVotesNeeded` — at
   `7f17f910` and in upstream too, so not a rebase artefact. A missing key fails nowhere, which is why it
