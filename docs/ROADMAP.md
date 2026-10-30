@@ -1678,8 +1678,30 @@ exit 0**; the yarg-remote live contract test passes **12 of 12** against a `Remo
 from it; `YARG.Core` is **737 passed / 6 failed / 2 skipped of 745** (the six are upstream lip-sync
 phoneme tests, see `WORKSPACE.md`).
 
-**Not verified:** nobody has run the game on the new base, so the song-server sync, the status row,
-and the remote queue are untested in play — as before, only now on a different foundation.
+**Played the same day — what that found.** The rebased fork was built and run, and the playtest earned
+its keep:
+
+- **The Song Server tab crashed the game on first click**, a stack overflow, not an exception. With no
+  URL set (every fresh install) entering the tab redrew the menu, the redraw asked the status row for its
+  text, the row started a refresh, and a refresh with a blank URL "settled" by redrawing — forever. It was
+  **our bug, not the rebase's**: the files involved are identical before and after. Every earlier test ran
+  with a URL already configured, and the headless probe had no settings menu to redraw, so it tested the
+  row alone. Fixed in `yarg` `93e48422`; the probe now stands in for the menu through a `Redrawn` event, and
+  the two new checks were seen to FAIL on the old code (22 redraws before the probe cut it off) before they
+  passed.
+- **"Insecure connection not allowed" against a healthy server** — a *release* build refuses `http://`
+  because `insecureHttpOption` is `DevelopmentOnly` on purpose (ADR-004). Not a regression. The build
+  script takes `YARG_BUILD_DEVELOPMENT=1` now (`282755b2`); see `BUILD.md`.
+- **Sync against the live server mirrored 127 of 128 songs** (1,188 MB, ~80 s, every file matching a
+  catalogue entry). The missing one, *Sepultura – Roots Bloody Roots*, was **a server defect**: the `.sng`
+  writer rejected a `;` in a metadata value (`charter = TheSheepQueen; Whizzer`), so `GET /song/<hash>.sng`
+  returned HTTP 500. The rule was an unverified claim about the format — the reference encoder packs and
+  decodes that value unchanged. Fixed in the writer and pinned with a SngCli fixture; **not yet deployed to
+  vault2**, so the live server still 500s on that song until it is.
+
+**Still not verified:** the remote queue in play (the contract test passes headless, nobody has queued a
+song from a phone into the running game), and whether the real game *accepts* the `;` package — the
+reference encoder and our reader agree, but YARG itself has not loaded one.
 
 ## Blockers
 

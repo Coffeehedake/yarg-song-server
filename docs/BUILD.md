@@ -10,6 +10,7 @@ entirely about the Unity client.
 
 ```powershell
 $env:YARG_BUILD_OUTPUT = "C:\path\to\out\YARG.exe"   # optional; defaults under %TEMP%
+$env:YARG_BUILD_DEVELOPMENT = "1"                    # optional; REQUIRED to reach a song server, see below
 & "C:\Program Files\Unity\Hub\Editor\6000.3.5f2\Editor\Unity.exe" `
     -batchmode -nographics `
     -projectPath "C:\dev\YARG - Open Source Contributions\yarg" `
@@ -20,6 +21,13 @@ $env:YARG_BUILD_OUTPUT = "C:\path\to\out\YARG.exe"   # optional; defaults under 
 Launch it with `Invoke-CimMethod -ClassName Win32_Process -MethodName Create` rather than
 `Start-Process` — see `WORKSPACE.md` for why Unity dies otherwise when started from a bridge call.
 Grep the log for lines beginning `BUILD `.
+
+**To play against a song server, build with `YARG_BUILD_DEVELOPMENT=1`.** The fork sets
+`insecureHttpOption` to `DevelopmentOnly` on purpose (see `ADR-004`), so a plain release build
+refuses `http://` — and a LAN song server is plain HTTP. Measured 2026-10-30: a release build
+pointed at a healthy server showed **"Song server: not reachable (Insecure connection not
+allowed)"** in the settings row, which reads like a network fault and is not one. A development
+build reaches it. What a *release* build should do is still the open question ADR-004 records.
 
 ## Can the fork even be built? — measured 2026-09-08
 

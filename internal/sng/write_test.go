@@ -157,12 +157,42 @@ func TestWriteLowercasesNamesAndCatchesCollisions(t *testing.T) {
 	}
 }
 
+// This test used to list {"name", "a;b"} among the pairs that must be REJECTED, and it
+// was the reason the rule looked correct. It is not: the reference encoder (SngCli
+// v0.3.0) packages `charter = TheSheepQueen; Whizzer` without complaint and decodes it
+// back unchanged, and a song with exactly that value 500'd on the live server for
+// weeks, because the writer refused it. A semicolon in a VALUE is ordinary metadata --
+// charters and genres list several names that way.
+//
+// What is still rejected, and why it is a narrower claim than before: a newline in a
+// value or key (the metadata is re-emitted as song.ini lines, so it would split the
+// pair), '=' in a key, an empty key. A ';' in a KEY stays rejected too: a key is the
+// start of an ini line, where ';' begins a comment. The evidence for relaxing only
+// reaches values, so only values are relaxed.
+func TestWriteAcceptsASemicolonInAValue(t *testing.T) {
+	fsys := fstest.MapFS{"notes.chart": {Data: []byte("x")}}
+	meta := []Pair{
+		{"name", "Roots Bloody Roots"},
+		{"charter", "TheSheepQueen; Whizzer"}, // the real value that 500'd
+		{"genre", ";leading and trailing;"},
+	}
+
+	a := packFS(t, fsys, meta)
+
+	for _, p := range meta {
+		if got := a.Metadata[p.Key]; got != p.Value {
+			t.Errorf("metadata[%q] = %q, want %q", p.Key, got, p.Value)
+		}
+	}
+}
+
 func TestWriteRejectsReservedCharactersInMetadata(t *testing.T) {
 	fsys := fstest.MapFS{"notes.chart": {Data: []byte("x")}}
 	for _, bad := range []Pair{
 		{"na=me", "v"},
-		{"name", "a;b"},
+		{"na;me", "v"},
 		{"name", "a\nb"},
+		{"name", "a\rb"},
 		{"", "v"},
 	} {
 		if err := Write(&bytes.Buffer{}, testKey, []Pair{bad}, fsys, []string{"notes.chart"}); err == nil {

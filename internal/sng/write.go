@@ -189,13 +189,21 @@ func validateMeta(meta []Pair) error {
 		if p.Key == "" {
 			return errors.New("sng: empty metadata key")
 		}
-		// The format's own restrictions: a key may not contain '=', and neither
-		// key nor value may contain ';' or a newline.
+		// A key is the start of a song.ini line when the metadata is re-emitted, so it may
+		// not contain '=' (the separator), ';' (an ini comment) or a newline.
 		if strings.ContainsAny(p.Key, "=;\r\n") {
 			return fmt.Errorf("sng: metadata key %q contains a reserved character", p.Key)
 		}
-		if strings.ContainsAny(p.Value, ";\r\n") {
-			return fmt.Errorf("sng: value of %q contains a reserved character", p.Key)
+		// A value may not contain a newline, which would split the pair across lines.
+		//
+		// It MAY contain ';'. This used to reject it as "the format's own restriction",
+		// which was a claim about a spec that nobody had checked against the reference
+		// encoder: SngCli v0.3.0 packs `charter = TheSheepQueen; Whizzer` and decodes it
+		// back unchanged, and YARG reads values by length prefix. The rejection made a
+		// real song return HTTP 500 from the server. See
+		// TestWriteAcceptsASemicolonInAValue and the SngCli fixture beside reference_test.go.
+		if strings.ContainsAny(p.Value, "\r\n") {
+			return fmt.Errorf("sng: value of %q contains a newline", p.Key)
 		}
 	}
 	return nil

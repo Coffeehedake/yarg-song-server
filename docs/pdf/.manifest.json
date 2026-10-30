@@ -8,9 +8,9 @@
     "docs/ADR-004-remote-song-source.md": "cb27e54392cea40283adf9ea86d2b723a395fb526347b0af33449c25360efed4",
     "docs/ADR-005-upload-check.md": "8afe6d0d7105eddc35becc3b4193fc7ae41337f496f2971be9c395257a7399e5",
     "docs/API.md": "b05357804f04193ef3f065a8df7f519f0c154514dbe04c8f7e6ae75af97b3f4e",
-    "docs/BUILD.md": "ed61d05d7300ef84d2cd09d295bad2b80b0e21c131ce278f234c0724450bb7ad",
+    "docs/BUILD.md": "d34adcaae9ee013a7e434cacf4def027862d33de6931e5479e7aeca9f0dffbd7",
     "docs/DEPLOY-VAULT2.md": "1d92f45a54019818fbe88f2bc1458122456404a7d10887892d1f7928d8346260",
-    "docs/ROADMAP.md": "954d6cecb19bf2fc74f9d897526cfa41212e3bc6c9186214487fa72aa9d7a0a1",
+    "docs/ROADMAP.md": "0cd96915819958ff7aafa42c58706f1f823b727bde1104d040c777e0cb0a3675",
     "docs/SCALE.md": "9dd3bb689586721efd7433deddf8c910854173f02a1c0d3bc53b9911359dd1e2",
     "docs/SOURCES.md": "ae8f29dc86ef0df75a7dbca575ef59a4c9c73f8cfa4c44b5a003facaf1627ad5",
     "docs/SYNC-CLIENT.md": "427b98bad55524117abb9e0fc7dd0c40803991eb4943c1c9a7b3c88fe9ad2065",
@@ -18,6 +18,6 @@
     "docs/UPSTREAM.md": "e4228ee88be36395610000b6b66e387db8f191adaab60e494703f094008c1fa0",
     "docs/WORKSPACE.md": "7b505731b12046b3302c6a0064fd2b68f7d7d5168f97113dd18a6656e3205904",
     "docs/research/chart-preparsing.md": "5bbb0183f6b574ed54a215e48f7b3069aeedde551d7579438c68f270f5ec6e92",
-    "docs/research/yarg-song-formats.md": "650bf169a65356c832ed474dd7293183e0649b2a09c11340b8a0949d5bb3e900"
+    "docs/research/yarg-song-formats.md": "98297c60ac59b7d800e311c4ca9b7be528440946617a637e0748205c1df32289"
   }
 }

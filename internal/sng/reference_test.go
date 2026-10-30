@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"testing/fstest"
 )
 
 // The archive in testdata was produced by SngCli v0.3.0 - the reference encoder
@@ -160,5 +161,59 @@ func TestExtensionCanLieAboutContainer(t *testing.T) {
 	}
 	if len(data) < 12 || string(data[0:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
 		t.Fatalf("fixture changed: song.mp3 no longer carries WAVE bytes (first 12: %q)", data[:min(12, len(data))])
+	}
+}
+
+// A semicolon in a metadata VALUE is something the reference encoder writes and
+// reads back unchanged. Our writer used to refuse it ("the format's own restriction"),
+// so a real song -- charter "TheSheepQueen; Whizzer" -- returned HTTP 500 from the
+// server and never reached a client. That rule was an unverified claim about a spec;
+// this fixture is the check on it.
+//
+// The archive was produced by SngCli v0.3.0 from a throwaway folder with invented
+// values (nothing copyrighted): a 99-byte chart, a 1x1 PNG, 0.25 s of WAV silence and
+//
+//	charter = First Charter; Second Charter
+//	genre = Rock; Metal
+//
+// Two assertions, and the second is the one that matters: the reader agrees with the
+// reference, and our WRITER accepts every pair the reference wrote.
+func TestSemicolonValuesFromTheReferenceEncoder(t *testing.T) {
+	f, err := os.Open("testdata/reference-semicolon-sngcli-v0.3.0.sng")
+	if err != nil {
+		t.Fatalf("open fixture: %v", err)
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := Open(f, st.Size())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	want := map[string]string{
+		"charter": "First Charter; Second Charter",
+		"genre":   "Rock; Metal",
+	}
+	for k, v := range want {
+		if got := a.Metadata[k]; got != v {
+			t.Errorf("reference metadata[%q] = %q, want %q", k, got, v)
+		}
+	}
+
+	// Feed every pair the reference wrote back through OUR writer. If the writer's
+	// idea of a legal value is narrower than the reference encoder's, this is where
+	// it shows -- as an error on a pair a conforming tool produced.
+	var meta []Pair
+	for _, k := range a.MetaOrder {
+		meta = append(meta, Pair{k, a.Metadata[k]})
+	}
+	repacked := packFS(t, fstest.MapFS{"notes.chart": {Data: []byte("x")}}, meta)
+	for _, p := range meta {
+		if got := repacked.Metadata[p.Key]; got != p.Value {
+			t.Errorf("after our writer, metadata[%q] = %q, want %q", p.Key, got, p.Value)
+		}
 	}
 }

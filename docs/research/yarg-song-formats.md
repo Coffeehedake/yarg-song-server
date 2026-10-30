@@ -75,7 +75,7 @@ A `.sng` is *the same logical content as a loose folder*, packed into one file: 
 | `0x0A` | 16 | `xorMask` : `byte[16]` | random per-file; `SngMask.LoadMask(stream)` |
 | `0x1A` | 8 | metadata section length : `int64` | YARG reads it then subtracts 8: `stream.Read<long>(...) - sizeof(ulong)` — i.e. the length **includes** the following count field |
 | `0x22` | 8 | metadata pair count : `uint64` | |
-| `0x2A` | var | metadata pairs | repeat count times: `keyLen : int32`, `key : UTF-8[keyLen]`, `valueLen : int32`, `value : UTF-8[valueLen]`. No null terminators. Keys/values may not contain `;` or newline; keys additionally may not contain `=`. |
+| `0x2A` | var | metadata pairs | repeat count times: `keyLen : int32`, `key : UTF-8[keyLen]`, `valueLen : int32`, `value : UTF-8[valueLen]`. No null terminators. **Keys** may not contain `;`, `=` or a newline (a key starts an ini line when re-emitted). **Values** may not contain a newline but **may contain `;`** — corrected 2026-10-30: this row used to say neither could, our writer enforced it, and a song with `charter = TheSheepQueen; Whizzer` returned HTTP 500 until it was measured against SngCli v0.3.0, which packs and decodes it unchanged (`internal/sng/testdata/reference-semicolon-sngcli-v0.3.0.sng`). The rule for keys has not been tested against the reference. |
 | — | 8 | file-index section length : `int64` | same `-sizeof(ulong)` convention |
 | — | 8 | listing count : `uint64` | |
 | — | var | listings | repeat: `filenameLen : byte` (max 255), `filename : UTF-8[filenameLen]`, `contentsLen : int64`, `contentsIndex : int64` (absolute offset into the file). In `SngFile.cs`: `int strlen = bytes[buffPosition++]`, then `*(long*)&bytes.Ptr[buffPosition]` twice. |
