@@ -1751,10 +1751,33 @@ its keep:
   playing**, so "straight after the song currently playing" is untested; and an address is not a person —
   two people sharing a tablet get one vote, which the code says.
 
-**Still not verified:** the phone app itself — everything above is the API it calls, so nobody has tapped
-a song on a phone and watched it arrive; what the setlist *shows* (only that the game says it is
-non-empty); playing a queued song, and so PlayNext while one is playing; the `voting is off` 404 (needs the
-setting flipped); and votes from real separate devices rather than loopback aliases.
+- **The phone app's own UI, driven in a browser against the running game — not a phone.** `yarg-remote`
+  runs unmodified under Vite, and a **test-only, untracked dev proxy** stands in for what the Capacitor
+  shell does natively: it makes the browser's calls same-origin (the game sends no CORS headers) and
+  relabels them `Origin: http://localhost`, which the game's origin gate accepts for a native shell. The
+  proxy was checked first with a POST carrying a browser-style origin, then deleted. What the app did,
+  with the game asked separately each time: it connected and listed the library (**"Showing 100 of 128"**,
+  `;` charter included); search narrowed; **Queue** put the song in the game's setlist and the tab became
+  "Up next (1)"; the vote arrow moved the game's score to 1; **Suggest** put it on the board
+  ("Suggestions (1)"); after two other voters the app moved on its own poll to **"WON - NOW: NEXT, OR THE
+  SETLIST? (3 DECIDES)"**; its "Add to setlist" press registered at the game (`for_setlist=1`); remove
+  worked through `DELETE`-with-query; the empty states read correctly; a wrong address gives *"Nothing
+  answered at http://… Check the phone is on the same Wi-Fi, and that Remote queue is set to LAN"*, is not
+  remembered, and a reload reconnects to the last good one.
+  **Two defects found.** (1) The Suggestions note said *"A song is playing … nothing moves until the score
+  screen"* whenever `intermission` was false, which includes a game idling on a menu, and a decided vote
+  moved the song at once — **fixed** in `yarg-remote` (reworded to what is established). (2) **The app and
+  the README both say the game "will show an address" when Remote queue is on. It does not**: the game
+  writes only `Remote queue: listening on http://+:8099/` to its log (a wildcard, not an IP) and shows
+  nothing in any menu or toast, so a first-time guest has no way to learn what to type. **NOT fixed** — the
+  choices are for the game to display its LAN address (code in the fork, and the right fix), or to change
+  both sentences to tell people to find their computer's IP and type `<ip>:8099`.
+
+**Still not verified:** the app on an actual phone — no iOS or Android build has been made, so the native
+HTTP stack, the cleartext exceptions, touch and layout on a real screen are all untried; what the game's
+own setlist *shows* (only that it says it is non-empty); playing a queued song, and so PlayNext while one is
+playing; the `voting is off` 404 (needs the setting flipped); and votes from real separate devices rather
+than loopback aliases.
 
 ## Blockers
 
