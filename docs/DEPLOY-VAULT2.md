@@ -848,3 +848,90 @@ sync tests use, and it is 568 KB.
 
 **To add songs now:** drop them in `\\vault2\YARG\songs` and restart the
 container. The server re-indexes on start and never writes to that directory.
+
+---
+
+## Fifth deployment, 2026-10-30 — `v0.1.1` to `v0.1.2`, and the `;` fix
+
+The first change to the server's Go code since `v0.1.1` (one of twelve commits; the rest are docs
+and deployment files). A song whose metadata held a `;` in a value — `charter = TheSheepQueen;
+Whizzer` — was in the catalogue and answered `GET /song/<hash>.sng` with **HTTP 500**, so a client
+syncing the library got 127 of 128 songs. The writer rejected `;` as "the format's own
+restriction"; the reference encoder (SngCli v0.3.0) packs it and decodes it back unchanged.
+
+**Superseded:** the *Current state, measured 2026-09-15* block above. What runs now:
+
+```
+image    registry.badassium.com/fatalexception/yarg-song-server@sha256:2d5ff48a089f965c68297cee9e278ca479d54965915b2e13aaf30abd7b59ba4a
+         (= :v0.1.2 = :latest, pinned by DIGEST)         image id 92e54925…, 10,183,116 bytes, linux/amd64
+/version v0.1.2      /healthz 200      restarts=0      policy unless-stopped      user nonroot
+mounts   /mnt/user/YARG/songs -> /songs  ro      /mnt/cache/appdata/yarg-song-server/data -> /data  rw
+args     --songs /songs --data /data --listen :8080          port 8099 -> 8080
+index    songs=128 distinct_charts=128 duplicate_packages=0 problems=0     took 8.6 s at start
+```
+
+**The previous container is kept stopped as `yarg-song-server-v0.1.1`** (the `v0.1.1` digest,
+`a127c732…`). Rollback is `docker rename` the two and `docker start` the old one, about ten seconds.
+`yarg-song-server-prev` is something else: a container on `027d331f` that exited seven weeks ago, and
+not a rollback for anything current.
+
+### What was done, and how
+
+A release tag first, because this deployment pins a release: `v0.1.2` on `8f8370b`, pipeline 3593,
+all six jobs green. The registry's `:v0.1.2` and `:latest` resolve to one digest; `:main` is a
+different digest for the same commit, which is the tag/branch split `Fourth deployment` measured.
+
+**The registry login, because vault2 keeps none.** The token was read once from Windows Credential
+Manager and written over SFTP to a mode-600 file on **`/dev/shm`** (RAM, not disk), then fed to
+`docker login --password-stdin`, the file removed, the image pulled, and `docker logout` run from an
+`EXIT` trap. Checked afterwards, not assumed:
+
+| | |
+|---|---|
+| token at the source vs on vault2 | 51 chars, same sha256 prefix both ends — and no BOM (first bytes were not `efbbbf`) |
+| token files left in `/dev/shm` | 0 |
+| `/root/.docker/config.json` | 16 bytes — no credential stored |
+| pulled digest | equals the one the registry reported |
+
+**The swap rolled back by itself if it had to.** `stop`, `rename` to `-v0.1.1`, `run`, then a 30 s
+health loop that required `/healthz` 200 *and* `/version` containing `v0.1.2`; failing that it would
+`rm -f` the new container, rename the old one back and start it. It was healthy 10 s after the new
+container started, 8.6 s of which was the index of 128 songs. The time the old container took to
+stop was not measured, so ten seconds is a floor for the downtime, not the figure.
+
+### Verified against a baseline taken BEFORE the deploy
+
+Every song was `HEAD`ed on the live `v0.1.1` first and the status, `ETag` and `Content-Length`
+saved. After the swap:
+
+| Check | Result |
+|---|---|
+| the 127 songs that already worked | **127 of 127 identical** — status, ETag and length |
+| *Roots Bloody Roots* (`f5178d27…`) | **500 → 200**; ETag `cd5f41c5…` equals the catalogue's `package_hash`; 2,774,330 bytes |
+| those bytes vs a build of the same commit made on Windows | **SHA-256 identical** (`a8ddaa13…`) |
+| SngCli decode of the served archive | 0 errors; `charter = TheSheepQueen; Whizzer` intact |
+| `SHA1(notes.mid)` in the served archive | equals the catalogue's `chart_hash` — identity holds |
+
+The ETag is the package hash, so "127 ETags unchanged" means the change cannot have reached any
+package whose metadata has no `;` in a value, which is what the one-line diff said it would not.
+
+### Three instrument errors, kept because each read like a result
+
+- **`package_hash` is not the SHA-256 of the file.** It was tried as a download check and failed even
+  for a song that served fine. It is the ETag; the file bytes hash to something else.
+- **`@($null).Count` is 1 in PowerShell**, so `problems=1` appeared for a library with `problems:
+  null`. The raw field and the server's own startup log (`problems=0`) both said otherwise.
+- **PowerShell variable names are case-insensitive** (already in `WORKSPACE.md`): a loop variable
+  `$s` overwrote the path variable `$S`, and the baseline file silently failed to write — twice.
+
+### Still open
+
+- **The game has not loaded the `;` package.** Everything above is the server and the reference
+  encoder. The in-game check is a sync from a client that is one song short, then `server:` in the
+  song list showing 128.
+- **The container is not Unraid-managed.** Its `net.unraid.docker.managed` label is empty, so the
+  *Docker* tab will not track it or offer an update; the template from 2026-09-15 describes it but
+  the `docker run` that recreated it for the YARG share did not link them. Only the label was read.
+- **There is still no durable registry credential.** This deployment used the `api`-scope token again,
+  carefully, rather than the project-scoped `read_registry` deploy token that would make it
+  unnecessary.
