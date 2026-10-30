@@ -929,9 +929,10 @@ package whose metadata has no `;` in a value, which is what the one-line diff sa
 - **The game has not loaded the `;` package.** Everything above is the server and the reference
   encoder. The in-game check is a sync from a client that is one song short, then `server:` in the
   song list showing 128.
-- **The container is not Unraid-managed.** Its `net.unraid.docker.managed` label is empty, so the
-  *Docker* tab will not track it or offer an update; the template from 2026-09-15 describes it but
-  the `docker run` that recreated it for the YARG share did not link them. Only the label was read.
+- **The container may not be Unraid-managed.** Its `net.unraid.docker.managed` label is empty, so the
+  *Docker* tab may not track it or offer an update. The likely cause is that the `docker run` that
+  recreated it for the YARG share on 2026-09-15 did not link it to the template — an inference: only
+  the empty label was measured, and what the Docker tab actually shows was not looked at.
 - **There is still no durable registry credential.** This deployment used the `api`-scope token again,
   carefully, rather than the project-scoped `read_registry` deploy token that would make it
   unnecessary.
