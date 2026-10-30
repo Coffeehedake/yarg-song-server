@@ -1696,12 +1696,35 @@ its keep:
   catalogue entry). The missing one, *Sepultura – Roots Bloody Roots*, was **a server defect**: the `.sng`
   writer rejected a `;` in a metadata value (`charter = TheSheepQueen; Whizzer`), so `GET /song/<hash>.sng`
   returned HTTP 500. The rule was an unverified claim about the format — the reference encoder packs and
-  decodes that value unchanged. Fixed in the writer and pinned with a SngCli fixture; **not yet deployed to
-  vault2**, so the live server still 500s on that song until it is.
+  decodes that value unchanged. Fixed in the writer and pinned with a SngCli fixture, released as `v0.1.2`
+  and **deployed to vault2 the same evening** — see `DEPLOY-VAULT2.md`, *Fifth deployment*. The game then
+  synced the one missing song (`downloaded=1 failed=0`, 2,774,330 bytes, the same SHA-256 the server
+  serves), and **YARG's own song cache holds its title, artist and the full `charter = TheSheepQueen;
+  Whizzer`**, with no `badsongs.txt`. So the real game does accept a `;` package. (The dev build on the
+  rebased base, not the installed v0.15.0 oracle.)
+- **The remote queue (#860) against the running game, 12 of 12.** The contract test, which until then had
+  only run against a headless host with no songs, passes against a real game with the 128-song library.
+  Measured through the API the phone app uses: the library lists all 128; adding by hash works; adding the
+  same hash twice leaves one entry; an unknown hash is a 404 "no song with that hash"; remove works.
+  **Where a song lands depends on a screen:** with the game on Settings every add went to `target:
+  "pending"`, and a *move* returned 409 "that song cannot be moved from where it is" — because the setlist
+  lives in the music-library menu and a pending song cannot be moved. With the music library open the
+  target is `setlist`, three songs queued in order, and moving one down reordered them. The game's own
+  `setListNotEmpty` flag flipped on screen (the button went from "Play Song" to "Add to Setlist / (Hold)
+  Start the Set"), which is the game confirming its setlist received them. The 409's wording blames the
+  song when the cause is the closed menu; that message is misleading and is not fixed.
+- **The Remote Queue settings showed raw localization keys** (`SETTINGS.SETTING.REMOTEQUEUE.NAME`):
+  `en-US.json` never had entries for `RemoteQueue`, `RemoteQueueVoting` or `RemoteQueueVotesNeeded` — at
+  `7f17f910` and in upstream too, so not a rebase artefact. A missing key fails nowhere, which is why it
+  survived two playtests. Fixed in `yarg` `d9474604`, and `SettingsRowProbe` now requires a name and a
+  description for every setting and a `Dropdown` block for every enum dropdown (172 settings; it was seen to
+  fail on exactly those three first). **What it cannot see**, stated in its source: an offered dropdown
+  option whose string is missing when the block holds others, because that needs a live settings object and
+  constructing one in batchmode throws (no audio manager). Confirmed on screen afterwards.
 
-**Still not verified:** the remote queue in play (the contract test passes headless, nobody has queued a
-song from a phone into the running game), and whether the real game *accepts* the `;` package — the
-reference encoder and our reader agree, but YARG itself has not loaded one.
+**Still not verified:** the phone app itself — everything above is the API it calls, so nobody has tapped
+a song on a phone and watched it arrive; suggestions and voting in play; what the setlist *shows* (only
+that the game says it is non-empty); and playing a queued song.
 
 ## Blockers
 
