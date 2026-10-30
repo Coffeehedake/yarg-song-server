@@ -1730,9 +1730,24 @@ its keep:
   option whose string is missing when the block holds others, because that needs a live settings object and
   constructing one in batchmode throws (no audio manager). Confirmed on screen afterwards.
 
+- **Suggestions and voting, run end to end in the real game** (library screen open, threshold 3). A voter
+  is the socket's own address, so three voters were simulated from `127.0.0.1`, `.2` and `.3` — Windows
+  treats all of `127.0.0.0/8` as loopback, and the server sees three different addresses. A suggestion
+  starts at score 1 (the suggester); **six votes from one address, each with a different `X-Voter-Id`
+  header, left the score at 1** — the 51-votes-against-a-threshold-of-3 problem that motivated using the
+  socket address holds in the game, not only in the unit-tested rules. A second and third address took it
+  to 3, promoted it to `deciding`, and three `choice=setlist` votes ended `decided: true, outcome:
+  AddToSetlist` with the song in the setlist and off the board. A second song put through `choice=next`
+  ended `PlayNext` and **landed at the head of the setlist**. Votes on queued songs (`?on=queued`) reorder
+  by score: one down-vote moved a song below its neighbour at once, and the score kept falling to −3. All
+  state is in memory and was cleaned up (queue and board empty). **PlayNext was measured with nothing
+  playing**, so "straight after the song currently playing" is untested; and an address is not a person —
+  two people sharing a tablet get one vote, which the code says.
+
 **Still not verified:** the phone app itself — everything above is the API it calls, so nobody has tapped
-a song on a phone and watched it arrive; suggestions and voting in play; what the setlist *shows* (only
-that the game says it is non-empty); and playing a queued song.
+a song on a phone and watched it arrive; what the setlist *shows* (only that the game says it is
+non-empty); playing a queued song, and so PlayNext while one is playing; the `voting is off` 404 (needs the
+setting flipped); and votes from real separate devices rather than loopback aliases.
 
 ## Blockers
 
