@@ -1715,12 +1715,19 @@ its keep:
   song when the cause was the closed menu; **fixed in `yarg` `61d2bc55`** — `Move` now says why, with the
   same status and the original wording kept for the other refusals (checked on a rebuilt game: a queued
   song with the library closed names the closed library; a never-queued real song and an unknown hash do
-  not). **A related inaccuracy was found while checking and is NOT fixed:** with the library *open*, `Move`
-  answers `200 moved: true` for a move that moves nothing — a real song that was never queued, and (by the
-  code, not measured) a song already at the end of the setlist — because `MoveSongInSetlistRemotely`
-  returns nothing and `Move` returns success unconditionally. It predates that fix. Making it honest
-  changes what the phone app sees (an up-arrow on the first song would start erroring), so it is a
-  decision, not a tidy-up.
+  not). **Checking that fix turned up a worse bug, also fixed:** with the library *open*, `Move` answered
+  `200 moved: true` for moves that moved nothing, and for a song that was never queued, with a non-empty
+  setlist, **moving it down was an HTTP 500** — upstream's `Playlist.MoveSongDown` does `IndexOf` (−1) and
+  then indexes `SongHashes[-1]`. `Move` returned success unconditionally and `MoveSongInSetlistRemotely`
+  returns nothing, so nothing checked. It predates the message fix; the server survived (the exception was
+  caught, the queue stayed intact) but any client could trigger it. `Move` now looks first: a song not in
+  the setlist, or already first (up) or last (down), is the usual 409. **Measured in the game across every
+  case:** never-queued down and up, on an empty and a non-empty setlist, all 409 (were 500 and 200); first
+  song up and last song down 409 (were 200 no-ops); middle moves still 200 and reorder. **Correction to an
+  earlier version of this paragraph:** it said fixing this would change what the phone app sees, an up-arrow
+  on the first song erroring. That was written without reading the app, which has no move controls and never
+  calls `move` — its reordering is `voteQueued`. The endpoint's only caller is the contract test, so nothing
+  user-facing depended on it, and the cost of leaving it was a reachable 500, not a broken screen.
 - **The Remote Queue settings showed raw localization keys** (`SETTINGS.SETTING.REMOTEQUEUE.NAME`):
   `en-US.json` never had entries for `RemoteQueue`, `RemoteQueueVoting` or `RemoteQueueVotesNeeded` — at
   `7f17f910` and in upstream too, so not a rebase artefact. A missing key fails nowhere, which is why it
