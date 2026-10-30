@@ -1,6 +1,6 @@
 # ADR-004: how a YARG client reaches a remote library
 
-**Status:** increment 1 **built, verified and finished** (`yarg` `6a05002` through `2a7abe1c`
+**Status:** increment 1 **built, verified and finished** (`yarg` `7590443` through `5865c24f`
 on `dev`). Increments 2 and 3 are proposals, and **no longer blocked on anybody's answer** —
 see the scope note immediately below.
 
@@ -196,11 +196,11 @@ of folder — which makes this a much smaller thing to ask about than "support r
 libraries", and a much smaller thing to review.
 
 **What it costs the player:** the whole library on disk, and a sync before play — which is
-automatic since `yarg` `6a6888de`, so it costs waiting rather than remembering.
+automatic since `yarg` `7996c46b`, so it costs waiting rather than remembering.
 
 #### Built, and measured against a real server
 
-`yarg` `6a05002`, with the menu integration finished over `b0c98f80` … `e346c167`.
+`yarg` `7590443`, with the menu integration finished over `4c24dde6` … `113a4b8c`.
 `PathHelper.ServerLibraryPath` and `SongServerSync.Sync(url, dest)` do the work; the player
 sees a **Song Server** settings tab carrying the URL, a live reachability line, what this
 machine holds, a **Sync On Startup** toggle (on by default) and Sync / Cancel. `server:yes`
@@ -260,7 +260,7 @@ in a fork.
 #### Gaps, stated rather than discovered later
 
 - ~~A **300 Multiple Choices** response is recorded as a failure rather than resolved.~~
-  **Closed in `yarg` `ff1ca96`.** The client now picks the smallest package hash ordinally,
+  **Closed in `yarg` `c87f0f5`.** The client now picks the smallest package hash ordinally,
   matching `yarg-sync`. The rule itself does not matter; that it is total and deterministic
   does — two clients choosing differently would be a difference nobody would look for until
   two people compared scores on what they believed was the same song. Measured against a

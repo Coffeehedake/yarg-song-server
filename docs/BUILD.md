@@ -129,7 +129,7 @@ handed to somebody was indistinguishable from the official build, so bugs we int
 have looked like upstream's, and upstream would have fielded the reports.
 
 It now builds as **`companyName: FatalException`, `productName: YARG-FE`, `bundleVersion: 0.1.0`**
-(fork commit `bc5847ca`).
+(fork commit `eff5a05b`).
 
 The consequence that actually mattered was not the label. Unity derives
 `Application.persistentDataPath` from those two strings, so before the rename this fork wrote its

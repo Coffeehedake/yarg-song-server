@@ -68,7 +68,8 @@ Rules:
   **Upstream PRs target `dev`, never `master`** — upstream will refuse `master` PRs outright.
 - **`yarg/` IS now cloned** (2026-09-07), at `dev`, with `upstream` pointing at
   `YARC-Official/YARG`, submodules initialised and LFS pulled — 4,815 files, 0.25 GB. The
-  `YARG.Core` submodule sits at upstream `028969a`.
+  `YARG.Core` submodule sits at upstream `8ae7718` (it was `028969a` until the 2026-10-30
+  rebase, which put `dev` on top of `upstream/dev` — see the ROADMAP).
 
   **YARG.Core builds and tests without Unity.** It is `netstandard2.1` with a plain
   `Microsoft.NET.Sdk` csproj, so `dotnet build YARG.Core.sln` and
@@ -77,11 +78,15 @@ Rules:
   SDK**: the unit-test and benchmark projects target `net10.0`, and ENG-1 had only 8.0.424.
   10.0.400 is now installed side by side in `C:\Program Files\dotnet`.
 
-  **Baseline, measured rather than assumed: 547 tests, ~543 pass, 1–2 fail, 2 skipped.** The
-  failure is `PossibleInstrumentsForSong_SixFretIncludesFiveFretInstruments` (expects 8
-  instruments, gets 9) and it is **upstream's**, not ours — the submodule is upstream code
-  verbatim at `028969a`. The two skips are `FullScan()` and `QuickScan()`, which want a real
-  song library; those are worth revisiting, since this project has one. Do not report "YARG.Core
+  **Baseline, measured 2026-10-30 at `8ae7718`: 745 tests, 737 pass, 6 fail, 2 skipped.** The six
+  are lip-sync phoneme tests (`AY_MapsToEatThenIf`, `ER_MapsToEarth`, `EY_MapsToOxThenIf`,
+  `NG_MapsToNew`, `OW_MapsToOxHeld`, `OY_MapsToOxThenEat`) and they are **upstream's**, not ours —
+  inferred, not re-run against a pristine upstream checkout: none of our commits touch YARG.Core
+  and the submodule pointer equals `upstream/dev`'s. (At `028969a` the baseline was 547 tests
+  with the one failure `PossibleInstrumentsForSong_SixFretIncludesFiveFretInstruments`; that one
+  no longer fails.) The two skips were `FullScan()` and `QuickScan()`, which want a real
+  song library, and were not re-checked at `8ae7718`; they are worth revisiting, since this
+  project has one. Do not report "YARG.Core
   is green" as a baseline; it is not, and a new failure would hide in that assumption.
 
   **The Unity Editor IS now installed** at `C:\Program Files\Unity\Hub\Editor\6000.3.5f2`,

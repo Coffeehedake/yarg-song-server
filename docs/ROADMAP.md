@@ -677,7 +677,7 @@ The upstream ask gets much smaller as a result: not "support remote libraries" b
 `SngFile.TryLoadFromStream`, and consider a materialise hook on `IniSubEntry`" — both small,
 both useful on their own, neither dragging networking into the library.
 
-**Increment 1 shipped 2026-09-07** — `yarg` `6a05002` on `dev`. The game mirrors a server's
+**Increment 1 shipped 2026-09-07** — `yarg` `7590443` on `dev`. The game mirrors a server's
 library into `PathHelper.ServerLibraryPath` and appends it to the scan list beside
 `PathHelper.SetlistPath`; **zero YARG.Core changes**, as the ADR predicted. Verified against
 vault2 from batchmode, not merely compiled: 23 songs, 238,215 bytes, every chart hash checked
@@ -711,7 +711,7 @@ argument when the second is rooted, so an absolute name cannot escape the way it
 -name regex already filters, and only removes hashes the server does not have. A server cannot
 name a file for deletion.
 
-**Remote arbitrary file write in the mirror client, `yarg` `02f23f90`.** The most serious defect
+**Remote arbitrary file write in the mirror client, `yarg` `f851fd5f`.** The most serious defect
 found in this project so far, and it came from following the hostile server one question further:
 the client asked the server what it was missing and used the answer as **filenames**, unchecked.
 
@@ -848,7 +848,7 @@ a Go `int8` and so cannot marshal as a string. Recorded in [`API.md`](API.md) as
 it is not re-investigated, with a note that the third is the one to re-check if `intensity` ever
 stops being an integer.
 
-**The download error branch was dead code, `yarg` `61cf1290`.** Following the hostile probe with
+**The download error branch was dead code, `yarg` `48bcb598`.** Following the hostile probe with
 one more question — what does a *player* read when a download fails — turned up that they read
 `Unknown Error`, and then that the branch meant to say more had never run.
 
@@ -898,7 +898,7 @@ The probe also pins what the guarantee does **not** promise: a failed download c
 song and that dead ones do not accumulate — measured at 1 after one sync and 1 after two, against
 a server that keeps failing.
 
-**A `server:` search filter came first, `yarg` `a31ddef7`.** `server:yes` shows only what the mirror
+**A `server:` search filter came first, `yarg` `b2629b6e`.** `server:yes` shows only what the mirror
 brought in, `server:no` only what was already yours, and it composes with everything else
 (`artist:queen;server:yes`).
 
@@ -925,7 +925,7 @@ pipeline runs and applied as one pass over the already-narrowed result.
 UI work whose result cannot be verified from a headless session. The filter is the verifiable
 half, and it is the half that answers "show me what came from the server".
 
-**A Song Server tab came first, `yarg` `fbb36f3a`.** The feature now has its own settings tab rather than
+**A Song Server tab came first, `yarg` `011d688f`.** The feature now has its own settings tab rather than
 three rows wedged under a header on Song Manager: URL, reachability, what this machine holds,
 the startup toggle, and Sync / Cancel. During a sync the mirror line becomes live progress.
 
@@ -948,7 +948,7 @@ Two new kinds of check came out of it, both worth reusing:
 End-to-end against vault2 after the `Sync` signature changes: `server=23 had=0 downloaded=23
 failed=0 bytes=238215` — byte-identical to the baseline from when the mirror first shipped.
 
-**Server status in the menu came first, `yarg` `c025a98a`.** Settings -> Song Manager shows a live line
+**Server status in the menu came first, `yarg` `69d7d007`.** Settings -> Song Manager shows a live line
 under the URL: connected and how many songs, or not reachable and why, plus the last sync's
 outcome. Before this, the only way to learn whether a URL worked was to press Sync and read an
 error dialog — a typo, a sleeping NAS and a healthy server were indistinguishable until you
@@ -972,7 +972,7 @@ able to swallow an error. **A probe that cannot fail is not evidence**, and the 
 log the whole time — lesson 5, "a green must come from the thing being tested", found again in
 a new disguise.
 
-**Auto-sync on startup came first, `yarg` `6a6888de`.** Pointing the game at a server is now
+**Auto-sync on startup came first, `yarg` `7996c46b`.** Pointing the game at a server is now
 something you do once: `Sync On Startup` (default on) mirrors before the startup scan, so a
 machine that plays does not have to be administered. Default-on costs nothing until a URL is
 set - the path returns before opening a socket.
@@ -1271,7 +1271,7 @@ Three things came out of it that matter beyond "it worked", all in
   non-zero error count, so a script that only read the result would have lied.
 - **The binary identified itself as `YARC` / `YARG`**, upstream's own values — so a distributed
   executable said nothing about being a fork, and upstream would have fielded our bug reports.
-  **Settled 2026-09-08** (fork commit `bc5847ca`): `FatalException` / `YARG-FE`. The label was the
+  **Settled 2026-09-08** (fork commit `eff5a05b`): `FatalException` / `YARG-FE`. The label was the
   smaller half; Unity derives `Application.persistentDataPath` from those strings, so the fork had
   been writing `settings.json` and `songcache.bin` into an official install's folder.
   `Assets/Editor/IdentityProbe.cs` asserts the *moved folder*, not the edited strings, and also
@@ -1429,7 +1429,7 @@ Can be picked up at any time; does not block the server.
 - **Graphics** — general rendering and visual improvements.
 - Both are ordinary upstream contributions: fork, branch off `dev`, PR to `dev`.
 
-### Remote queue — upstream issue #860, built 2026-09-09 (fork `4973e679`)
+### Remote queue — upstream issue #860, built 2026-09-09 (fork `225b03cb`)
 
 [#860](https://github.com/YARC-Official/YARG/issues/860) asks for *"remote Library Search/Queue
 management from a Webpage whilst YARG is running"* — karaoke, couch participation, parties. Open
@@ -1496,7 +1496,7 @@ Discord first, and the tier decides whether a PR is read at all; #860's comment 
 Feb 2025 Discord proposal, so somebody may already be building it. Asking is the next step, and
 now there is something to show — which was Jay's condition for making contact.
 
-#### Increment 3 — the room votes (fork `997c2330`)
+#### Increment 3 — the room votes (fork `dc46f591`)
 
 #860's one comment points at a Discord proposal that *"adds up/down votes to the queue"*. This is
 that, plus the half Jay asked for: **anybody can put a song forward from the library, and the room
@@ -1544,7 +1544,7 @@ falls back to defaults.
 The queue plumbing these votes drive — insert-at-top, reorder, play-next during a show — is still
 **inference**, for the same reason as increment 1: no menu scene and no library in batchmode.
 
-#### Increment 4 — the vote needs a moment to happen in (fork `d2d52fd0`)
+#### Increment 4 — the vote needs a moment to happen in (fork `6bfae300`)
 
 Jay's observation, and it undercut an argument from increment 3: **while a song is playing,
 everybody's hands are on an instrument.** Nobody is holding a phone. So voting is not a continuous
@@ -1615,7 +1615,7 @@ discovery at all**: its server URL is typed into Settings, and it is in daily us
 the proven house pattern; mDNS makes the connect screen optional and nothing more.
 
 **The wire contract is MEASURED, not inferred.** `Editor.RemoteQueueHost` in the fork
-(`f33483e0`) holds a real listener up in batchmode; `yarg-remote/src/live.test.ts` drives the
+(`e85d2ffe`) holds a real listener up in batchmode; `yarg-remote/src/live.test.ts` drives the
 app's own client against it. **12 cases, 12 pass.** They are written to distinguish *why* a call
 failed, because the status code alone does not say it:
 
@@ -1649,6 +1649,37 @@ until somebody plays the game — the same gap increments 2–4 already carry.
 - Codemagic is not wired up.
 
 ---
+
+## The fork was rebased onto upstream `dev`, 2026-10-30
+
+`yarg`'s `dev` had fallen 110 commits behind `YARC-Official/YARG`'s and carried 26 of ours. It was
+rebased (`dev` is now `92c3f007`: upstream's tip plus our 26, **0 behind**) and force-pushed to
+GitLab; the mirror carried it to GitHub. Staying abreast of upstream is the point — an upstream
+PR from a fork that has drifted this far is a rebase first and a PR second.
+
+- **Two of the 26 conflicted.** The first (the song-server sync commit) was adjacency: both sides
+  added a method at the same spot in `SettingsManager.Settings.cs`. The seventh (the server status
+  row) was a real API change: upstream replaced `AbstractMetadata`'s `isAdvanced` flag with a
+  `visibleWhen` delegate, so our `TextMetadata` constructors lost the parameter. Nothing else of
+  ours used it.
+- **Every fork commit hash in these docs changed**, because a rebase rewrites them. They have been
+  remapped to the new hashes, matched by commit subject. **A measurement quoted "at" a commit was
+  taken on the old base** — the pre-rebase tip is kept, under its old hashes, as the branch
+  `dev-pre-rebase-2026-10-30` on GitLab and GitHub.
+- **Anyone with an older clone of `yarg` must `git fetch` and `git reset --hard origin/dev`** — a
+  plain `git pull` will not do the right thing, and local work goes on a branch first.
+- **Upstream's LFS objects were not on our GitLab.** A checkout of `upstream/dev` died on
+  `NotoSansSymbols2-Regular.ttf` with a 404 until `git lfs fetch upstream upstream/dev` fetched them
+  and the push uploaded 8 of them to ours. Expect the same after any later rebase that pulls in new
+  LFS assets.
+
+**Measured on the rebased tree:** the fork compiles under Unity 6000.3.5f2 headless — **0 `error CS`,
+exit 0**; the yarg-remote live contract test passes **12 of 12** against a `RemoteQueueHost` built
+from it; `YARG.Core` is **737 passed / 6 failed / 2 skipped of 745** (the six are upstream lip-sync
+phoneme tests, see `WORKSPACE.md`).
+
+**Not verified:** nobody has run the game on the new base, so the song-server sync, the status row,
+and the remote queue are untested in play — as before, only now on a different foundation.
 
 ## Blockers
 
