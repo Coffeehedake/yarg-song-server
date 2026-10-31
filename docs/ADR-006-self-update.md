@@ -1,8 +1,26 @@
 # ADR-006: how a fork build updates itself
 
-**Status:** proposed, 2026-10-31. Nothing is built. Written after Jay asked for "an auto updater
-for our code" and chose, against the recommendation below, to put it **in the game** rather than
-beside it. That choice is recorded, and so is what it costs.
+**Status: BUILT AND PUBLISHING, 2026-10-31.** Written as a proposal and updated the same day once
+it worked. Jay asked for "an auto updater for our code" and chose, against the recommendation
+below, to put it **in the game** rather than beside it. That choice is recorded, and so is what
+it costs.
+
+| | |
+|---|---|
+| Client | `yarg` `a8c35a92` — `Assets/Script/Integration/SelfUpdate/`, a Settings tab, 15 smoke cases |
+| Helper test | `yarg` `97c0bd84` — `tools/test-update-helper.ps1`, 13 checks over 3 paths |
+| Publisher | `yarg` `6744f8f6` — `tools/publish-update.ps1` |
+| Server | vault2 container `yarg-updates` (nginx:alpine), `/mnt/user/YARG/updates` |
+| Manifest | `http://192.168.2.7:8098/dev.json` |
+| First published build | `dev b4183 (6744f8f6)`, 166,133,178 bytes |
+
+**The port is bound to `192.168.2.7`, not `0.0.0.0`,** so the update channel is reachable on the
+LAN and not over the tailnet or anything SWAG and cloudflared front. That is deliberate and is
+the mitigation for the unsigned-manifest risk below - it is not a substitute for a signature.
+
+**The updater cannot bootstrap itself.** A build made before this existed has no updater and will
+never check for one, so the first install of an updater-capable build on any machine is a manual
+copy. MSI received `b4183` by SMB on 2026-10-31 for exactly that reason.
 
 ## What prompted it
 
@@ -102,11 +120,24 @@ settings row:
 - The fork cannot update a build it did not make: the manifest's `branch` must match, which means
   a machine on `dev` never silently receives something from another branch.
 
-## Open, and deliberately not decided here
+## Decided since
 
-- Whether the helper is a tiny Go binary (the project already ships Go, and `yarg-sync` is
-  precedent) or a `.cmd`. Go is signable later and testable; `.cmd` is zero new build steps.
-- Whether ENG-1 publishing a build is manual or a script. Until it is a script, "auto updater"
-  means "automatic for the player, manual for Jay".
-- Whether to fix `LoadVersion()` upstream-style instead, which is a one-line change but moves
-  every existing install's data folder.
+- **The helper is PowerShell**, shipped in `Assets/StreamingAssets/update/` so it lands in a
+  build with no change to the build script, and copied out of the install folder before it runs.
+  A Go binary stays the better long-term answer because it can be signed; this needed no new
+  build step. It is tested against throwaway installs, including the case where the guard that
+  refuses a junk staging folder was removed - which really did destroy the fake install, and is
+  why that test exists.
+- **Publishing is a script**, `tools/publish-update.ps1`: build, package, upload, manifest,
+  verify over HTTP. It refuses a dirty tree and takes the build number from the version file the
+  player reads rather than from a separate `git` call.
+
+## Still open
+
+- `LoadVersion()` is still upstream's, and still unreadable in our builds. Fixing it is one line
+  and would move every existing install's data folder from `release/` to `dev/`, so it is not
+  worth doing for its own sake.
+- **No update has been applied by the game yet.** The helper is tested against fake installs and
+  the manifest is served and verified, but nothing has yet gone check -> download -> restart ->
+  new build on a real machine. Until that happens this is a mechanism, not a feature.
+- Signing, which the risk section above argues for and nobody has done.
