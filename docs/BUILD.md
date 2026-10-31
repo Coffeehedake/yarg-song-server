@@ -169,3 +169,65 @@ Release binaries are **not code-signed and will not be** — see `docs/SYNC-CLIE
 software does not carry a certificate subscription. Releases ship with `SHA256SUMS` and an honest
 warning in each archive's README, and the reproducible build means anyone who wants a signed
 binary can build and sign it themselves and prove it matches this source.
+
+## Putting a build on a second machine
+
+Measured 2026-10-31, building for `MSI` (192.168.3.167) so a phone could drive the queue.
+
+```powershell
+# ENG-1, any directory. Launch with Win32_Process.Create, not Start-Process (WORKSPACE.md).
+# The .cmd sets YARG_BUILD_OUTPUT and YARG_BUILD_DEVELOPMENT=1 and calls Unity as above.
+Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '"<path>\build-yarg.cmd"' }
+```
+
+**Result: 603 MB, 1.9 minutes, `BUILD RESULT: PASS WITH 2 ERROR(S)`.** Both errors are
+`RenderTexture.Create failed`, which is `-nographics` and not a defect — the same class this
+file's own script documents from its first run. A build that reports PASS WITH ERRORS is still
+worth reading before trusting; these two were read.
+
+### The player is Mono, which matters more than it looks
+
+`RemoteQueueServer` carries a KNOWN GAP saying its "binds `+:8099` without elevation"
+measurement was the editor, and that "a shipped player is IL2CPP with managed stripping". **For
+this project that premise is false.** `ProjectSettings.asset` sets `scriptingBackend` for
+`Android` only; Standalone has no override, so it builds Mono. Confirmed from the output tree
+rather than from the setting:
+
+| Evidence | Reading |
+|---|---|
+| `MonoBleedingEdge/` present | Mono |
+| no `GameAssembly.dll` | not IL2CPP |
+| 34 `RemoteQueue` symbols in `YARG_Data/Managed/Assembly-CSharp.dll` | our code shipped |
+
+So the player is the same runtime family the editor probe passed on, and a development build
+does not strip. That is a much narrower gap than the comment implies — but it is still not a
+measurement **of the player**, and LAN mode is the half a phone needs. The first run on a second
+machine is that measurement. Since `679f00d3` the settings row reports a failed start, so a
+refused bind says so instead of leaving the setting reading `Lan`.
+
+### It cannot collide with an official YARG install
+
+`companyName=FatalException`, `productName=YARG-FE`, so settings and songs live under
+`AppData/LocalLow/FatalException/YARG-FE`. An official YARG on the same machine keeps its own.
+
+### On the second machine
+
+1. Copy the whole `build\msi\` folder across. `YARG.exe` needs the `YARG_Data` folder beside it;
+   copying only the exe produces a launcher that does nothing useful.
+   `YARG-FE_BurstDebugInformation_DoNotShip` can be left behind — its name is the instruction.
+2. Run `YARG.exe`.
+3. **Settings -> Song Server -> Song Server URL** = `http://192.168.2.7:8099`, then the sync
+   button. The row says whether the server is reachable. If it reads *"Insecure connection not
+   allowed"*, the build is a release build and the wrong one — rebuild with
+   `YARG_BUILD_DEVELOPMENT=1`.
+4. **Settings -> Remote Queue = `Lan`.** The row then prints the address a phone should use. It
+   binds `http://+:8099/`; Windows Firewall must allow inbound TCP 8099, and the first run may
+   raise the firewall prompt.
+5. Point the phone app at that address. The game's port is **8099**, the same number the song
+   server uses on vault2 — different machines, so they do not collide, but do not read one
+   address for the other.
+
+**`Lan` has no authentication, by design and on purpose.** The server does not return 401
+because there is nothing to authenticate as; it only refuses callers whose address is not
+private. Anyone on the network can queue and reorder songs. That is fine for a living room and
+not fine for a venue's open wifi.
