@@ -1767,11 +1767,23 @@ its keep:
   **Two defects found.** (1) The Suggestions note said *"A song is playing … nothing moves until the score
   screen"* whenever `intermission` was false, which includes a game idling on a menu, and a decided vote
   moved the song at once — **fixed** in `yarg-remote` (reworded to what is established). (2) **The app and
-  the README both say the game "will show an address" when Remote queue is on. It does not**: the game
-  writes only `Remote queue: listening on http://+:8099/` to its log (a wildcard, not an IP) and shows
-  nothing in any menu or toast, so a first-time guest has no way to learn what to type. **NOT fixed** — the
-  choices are for the game to display its LAN address (code in the fork, and the right fix), or to change
-  both sentences to tell people to find their computer's IP and type `<ip>:8099`.
+  the README both say the game "will show an address" when Remote queue is on. It did not**: the game
+  wrote only `Remote queue: listening on http://+:8099/` to its log (a wildcard, not an IP) and showed
+  nothing in any menu or toast, so a first-time guest had no way to learn what to type. **Fixed in the
+  game**: a live status row under the Remote Queue setting (Settings → Experimental) says what is true —
+  off; *"Only this computer can reach it: 127.0.0.1:8099"* for Local; for LAN *"Type this into the app:
+  192.168.2.46:8099"* followed by fallbacks, the address on the interface with a **gateway first** (here
+  Wi-Fi) ahead of Tailscale, the VPN and the Hyper-V/WSL switches, never loopback or link-local; and, when a
+  start fails, *"Could not start (Lan): <reason>"* — a failed start used to be a log line and nothing else,
+  leaving a setting that said LAN over a server that was not running. The sentences are pure and checked
+  headless, and the checks were **mutation-proofed** (break a rule, watch the matching check go red,
+  restore). **Seen on screen** in Local and in LAN. Independent of the row, the game was listening on
+  `0.0.0.0:8099` and **answered `200` on `192.168.2.46:8099`**, i.e. from its LAN address and not loopback.
+  **A mistake worth keeping:** I first reported that LAN mode cannot bind for an ordinary Windows user
+  (and wrote code suggesting a `netsh http add urlacl` command). That came from a test in PowerShell 7,
+  where `HttpListener` is HTTP.sys and does need a URL reservation; the game is Unity's Mono, whose
+  `HttpListener` is managed and does not. The running game, not elevated, bound LAN fine. The wrong
+  runtime was measured; the claim and the command were removed before anything was committed.
 
 **Still not verified:** the app on an actual phone — no iOS or Android build has been made, so the native
 HTTP stack, the cleartext exceptions, touch and layout on a real screen are all untried; what the game's
