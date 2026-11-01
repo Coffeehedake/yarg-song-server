@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/coffeehedake/yarg-song-server/internal/config"
 	"github.com/coffeehedake/yarg-song-server/internal/scan"
@@ -61,10 +62,14 @@ func runUnpack(args []string, opt config.Resolved) error {
 		}
 		fmt.Printf("done: %d files, %.1f MB, %d songs readable afterwards\n",
 			res.FilesWritten, float64(res.BytesWritten)/(1<<20), res.SongsFound)
-		// The archive is still there and still being read on every startup, which is the
-		// cost this was meant to remove. Saying so with the command to fix it, because an
-		// operator who stops here has done the expensive half and kept the bill.
 		fmt.Printf("\nthe archive is untouched at %s\n", res.Archive)
+		if alreadyIgnored(res.Archive) {
+			fmt.Printf("it sits in a folder the indexer already skips, so it costs nothing.\n")
+			return nil
+		}
+		// Still being read on every startup, which is the cost this was meant to remove.
+		// Said with the command to fix it, because an operator who stops here has done the
+		// expensive half and kept the bill.
 		fmt.Printf("it is still read on every startup until you move it out of the walk:\n")
 		fmt.Printf("  mkdir -p <library>/%s && mv <library>/%q <library>/%s/\n",
 			scan.IgnoredDirName, res.Archive, scan.IgnoredDirName)
@@ -152,4 +157,18 @@ func printPlan(p *unpack.Plan) {
 		}
 		fmt.Printf("  %s\n    -> %s\n", c.Stored, c.Written)
 	}
+}
+
+// alreadyIgnored reports whether an archive sits somewhere the library walk does not look.
+//
+// Without this the advice printed after unpacking told an operator to move _packed/X.zip into
+// _packed, which is both useless and the kind of thing that makes someone stop reading the
+// rest of the output. Seen on vault2 while unpacking archives that had been parked first.
+func alreadyIgnored(rel string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+		if scan.IsReservedDir(part) {
+			return true
+		}
+	}
+	return false
 }
