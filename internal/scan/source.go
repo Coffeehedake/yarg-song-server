@@ -2,6 +2,7 @@ package scan
 
 import (
 	"archive/zip"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -36,6 +37,12 @@ const maxNesting = 6
 // recognised deliberately so the operator gets a reason rather than silence:
 // a file that is simply ignored looks like a broken server.
 var ErrRockBandPackage = errors.New("scan: Rock Band console package; its audio is encrypted and decrypting it is a permanent non-goal of this project, so the file is skipped rather than half-read")
+
+// ErrUnopenable7z means the file really is a 7z - it carries the signature - and this server
+// could not open it. Password protection is the overwhelmingly likely cause now that YARN
+// publishes every setlist as an encrypted .7z, and the message leads with that because the
+// person reading it has usually just copied one into the library by hand.
+var ErrUnopenable7z = errors.New("scan: this is a 7z archive but it could not be opened; it is probably password-protected, which is how YARN publishes setlists - install those with yarn-install rather than copying the archive in, since the server does not unpack archives it cannot read")
 
 // ErrTooManySongs means an archive holds several song folders. The roadmap
 // promises "a .zip of a loose folder", singular, and guessing which one the
@@ -93,6 +100,26 @@ func IsContainer(name string) bool {
 // caller downstream - the scanner, the packer, the package hash - sees exactly
 // what it would see for a loose folder. That is what makes a zipped song and an
 // unzipped one produce the same bytes.
+// sevenZSignature is the 6 bytes every 7z file starts with.
+var sevenZSignature = []byte{0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C}
+
+// looks7z reports whether the file carries the 7z signature, which separates "a real archive
+// we cannot read" from "a file that merely ends in .7z". Only the first costs an operator a
+// confusing message; the second is already obviously junk.
+func looks7z(p string) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	head := make([]byte, len(sevenZSignature))
+	if _, err := io.ReadFull(f, head); err != nil {
+		return false
+	}
+	return bytes.Equal(head, sevenZSignature)
+}
+
 func OpenContainer(p string) (fs.FS, io.Closer, error) {
 	var (
 		fsys   fs.FS
@@ -112,6 +139,17 @@ func OpenContainer(p string) (fs.FS, io.Closer, error) {
 	case ".7z":
 		r, err := sevenzip.OpenReader(p)
 		if err != nil {
+			// A password-protected .7z fails deep inside the LZMA reader, and the message it
+			// produces - "newRangeDecoder: first byte not zero" - tells an operator nothing.
+			// This case stopped being hypothetical the day YARN entered the picture: every
+			// setlist it publishes is an AES-256 .7z, so somebody downloading one by hand and
+			// dropping it in the library is a thing that will happen.
+			//
+			// We cannot tell "encrypted" from "corrupt" without a password to try, so the
+			// error says both and names the likely remedy rather than guessing.
+			if looks7z(p) {
+				return nil, nil, fmt.Errorf("%w: %s", ErrUnopenable7z, err)
+			}
 			return nil, nil, fmt.Errorf("scan: open 7z: %w", err)
 		}
 		for _, f := range r.File {
