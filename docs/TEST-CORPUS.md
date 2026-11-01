@@ -1022,3 +1022,131 @@ column (**20 accepted, 3 refused** — `13-mid-beats-chart`, `19-no-audio`,
 The one number worth keeping from that investigation, because it was measured and it is
 reassuring: **of 256 real community charts on hand, all 256 declare `song_length`.** Whatever
 any build does with its absence, no real library is affected.
+
+## Tenth oracle run — 2026-11-01, the bare CR, and the regression only the oracle caught
+
+A `song.ini` in the wild ends with a **bare CR** — a Mac-classic line ending — splicing two
+pairs onto one physical line:
+
+```
+song_length = 1062206\rplaylist_track = 4
+```
+
+That is the last line of `song.ini` in `29 - Take this Crusty L/04 Infant Annihilator - Behold
+the Kingdom of the Wretched Undying`, inside `Marathon Hero 2.rar`. 671 bytes, the rest of the
+file ordinary CRLF, no trailing newline. The file is malformed; the parser was not.
+
+**It cost the whole song.** Our reader kept the CR in the value, so `sng.validateMeta` refused
+`sng: value of "song_length" contains a newline`, packing failed, and the song answered **HTTP
+500**. YARG, meanwhile, plays it and merely loses `playlist_track`. Ours was strictly worse than
+the game's: YARG drops a field, we dropped the song.
+
+### The corpus gained three cases
+
+`24-barecr-value`, `25-barecr-string` and `26-barecr-before-equals`. Each carries **unique
+sentinel strings**, because `badsongs.txt` only reports refusals and these songs are not
+refused — the question was what YARG *read*, and the answer is in its own `songcache.bin`,
+where metadata is stored as length-prefixed UTF-8 and can simply be searched.
+
+| Corpus case | Probes | YARG v0.15.0's cache | Verdict |
+|---|---|---|---|
+| `24-barecr-value` | the real-world shape, a numeric splice | `BareCR Value` cached, song accepted | accepted |
+| `25-barecr-string` | a CR inside a **string** value | `BareCRKeep` present, **`BareCRDrop` absent**, artist `BareCRCorrectArtist` | **truncated at the CR** |
+| `26-barecr-before-equals` | a CR between a key and its `=` | **`BareCRBadAlbum` present, `BareCRGoodAlbum` absent** | **YARG reads the pair** |
+
+Plus the real song, twice: as a loose folder and as our own repack of it.
+
+| Step | Outcome |
+|---|---|
+| Corpus cases | 26 generated + the real song loose + the real song packed by us |
+| `badsongs.txt` | **Total Errors: 3** — `13-mid-beats-chart`, `19-no-audio`, `21-ultrastar-no-title` |
+| Bare-CR cases refused | **none** — 24, 25, 26, the loose real song and our `.sng` were all accepted |
+| `songcache.bin` | 8,885 bytes |
+| SngCli v0.3.0 decode of our `.sng` | `song_length = 1062206`, no `playlist_track`, chart SHA1 `b67974e3…` unchanged |
+
+### What case 25 settled, and what it refutes
+
+`YARGTextReader.ExtractText`'s non-chart branch does
+`if (ch == '\r' && stringEnd == -1) stringEnd = container.Position;` and then keeps scanning to
+the `'\n'`, so a **string** value stops at the first CR exactly as a number does via
+`TryExtract` halting on a non-digit. `ExtractModifierName` breaks on any character
+`<= WHITESPACE_LIMIT` (32), and CR is 13. Then `YARGIniReader.IsStillCurrentSection` calls
+`GotoNextLine` before looking for another key, which is what makes the spliced remainder
+unreachable.
+
+This **refutes a reading made from `PeekLine`** — that a string value would keep an interior CR
+and so a blanket truncation would diverge for `KindString`. `PeekLine` is only used by
+`TrySection` for the `[song]` header; values never pass through it. No `Kind`-aware handling is
+needed, and `internal/songini/keys.go` was not touched.
+
+### Case 26 caught a regression in the fix itself
+
+The first version of the fix cut the whole **line** at the first CR. That is wrong, and nothing
+in our own test suite could have said so — every test passed.
+
+A CR on the **key** side of the `=` is only whitespace to YARG: `ExtractModifierName` stops on
+it, `SkipWhitespaceAndEquals` skips it, and the pair is read normally. `26-barecr-before-equals`
+put `BareCRBadAlbum` in YARG's cache and left the preceding `album = BareCRGoodAlbum` out of it
+entirely — so cutting the line **dropped a pair YARG reads**, which the previous
+`strings.TrimSpace` on the key had quietly handled correctly all along.
+
+The fix now cuts the **value**, never the line. This is the clearest case yet of the rule this
+repo already holds: *a green from our own tests is not a measurement of someone else's code.*
+
+### What the fix does, and what it costs
+
+- A value is cut at its first CR or LF, matching `ExtractText`.
+- A key carrying `=`, `;`, CR or LF — the set `sng.validateMeta` reserves — is dropped at the
+  reader, where YARG also drops it, since no entry in `SONG_INI_OUTLINES` contains any of them.
+  **The writer's guard is unchanged**; it simply can no longer fire on `song.ini` input. Two
+  further shapes 500'd and nobody had noticed: `na\rme = X`, and any line whose key carries a
+  `;` such as a `; charted by someone = yes` pseudo-comment. (YARG has **no** comment syntax in
+  `song.ini` — it reads `;` as a key and fails the table lookup. A plain `; comment` line with
+  no `=` was never affected.)
+- `playlist_track = 4` is **lost**, deliberately, because it is lost in the game. Recovering it
+  would put a number in the browse list that the client does not have, which this project treats
+  as wrong even when it is more sensible.
+- It is **not** lost silently. `songini.File.Dropped` carries the text, and the scanner raises
+  `metadata_unreachable` naming it. The song is served; a field is missing; something says why.
+
+### How many songs are affected
+
+| Library | Scanned | Affected |
+|---|---|---|
+| **Live server on vault2** | **1,369 / 1,369** | **0** |
+| **`Marathon Hero 2.rar`** | **152 / 152** | **1** — the song above |
+
+Both counts needed their instrument checked first, and one of them needed it three times.
+
+For the live count, `raw_metadata` is `omitempty`, so a zero could equally have meant the field
+was absent. It is not: 500 of 500 songs in the first page carry it, 14,909 key/value pairs over
+129 distinct keys, and **no value in the entire live library contains any control character at
+all**. The zero is a real zero. Read-only, over `GET /api/v1/songs`.
+
+The archive count took three passes, and the first two were wrong while printing a plausible
+total:
+
+1. `os.walk` reached **142** of 152. These paths exceed `MAX_PATH`; `os.walk` cannot descend
+   them and does not say so.
+2. Taking 7-Zip's own listing as the accounting set reached **143**. 7-Zip's console output
+   mangles non-ASCII folder names, so nine paths could not be matched on disk.
+3. Walking from a `\\?\`-prefixed root, and asserting the total against 7-Zip's 152 rather than
+   reporting whatever turned up, reached **152 of 152**. One affected.
+
+A scan that cannot say what it failed to read is not a count. The first two passes would both
+have supported the sentence "one song in this archive is affected" — correctly, by luck, while
+being blind to 10 and 9 files respectively.
+
+### Still open, and now answerable
+
+`songini.Parse` carries a comment saying its whitespace and multiple-`=` handling is
+*"the conventional Clone Hero reading"* and **unverified** against
+`YARGTextReader.ExtractModifierName`. That source has now been read, and it says a key is the
+maximal run of characters above 32 that are not `=`. So `album track = 5` is, to YARG, key
+`album` with value `track = 5` — not key `album track` with value `5`, which is what this
+reader stores.
+
+That is a real divergence and it is **deliberately not fixed here**. It changes how every key
+containing a space is read, across a whole library, and it is not what made a song unservable.
+It wants its own change and its own oracle run, with a corpus case of its own. Recorded so the
+next person starts from a measurement rather than from the comment.

@@ -108,6 +108,23 @@ Then, by subject:
   songs they belonged to look accepted. The first run reported 3 rejections; the corrected one
   reported 6. When a comparison cannot name what it compared, it must say so and exit
   inconclusive, not average it away.
+- **One malformed line must never cost a whole song, and the repair belongs in the READER.**
+  A `song.ini` in the Marathon Hero 2 setlist ends `song_length = 1062206\rplaylist_track = 4` —
+  a bare CR splicing two pairs onto one line. The reader kept the CR in the value, `validateMeta`
+  refused it, and the song returned **HTTP 500** while YARG plays it and merely loses
+  `playlist_track`. Ours was strictly worse than the game's: YARG drops a field, we dropped the
+  song. The writer's guard is right and stays — a real `\n` would corrupt a re-emission — so
+  anything the writer cannot express is now removed where YARG removes it, in `songini`. The same
+  shape 500'd for `na\rme = X` and for any key carrying a `;`. **When a guard fires on real input,
+  ask whether the input should have reached it**; deleting the guard and refusing the song are
+  both wrong.
+- **`songini` cuts the VALUE at a bare CR, never the LINE, and only the oracle knows why.**
+  A CR on the key side of the `=` is whitespace to YARG (`ExtractModifierName` stops on it,
+  `SkipWhitespaceAndEquals` skips it) so the pair is read; cutting the line dropped it. Every test
+  in this repo passed on the line-cutting version. Corpus case `26-barecr-before-equals` is what
+  said otherwise, by putting `BareCRBadAlbum` in YARG's own `songcache.bin`. A green from our
+  tests is not a measurement of someone else's code — and `badsongs.txt` cannot answer "what did
+  YARG READ", only "what did it refuse". For that, search `songcache.bin` for a unique sentinel.
 - **The scanner hashes the chart; it does not read it.** Song identity is `SHA1(chart bytes)`
   and this project deliberately does not reimplement YARG's parser. The price, found on
   2026-09-07: a truncated MIDI and a text file named `notes.mid` both index as healthy songs

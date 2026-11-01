@@ -236,6 +236,27 @@ const (
 	// name into the archive's metadata section from song.ini. Both measured
 	// against the oracle; the second is why this is a note and not a refusal.
 	IssueUltraStarNoTitle = "ultrastar_no_title"
+
+	// IssueMetadataUnreachable: a song.ini line carried text no reader can
+	// reach, so a field the charter wrote is invisible to the game. Two
+	// causes, both reproduced from YARG.Core's reader:
+	//
+	// A BARE CR. YARG breaks lines on '\n' alone, so a Mac-classic line ending
+	// splices two pairs onto one physical line and only the first survives -
+	// `song_length = 1062206\rplaylist_track = 4` gives the game a length and
+	// no playlist_track. Measured in the wild: that exact line is the last one
+	// of song.ini in "04 Infant Annihilator - Behold the Kingdom of the
+	// Wretched Undying" in the Marathon Hero 2 setlist.
+	//
+	// A KEY YARG's TABLE CANNOT HOLD. A key carrying '=' or ';' matches no
+	// entry in SONG_INI_OUTLINES, so the game reads the line and discards it.
+	//
+	// This is a note, never a refusal. YARG plays the song; it just plays it
+	// with one field missing, and so the catalog must describe it with one
+	// field missing. Before this was handled the server packed it into HTTP
+	// 500 instead, which is strictly worse than the game's own silence: YARG
+	// loses a field, we lost the song.
+	IssueMetadataUnreachable = "metadata_unreachable"
 )
 
 // PartValues is one instrument's state.

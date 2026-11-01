@@ -34,7 +34,72 @@ type File struct {
 	// flag lets the caller say WHY the metadata is empty rather than leaving a
 	// charter wondering where their title went.
 	SawSection bool
+
+	// Dropped lists text this reader deliberately threw away because YARG
+	// cannot act on it either - the remainder of a line after a bare CR, and
+	// a key YARG's own table could never match. Each entry is the text as it
+	// appeared.
+	//
+	// It exists so the loss is visible. YARG discards the same text silently;
+	// a server that did too would leave an operator with a song whose
+	// playlist_track vanished and nothing anywhere saying why.
+	Dropped []string `json:"dropped,omitempty"`
 }
+
+// cutAtLineBreak splits a value at the first CR or LF, returning the part YARG
+// would read and the part it could not reach.
+//
+// This is the whole of YARG's bare-CR behaviour, read from
+// YARG.Core/IO/TextReader/YARGTextReader.cs rather than assumed:
+//
+//   - A line ends at '\n' and ONLY at '\n'. TextConstants<TChar>.NEWLINE is
+//     initialised from `int newline = '\n'` and nothing else, and GotoNextLine
+//     searches for that constant alone. A bare CR - a Mac-classic line ending -
+//     is therefore not a line break to YARG at all.
+//   - A string value stops at the first CR regardless: ExtractText sets
+//     stringEnd at the first '\r' it sees and keeps scanning to the '\n', so
+//     the text between the CR and the newline is never part of any value.
+//   - A numeric value stops there too, because TryExtract consumes leading
+//     digits and halts at the first character that is not one.
+//   - A key stops there as well: ExtractModifierName breaks on any character
+//     <= WHITESPACE_LIMIT (32), and CR is 13.
+//   - Whatever followed the CR is then unreachable, because the reader's loop
+//     calls GotoNextLine before looking for another key - it jumps to the next
+//     '\n' and starts there.
+//
+// So one physical line holding `a = 1\rb = 2` gives YARG a = 1 and loses b
+// entirely. Cutting at the CR reproduces that, and it has the side effect of
+// making it impossible for a song.ini to hand the .sng writer a value carrying
+// a control character the format cannot express.
+//
+// It is applied to the VALUE, never to the whole line, and that distinction is
+// a measurement rather than a reading. A CR on the KEY side of the '=' falls in
+// the run that ExtractModifierName stops on and SkipWhitespaceAndEquals then
+// skips, so YARG reads the pair regardless. Corpus case 26-barecr-before-equals
+// exists to settle it: `album = BareCRGoodAlbum` followed by
+// `album\r = BareCRBadAlbum` put BareCRBadAlbum in YARG v0.15.0's own
+// songcache.bin and left BareCRGoodAlbum out of it entirely, on 2026-11-01.
+// Cutting the line instead of the value dropped that pair and was a regression
+// this reasoning would not have caught - only the oracle did.
+func cutAtLineBreak(s string) (head, rest string) {
+	i := strings.IndexAny(s, "\r\n")
+	if i < 0 {
+		return s, ""
+	}
+	return s[:i], strings.TrimSpace(s[i+1:])
+}
+
+// reservedInKey are the characters the .sng writer cannot put at the start of a
+// re-emitted song.ini line (see sng.validateMeta). A key containing one is
+// dropped rather than carried into metadata, and nothing is lost by that: YARG
+// matches a key against SONG_INI_OUTLINES, no entry of which contains any of
+// these, so such a key is read and then ignored by the game. Carrying it
+// through would turn one stray character in one line into a song the server
+// cannot pack at all.
+//
+// '\r' and '\n' are here for completeness; cutAtLineBreak has already removed
+// them by the time a key is formed from a song.ini line.
+const reservedInKey = "=;\r\n"
 
 // Parse reads a song.ini from raw bytes.
 //
@@ -99,6 +164,23 @@ func Parse(raw []byte) *File {
 		key := strings.ToLower(strings.TrimSpace(line[:eq]))
 		val := strings.TrimSpace(line[eq+1:])
 		if key == "" {
+			continue
+		}
+		// A bare CR inside the VALUE ends it, and whatever followed on this
+		// physical line is beyond YARG's reach - see cutAtLineBreak. The cut
+		// is on the value and not on the whole line because a CR on the KEY
+		// side of the '=' is whitespace to YARG, which reads the pair anyway;
+		// measured, see cutAtLineBreak's last paragraph.
+		if head, rest := cutAtLineBreak(val); rest != "" {
+			f.Dropped = append(f.Dropped, rest)
+			val = head
+		}
+		// A key the .sng writer could not re-emit is dropped here instead of
+		// being carried into metadata and refused there. YARG ignores such a
+		// key too, so the song keeps every field the game can see - whereas
+		// refusing it at the writer loses the whole song. See reservedInKey.
+		if strings.ContainsAny(key, reservedInKey) {
+			f.Dropped = append(f.Dropped, line)
 			continue
 		}
 
@@ -257,6 +339,32 @@ func FromMap(kv map[string]string, order []string) *File {
 	add := func(k, v string) {
 		lk := strings.ToLower(strings.TrimSpace(k))
 		if lk == "" {
+			return
+		}
+		// Same two rules as the song.ini path, for the same reason: one stray
+		// character in one pair must not cost the whole song.
+		//
+		// This IS a deliberate divergence, and a narrow one. A .sng stores its
+		// metadata length-prefixed, so YARG's reader does not tokenize it -
+		// IniModifierCollection.AddSng decodes a String value whole, CR and
+		// all, and only the numeric kinds stop at a non-digit. We truncate
+		// anyway, because we REPACK: the archive the client downloads is the
+		// one we wrote, so after truncation the catalog and the served file
+		// agree with each other and with what the game reads out of it. The
+		// alternative - carrying the CR through - would need the .sng writer's
+		// guard relaxed to buy agreement we already have.
+		//
+		// Unlike the song.ini case this is reasoned, not measured: no .sng or
+		// .yargsong carrying a line break in a metadata value has been
+		// observed. It is here because the failure mode is identical and the
+		// repack path reaches sng.Write the same way.
+		head, rest := cutAtLineBreak(v)
+		if rest != "" {
+			f.Dropped = append(f.Dropped, rest)
+		}
+		v = head
+		if strings.ContainsAny(lk, reservedInKey) {
+			f.Dropped = append(f.Dropped, lk+" = "+v)
 			return
 		}
 		if !seen[lk] {

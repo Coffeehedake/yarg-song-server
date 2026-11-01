@@ -239,9 +239,14 @@ no note events, proven by a control in which SngCli's own archive of the same fo
 identically.
 
 And the parts we report now agree with the client's own verdict: on the corpus (22 cases then,
-23 since archive ingest landed), **every
+23 since archive ingest landed, 26 since the bare-CR cases), **every
 song YARG rejects is one this scanner independently flags**, by three routes — no parts detected,
 `no_audio`, and `ultrastar_no_title`.
+
+A fourth code, `metadata_unreachable`, is **not** a refusal class and must not be counted as one.
+YARG plays those songs; it just cannot see one field the charter wrote, because a bare CR or a key
+its own table cannot hold put that text out of reach. It is reported so a missing field has an
+explanation. See the tenth oracle run in `docs/TEST-CORPUS.md`.
 
 **Explicitly out of scope, permanently:** CON/mogg decryption, `songcache.bin` generation,
 `.milo_xbox` / `.png_xbox` decoding, `.yarground` inspection, full MIDI chart semantics.

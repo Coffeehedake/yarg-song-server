@@ -184,6 +184,39 @@ var cases = []aCase{
 
 	{dir: "23-zipped", probe: "an ordinary song delivered as a .zip - does the server ingest, pack and serve from inside an archive",
 		zipped: true, ini: ini("Zipped")},
+
+	// 24-26 probe the BARE CR, a Mac-classic line ending inside a song.ini
+	// line. Found in the wild: song.ini in "04 Infant Annihilator - Behold the
+	// Kingdom of the Wretched Undying", in the Marathon Hero 2 setlist, ends
+	// `song_length = 1062206\rplaylist_track = 4` with the rest of the file
+	// ordinary CRLF.
+	//
+	// Reading YARG.Core says it breaks lines on '\n' alone, so the text after
+	// the CR should be unreachable to the game. These three cases exist because
+	// that is a claim about someone else's code, and the sentinel values below
+	// are deliberately unique strings so that YARG's own songcache.bin can be
+	// searched for them - which of them appears says which reading is real.
+
+	{dir: "24-barecr-value", probe: "a bare CR splicing two pairs onto one line, the shape found in the wild - does YARG accept the song, and does it read the first pair",
+		ini: []byte("[Song]\nname = BareCR Value\nartist = Corpus Artist\nalbum = Corpus Album\nyear = 1994\nalbum_track = 9\nsong_length = 1062206\rplaylist_track = 4")},
+
+	// The discriminator. ExtractText's non-chart branch sets stringEnd at the
+	// first '\r' and keeps scanning to the '\n', which should truncate a STRING
+	// value there just as TryExtract truncates a number.
+	//
+	//   truncated at the CR  -> BareCRKeep present, BareCRDrop absent
+	//   CR kept in the value -> both present, in one album string
+	//   CR taken as a break  -> BareCRDrop present as the artist
+	{dir: "25-barecr-string", probe: "a bare CR inside a STRING value - truncated at the CR, kept, or treated as a line break",
+		ini: []byte("[Song]\nname = BareCR String\nartist = BareCRCorrectArtist\nyear = 1994\nalbum = BareCRKeep\rartist = BareCRDrop\n")},
+
+	// The one case our reader does NOT claim to match. A CR between a key and
+	// its '=' falls in the whitespace run that ExtractModifierName stops on and
+	// SkipWhitespaceAndEquals then skips, so YARG may well read the pair -
+	// while cutting the line at the CR drops it. Measured here rather than
+	// assumed either way; BareCRBadAlbum appearing in the cache settles it.
+	{dir: "26-barecr-before-equals", probe: "a bare CR between a key and its '=' - does YARG still read the pair",
+		ini: []byte("[Song]\nname = BareCR Before Equals\nartist = Corpus Artist\nyear = 1994\nalbum = BareCRGoodAlbum\nalbum\r = BareCRBadAlbum\n")},
 }
 
 func write(root string) error {

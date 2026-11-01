@@ -119,6 +119,19 @@ func scan(fsys fs.FS, names []string, ini *songini.File) (*catalog.Song, error) 
 	applyMetadata(s, ini)
 	applyPreparse(s, chartRaw, s.ChartFormat, ini)
 
+	// Metadata the charter wrote that no reader can reach. Raised here rather
+	// than in ScanDir because the .sng path arrives through ScanArchive and
+	// loses fields the same way. YARG discards this text silently; saying so
+	// is the difference between an operator seeing "playlist_track is missing
+	// because a bare CR hid it" and seeing nothing at all.
+	if len(ini.Dropped) > 0 {
+		s.Issues = append(s.Issues, catalog.Issue{
+			Code: catalog.IssueMetadataUnreachable,
+			Detail: fmt.Sprintf("%d piece(s) of song.ini text are unreachable to YARG and were dropped: %s",
+				len(ini.Dropped), strings.Join(ini.Dropped, " | ")),
+		})
+	}
+
 	if err := collectAssets(s, fsys, names, chartName, ini); err != nil {
 		return nil, err
 	}

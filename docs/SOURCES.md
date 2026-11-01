@@ -67,6 +67,18 @@ Derived from source and from measurement, because nothing else covers it:
   documentation; it came from `HashWrapper` and `ScanChart`.
 - **Audio stem naming** — TheNathannator lists audio as a TODO, and the clean/explicit variants
   are a YARG-specific extension no third-party document covers.
+- **What a MALFORMED `song.ini` line means.** The wiki documents the tag table; it does not say
+  what happens when a file breaks the format, and that is the question a server actually faces.
+  Settled from `YARG.Core/IO/TextReader/YARGTextReader.cs` plus `YARGIniReader.cs`, and then
+  measured against the real game (tenth oracle run, `TEST-CORPUS.md`):
+  **a line ends at `'\n'` and only at `'\n'`** (`TextConstants<TChar>.NEWLINE` is initialised
+  from `int newline = '\n'` and nothing else); a **bare CR ends a value**, strings included
+  (`ExtractText` sets `stringEnd` at the first `'\r'` and keeps scanning to the newline), so
+  there is no typed-vs-string distinction to make; whatever followed the CR is **unreachable**,
+  because `IsStillCurrentSection` calls `GotoNextLine` before looking for another key; but a CR
+  **between a key and its `=`** is merely whitespace, and the pair is read.
+  That last clause is the one worth carrying: it is invisible in the other three, and a fix that
+  cut the whole line at the CR passed every test in this repo while dropping a pair YARG reads.
 - **Scanner behaviour** — that a headerless `song.ini` yields no metadata, that a chart with no
   audio is rejected, and that a folder with no `song.ini` is silently skipped were all established
   by scanning a corpus with the game and reading its own report. See `TEST-CORPUS.md`.
