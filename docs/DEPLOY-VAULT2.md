@@ -986,3 +986,42 @@ job rather than a fault:
 The first two are the multi-song case the scanner refuses by design rather than publishing one
 song and dropping the rest. The third is a different thing entirely - that file is not a
 readable zip at all, which usually means a truncated or interrupted download.
+
+## Storage layout — where the data lives, and where it must not (2026-11-01)
+
+**This is large-file storage. The song data lives on the ARRAY with the cache enabled, and
+never inside the docker image.** Everything the server reads or writes is a bind mount; nothing
+of consequence is in the container layer, and a container that stored songs in its own
+filesystem would lose them on every upgrade while quietly filling the docker image file.
+
+Measured on 2026-11-01 rather than assumed:
+
+| What | Where | How it is configured |
+|---|---|---|
+| `/songs` | `/mnt/user/YARG/songs`, 25 G | `shareUseCache="yes"`, `shareCachePool="cache"`, `shareAllocator="highwater"` |
+| `/songs/unpacked` | same share, nested `rw` mount | owner `65532:users`, mode 775 |
+| `/data` | `/mnt/cache/appdata/yarg-song-server/data`, 2.0 G | addressed as `/mnt/cache/...`, so it never leaves the cache |
+| container layer | nothing | both are bind mounts |
+
+The library is therefore already right: writes land on the NVMe cache and the mover migrates
+them to the array.
+
+`/data` is the exception, and it is deliberate rather than accidental - it is the conventional
+Unraid appdata placement, it avoids FUSE overhead on the pack cache's many small reads, and the
+mover never churns it. What it costs is that this data exists on ONE device. That is tolerable
+only because everything in it is regenerable: the index is rebuilt at startup and the pack
+cache is bounded by `pack_cache_max` and re-packs whatever it evicts. Nothing in `/data` is the
+only copy of anything. **If that ever stops being true, `/data` moves to the share.**
+
+### One number that does not fit, and has not been explained
+
+Moving 8 GB of archives onto the share over SMB ran at **4.8 MB/s** (1,012 MB in 212 s). A share
+with `shareUseCache="yes"` should be absorbing writes onto NVMe at far more than that on a
+gigabit link, and the cache was 55% full with 1.3 T free, so it was not spilling to the array
+for want of room.
+
+It is recorded here unexplained on purpose. The temptation is to conclude "the array is slow"
+and move the library to the cache, which would be a large, hard-to-reverse decision taken on one
+measurement with no diagnosis - and this project has been caught before blaming the subject when
+the instrument was at fault. Measure the write path directly on the host (`dd` to
+`/mnt/user/YARG/songs` and to `/mnt/cache` separately) before touching the layout.
