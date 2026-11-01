@@ -3,6 +3,7 @@ package scan
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -169,5 +170,77 @@ func TestASingleSongArchiveStillHasNoInnerPath(t *testing.T) {
 	}
 	if got[0].Song.Name != "Only" {
 		t.Errorf("name = %q, want Only", got[0].Song.Name)
+	}
+}
+
+func TestSongRootsReadsNamesOnly(t *testing.T) {
+	// songRoots takes a name list, not a filesystem, and that signature IS the fix: walking
+	// the fs called ReadDir per directory, which on a large solid .7z forces a block
+	// decompression each time. It pinned a core at 92% on a 2 GB archive and never finished.
+	cases := []struct {
+		name string
+		raw  []string
+		want []string
+	}{
+		{
+			name: "several songs in one archive",
+			raw: []string{
+				"Alpha/song.ini", "Alpha/notes.mid", "Alpha/song.ogg",
+				"Beta/song.ini", "Beta/notes.chart",
+			},
+			want: []string{"Alpha", "Beta"},
+		},
+		{
+			name: "the archive root is the song",
+			raw:  []string{"song.ini", "notes.mid"},
+			want: []string{""},
+		},
+		{
+			name: "backslash separators are understood",
+			raw:  []string{`Song\song.ini`, `Song\notes.mid`},
+			want: []string{"Song"},
+		},
+		{
+			name: "a song inside a song is not a second song",
+			raw: []string{
+				"Outer/notes.mid", "Outer/song.ini",
+				"Outer/extras/notes.mid",
+			},
+			want: []string{"Outer"},
+		},
+		{
+			name: "a root song swallows everything below it",
+			raw:  []string{"notes.mid", "bonus/notes.mid"},
+			want: []string{""},
+		},
+		{
+			name: "non-chart files alone are not a song",
+			raw:  []string{"readme.txt", "art/cover.png"},
+			want: nil,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := songRoots(c.raw)
+			if c.want == nil {
+				if !errors.Is(err, ErrNoChart) {
+					t.Fatalf("err = %v, want ErrNoChart", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("songRoots: %v", err)
+			}
+			if len(got) != len(c.want) {
+				t.Fatalf("got %v, want %v", got, c.want)
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Errorf("got %v, want %v", got, c.want)
+					break
+				}
+			}
+		})
 	}
 }

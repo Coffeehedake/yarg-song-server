@@ -5,6 +5,8 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"sort"
+	"strings"
 
 	"github.com/coffeehedake/yarg-song-server/internal/catalog"
 )
@@ -28,58 +30,71 @@ type ContainerSong struct {
 	Song  *catalog.Song
 }
 
-// songRoots finds every song folder in a container.
+// songRoots finds every song folder in a container, FROM THE STORED ENTRY NAMES.
 //
-// A folder containing a chart is a song and is NOT descended into: a song folder may legally
-// contain subfolders, and treating those as further songs would publish an album's artwork
-// directory as a track. Depth is bounded the same way songRoot bounds it, because an unbounded
-// descent on a hostile archive is a denial of service rather than a thorough search.
-func songRoots(fsys fs.FS) ([]string, error) {
-	var found []string
+// It reads names and nothing else. The first version walked the archive as a filesystem,
+// calling ReadDir on every directory, and that is pathological on a large solid .7z: each
+// listing can force the decompression of a whole block, so a 2 GB archive pinned a core at
+// 92% and never finished indexing. Measured on vault2, 2026-10-31, where it took the service
+// down until it was rolled back. The old single-song path never hit this because it gave up
+// with ErrTooManySongs almost immediately.
+//
+// A directory is a song when it directly contains a chart file. Both separators are handled,
+// because an archive written by an old Windows tool stores backslashes and the fs view cannot
+// see into those at all - the same blindness looksLikeASong exists to work around.
+//
+// A song folder found inside another song folder is dropped: a song may legally contain
+// subfolders, and publishing an album-art directory as a track is worse than missing an
+// oddity nobody ships.
+func songRoots(raw []string) ([]string, error) {
+	seen := map[string]bool{}
 
-	var walk func(cur fs.FS, prefix string, depth int) error
-	walk = func(cur fs.FS, prefix string, depth int) error {
-		if depth >= maxNesting {
-			return nil
+	for _, n := range raw {
+		norm := strings.ReplaceAll(n, "\\", "/")
+		norm = strings.TrimPrefix(norm, "./")
+		if norm == "" || strings.HasSuffix(norm, "/") {
+			continue
 		}
 
-		names, err := rootNames(cur)
-		if err != nil {
-			return err
+		dir, base := path.Split(norm)
+		dir = strings.TrimSuffix(dir, "/")
+		if _, ok := PickChartFile([]string{base}); !ok {
+			continue
 		}
-		if _, ok := PickChartFile(names); ok {
-			found = append(found, prefix)
-			return nil
+		// Depth is bounded as the walk was: a chart buried deeper than this is somebody's
+		// backup tree, not a song anyone meant to publish.
+		if dir != "" && strings.Count(dir, "/")+1 > maxNesting {
+			continue
 		}
-
-		dirs, err := rootDirs(cur)
-		if err != nil {
-			return err
-		}
-		for _, d := range dirs {
-			sub, err := fs.Sub(cur, d)
-			if err != nil {
-				// One unreadable subtree must not lose the rest of the archive.
-				continue
-			}
-			next := d
-			if prefix != "" {
-				next = path.Join(prefix, d)
-			}
-			if err := walk(sub, next, depth+1); err != nil {
-				return err
-			}
-		}
-		return nil
+		seen[dir] = true
 	}
 
-	if err := walk(fsys, "", 0); err != nil {
-		return nil, err
-	}
-	if len(found) == 0 {
+	if len(seen) == 0 {
 		return nil, ErrNoChart
 	}
-	return found, nil
+
+	roots := make([]string, 0, len(seen))
+	for d := range seen {
+		roots = append(roots, d)
+	}
+	sort.Strings(roots)
+
+	// Drop any root nested inside another. Sorted order puts a parent before its children,
+	// so one pass is enough.
+	out := make([]string, 0, len(roots))
+	for _, r := range roots {
+		nested := false
+		for _, kept := range out {
+			if kept == "" || strings.HasPrefix(r, kept+"/") {
+				nested = true
+				break
+			}
+		}
+		if !nested {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 // OpenContainerAll opens an archive and reports every song folder in it.
@@ -93,7 +108,7 @@ func OpenContainerAll(p string) (fs.FS, []string, io.Closer, error) {
 		return nil, nil, nil, err
 	}
 
-	roots, err := songRoots(fsys)
+	roots, err := songRoots(raw)
 	if err != nil {
 		// Same distinction OpenContainer draws: an archive that plainly contains a song but
 		// yields none is one we failed to READ, which is a different answer from "this is
@@ -125,6 +140,14 @@ func ScanContainerAll(p string) ([]ContainerSong, error) {
 			}
 		}
 		song, err := ScanDir(sub)
+		if errors.Is(err, ErrNoChart) {
+			// The STORED names said this folder holds a chart and the fs view cannot see
+			// it. That is the backslash-separator archive: entries written by an old
+			// Windows tool surface as a directory with nothing readable under it. An
+			// archive we failed to READ is a different answer from an archive of something
+			// else, and reporting it is the whole reason ErrUnreadableArchive exists.
+			err = ErrUnreadableArchive
+		}
 		if err != nil {
 			// One bad song inside an archive of twenty must not lose the other nineteen,
 			// and it must not be silent either. It is reported as its own problem by the
