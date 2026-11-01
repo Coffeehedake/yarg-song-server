@@ -43,6 +43,25 @@ type Archive struct {
 // Open parses the header of a .sng. It reads only the header; contained file
 // data is fetched on demand.
 func Open(r io.ReaderAt, size int64) (*Archive, error) {
+	return open(r, size, true)
+}
+
+// OpenUntagged parses a body whose first six bytes are NOT the SNGPKG magic.
+//
+// This exists for .yargsong, where YARC puts a decoy in the magic's place - the packs we
+// looked at carry "RB3CON" there, which is nothing to do with Rock Band. It is safe to ignore
+// because YARG itself ignores it: SngFile.TryLoadFromFile seeks to SNGPKG.Length on a decoded
+// yargsong stream and never compares those bytes to anything. Everything after them is an
+// ordinary SNG - version 1, mask, metadata, listings - which is how a pack full of
+// "RB3CON" files turns out to contain notes.mid and opus stems.
+//
+// Kept as a separate entry point rather than a relaxed flag on Open, because a loose .sng on
+// disk with the wrong magic is still a file we should refuse.
+func OpenUntagged(r io.ReaderAt, size int64) (*Archive, error) {
+	return open(r, size, false)
+}
+
+func open(r io.ReaderAt, size int64, requireMagic bool) (*Archive, error) {
 	if size < HeaderSize+16 {
 		return nil, fmt.Errorf("sng: file too small (%d bytes)", size)
 	}
@@ -51,7 +70,7 @@ func Open(r io.ReaderAt, size int64) (*Archive, error) {
 	if _, err := r.ReadAt(head, 0); err != nil {
 		return nil, fmt.Errorf("sng: read header: %w", err)
 	}
-	if string(head[:MagicSize]) != string(Magic[:]) {
+	if requireMagic && string(head[:MagicSize]) != string(Magic[:]) {
 		return nil, errors.New("sng: bad magic, not an SNGPKG file")
 	}
 
