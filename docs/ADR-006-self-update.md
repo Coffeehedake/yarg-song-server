@@ -137,7 +137,16 @@ settings row:
 - `LoadVersion()` is still upstream's, and still unreadable in our builds. Fixing it is one line
   and would move every existing install's data folder from `release/` to `dev/`, so it is not
   worth doing for its own sake.
-- **No update has been applied by the game yet.** The helper is tested against fake installs and
-  the manifest is served and verified, but nothing has yet gone check -> download -> restart ->
-  new build on a real machine. Until that happens this is a mechanism, not a feature.
+- ~~No update has been applied by the game yet.~~ **PROVEN END TO END on MSI, 2026-10-31 20:25.**
+  `dev b4186` checked, found `b4187`, downloaded 158 MB, verified the hash, unpacked, staged,
+  launched the helper, and the helper swapped the install. The machine now reports
+  `dev b4187 (a1c9ad65)`, read from its own `resources.assets` rather than from a menu.
+  **It took four attempts, and the three failures were the feature working.** Each aborted with
+  "could not move the old install: being used by another process" and left the install intact -
+  a process exiting does not free its files immediately, and this install sits inside an SMB
+  share. The fix was retries plus a contents-swap fallback (`a1c9ad65`).
+  **The helper that runs is the one in the build you are running, not the one you are
+  installing**, so a helper fix only protects the update AFTER the one that delivers it. The
+  final swap here was done by running the fixed helper over WinRM against the payload the game
+  had already staged.
 - Signing, which the risk section above argues for and nobody has done.
