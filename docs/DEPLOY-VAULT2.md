@@ -4,7 +4,82 @@ The published image is `registry.badassium.com/fatalexception/yarg-song-server`,
 tagged `latest` and the commit short sha. It is a distroless static binary —
 **8.6 MB**, no shell, running as `nonroot`.
 
-This document records the first real deployment, on vault2, 2026-09-05.
+This document records the first real deployment, on vault2, 2026-09-05. **Start
+from the next section, not from that record** — the record is kept as history
+and following it today breaks the service.
+
+## Run it today — every argument read off the running container, 2026-11-01
+
+**The `docker run` further down is the 2026-09-05 original and it no longer
+reproduces this service.** Three of its arguments are now wrong, and two of them
+fail in ways that do not look like a deployment mistake:
+
+| Missing | What happens if you follow the old command |
+|---|---|
+| `-v /mnt/user/YARG/songs/unpacked:/songs/unpacked:rw` | `/songs` is mounted **read-only**, so this nested `rw` bind is the only thing that lets the server write unpacked output. Without it, unpacking fails against a read-only filesystem. |
+| `--config /data/yarg-song-server.conf` | The config file is **not** loaded, so `unpack_ops` silently reverts to its default and the `admin_secret` is empty. The unpack API then answers **403** — which reads as the newly deployed build having broken it. |
+| `-v /mnt/cache/appdata/yarg-song-server/songs:/songs:ro` | Wrong path. The library moved to the array share `/mnt/user/YARG/songs`; the old path is an empty directory, so the server indexes **0 songs** and starts perfectly happily. |
+
+**These arguments come from `docker inspect` of the container that was actually
+running, not from the previous version of this document.** That provenance is
+the only thing that stops this rotting again: the doc had drifted twice before
+(the *Current state, measured 2026-09-15* section says so in its own first
+sentence), and on 2026-11-01 it had drifted a third time while being edited that
+same day in `2320f1d` without the drift being noticed.
+
+```bash
+# Pin the DIGEST. Never deploy a floating tag, and see the tag table below for
+# why :latest in particular is not what it looks like.
+IMAGE="registry.badassium.com/fatalexception/yarg-song-server@sha256:<digest>"
+
+docker run -d --name yarg-song-server \
+  --restart unless-stopped \
+  -p 8099:8080 \
+  -v /mnt/user/YARG/songs:/songs:ro \
+  -v /mnt/user/YARG/songs/unpacked:/songs/unpacked:rw \
+  -v /mnt/cache/appdata/yarg-song-server/data:/data \
+  "$IMAGE" \
+  --songs /songs --data /data --listen :8080 --config /data/yarg-song-server.conf
+```
+
+`USER` is `nonroot:nonroot` and `ENTRYPOINT` is
+`/usr/local/bin/yarg-song-server`, both from the image; neither needs stating on
+the command line. `Labels` is empty, which is the "not Unraid-managed" note
+further down, still true.
+
+### The git tags have drifted from the image tags — so a version string cannot identify a build
+
+`git describe` is what CI stamps into the binary (`--build-arg VERSION=...`), and
+on 2026-11-01 commit `0c6fa84` produced **`v0.1.2-37-g0c6fa84`**. The newest
+*annotated git tag* is still `v0.1.2`, while the *image* tags have run ahead
+through `v0.1.3-yargsong`, `v0.1.4-multisong`, `v0.1.5-unpack`, `v0.1.7-reserved`,
+`v0.1.8-unpack`, `v0.1.9-sets` and `v0.2.0-nested` — all built on the box, none
+of them a git tag.
+
+Two consequences worth having in front of you:
+
+- **No image since `v0.1.2` can be identified from `/version` alone.** A running
+  server reporting `v0.1.8-unpack` and one reporting `v0.1.2-37-g0c6fa84` tell
+  you nothing comparable; the first is a hand-set string, the second is a commit.
+- **A health check must match on the COMMIT, not on a release-shaped string.** A
+  loop asserting `/version` contains `v0.2.` would fail against a correctly
+  deployed CI build and roll it back — a check that rejects a good deploy is
+  worse than no check. Match the short sha.
+
+And because a digest identifies a **build** rather than a commit, verify the
+binary's own idea of what it is *before* swapping, while nothing is stopped yet:
+
+```bash
+docker run --rm --entrypoint /usr/local/bin/yarg-song-server "$IMAGE" --version
+```
+
+### Check the config file against the binary before you swap
+
+`internal/config` treats an **unrecognised key as a startup error**, not a
+warning. So a config written for a newer build will stop an older one from
+booting at all, and that is an outage rather than a failed health check. Before
+deploying a build older than the config file, boot it against a copy of that
+key set — reading the valid-key list does not settle it.
 
 ## What this deployment proved, that nothing had proved before
 
@@ -25,6 +100,11 @@ earlier measurement was `127.0.0.1`, which cannot fail in any of the ways a real
 network can.
 
 ## The deployment
+
+> **HISTORY, NOT INSTRUCTIONS.** This is the 2026-09-05 command, correct for the
+> day it was written. Running it today gives a server that indexes 0 songs,
+> cannot write unpacked output, and answers 403 from the unpack API. Use
+> *Run it today* above.
 
 ```bash
 # on the host
@@ -947,6 +1027,10 @@ and the alternative - copying a binary into the running container - leaves a con
 image label is a lie. `git archive HEAD` to a tarball, extract on vault2, `docker build` with
 the repo's own Dockerfile. The build stage cross-compiles anyway, so nothing about this needed
 buildx or a second architecture.
+
+This command predates the unpack feature, so it has neither the nested
+`/songs/unpacked` `rw` bind nor `--config`. It is the record of what was run on
+2026-10-31, not a command to reuse — see *Run it today*.
 
 ```
 docker run -d --name yarg-song-server --restart unless-stopped \
