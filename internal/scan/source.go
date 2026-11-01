@@ -164,10 +164,17 @@ func OpenContainer(p string) (fs.FS, io.Closer, error) {
 
 // openArchive opens a .zip or .7z as a filesystem, without deciding what is a song in it.
 //
-// It also returns the entry names EXACTLY as stored, before any fs view, because the fs view
-// is blind to some of them - an archive written with backslash separators shows a directory
-// with nothing readable underneath, and a check that walks the fs inherits precisely the
-// blindness it exists to detect.
+// It also returns the entry names, before any fs view, because the fs view is blind to some of
+// them - an archive written with backslash separators shows a directory with nothing readable
+// underneath, and a check that walks the fs inherits precisely the blindness it exists to detect.
+//
+// Those names are decoded (see decodeEntryName) rather than returned exactly as stored, and they
+// have to be, because they are what songRoots turns into the inner paths that ScanContainerAll
+// and PackPathInner then address through this same fs. Stored names on one side and decoded
+// names on the other would simply fail to find each other.
+//
+// Decoding does not weaken the blindness check: it only alters names that are not valid UTF-8,
+// and a backslash-separated name is plain ASCII, so it arrives here exactly as stored.
 func openArchive(p string) (fs.FS, []string, io.Closer, error) {
 	var (
 		fsys   fs.FS
@@ -180,10 +187,17 @@ func openArchive(p string) (fs.FS, []string, io.Closer, error) {
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("scan: open zip: %w", err)
 		}
+		items := make([]archiveItem, 0, len(r.File))
 		for _, f := range r.File {
-			raw = append(raw, f.Name)
+			raw = append(raw, decodeEntryName(f.Name))
+			items = append(items, archiveItem{
+				stored:   f.Name,
+				size:     int64(f.UncompressedSize64),
+				modified: f.Modified,
+				open:     func() (io.ReadCloser, error) { return f.Open() },
+			})
 		}
-		fsys, closer = r, r
+		fsys, closer = newArchiveFS(items), r
 	case ".7z":
 		r, err := sevenzip.OpenReader(p)
 		if err != nil {
@@ -200,10 +214,17 @@ func openArchive(p string) (fs.FS, []string, io.Closer, error) {
 			}
 			return nil, nil, nil, fmt.Errorf("scan: open 7z: %w", err)
 		}
+		items := make([]archiveItem, 0, len(r.File))
 		for _, f := range r.File {
-			raw = append(raw, f.Name)
+			raw = append(raw, decodeEntryName(f.Name))
+			items = append(items, archiveItem{
+				stored:   f.Name,
+				size:     int64(f.UncompressedSize),
+				modified: f.Modified,
+				open:     func() (io.ReadCloser, error) { return f.Open() },
+			})
 		}
-		fsys, closer = r, r
+		fsys, closer = newArchiveFS(items), r
 	default:
 		return nil, nil, nil, fmt.Errorf("scan: %q is not a container this server reads", filepath.Ext(p))
 	}

@@ -139,15 +139,27 @@ func ScanContainerAll(p string) ([]ContainerSong, error) {
 		if inner != "" {
 			sub, err = fs.Sub(fsys, inner)
 			if err != nil {
-				// fs.Sub refuses a path that is not valid UTF-8, and archives written by
-				// console-era tools store names in a legacy encoding - measured on vault2,
-				// where "Green Day - ¡Viva la Gloria!" and "Manú - Oye Mi Amor" both failed
-				// with "invalid argument". One such name must not cost the other 82 songs.
+				// This used to be where console-era archives died. fs.Sub refuses a path
+				// that is not valid UTF-8 - fs.ValidPath starts with utf8.ValidString - and
+				// those archives store names in a legacy encoding, so "Man\xa0 - Oye Mi
+				// Amor" failed here with "invalid argument" and took its archive with it.
+				//
+				// archiveFS decodes such names now, so a path arriving here is one that
+				// could not be addressed even after that. Still collected rather than
+				// returned, because one unreachable song must not cost the other 82.
 				problems = append(problems, fmt.Errorf("%s: %w", inner, err))
 				continue
 			}
 		}
 		song, err := ScanDir(sub)
+		if errors.Is(err, fs.ErrNotExist) {
+			// songRoots derived this root from the STORED names, so the archive says a chart
+			// is here and the fs view cannot find the folder at all. That is the same finding
+			// as "no chart in a folder we could open", reached by a different error, and it
+			// must not be quieter. The backslash archive lands here: "Song\notes.mid" is one
+			// flat name, so nothing named "Song" exists to open.
+			err = ErrNoChart
+		}
 		if errors.Is(err, ErrNoChart) {
 			// The STORED names said this folder holds a chart and the fs view cannot see
 			// it. That is the backslash-separator archive: entries written by an old
