@@ -130,3 +130,23 @@ func TestTwoPackagesSharingAChartAreStillBothListed(t *testing.T) {
 		t.Errorf("DuplicatePackages = %d, want 0", ix.DuplicatePackages)
 	}
 }
+
+func TestOnlyRealArchivesAreOfferedForUnpacking(t *testing.T) {
+	// Measured against the real library, the first rule - "anything that needs packing" -
+	// reported 481 archives, every one a single-song .yargsong, hiding the three multi-song
+	// archives it existed to surface.
+	for _, c := range []struct {
+		kind SourceKind
+		want bool
+	}{
+		{SourceZip, true},
+		{Source7z, true},
+		{SourceYargsong, false}, // YARN's own format: one song, nothing to open up
+		{SourceDir, false},      // already loose
+		{SourceSNG, false},      // already packed, streamed straight off disk
+	} {
+		if got := worthUnpacking(c.kind); got != c.want {
+			t.Errorf("worthUnpacking(%s) = %v, want %v", c.kind, got, c.want)
+		}
+	}
+}

@@ -225,6 +225,21 @@ func (ix *Index) adopt(found []*Entry) {
 // song for free.
 func cheaper(a, b *Entry) bool { return rank(a.Kind) < rank(b.Kind) }
 
+// worthUnpacking reports whether a container is one an operator might want opened up.
+//
+// Not simply "needs packing", which was the first rule and was useless: measured against the
+// real library it reported 481 archives, every one of them a single-song .yargsong, burying the
+// three multi-song archives that were the entire point. A list that cries wolf 481 times is
+// worse than no list.
+//
+// A .yargsong is YARN's distribution format and holds exactly one song. There is no solid
+// archive to decompress past, nothing is hidden inside it, and unpacking one would break its
+// relationship with the setlist it came from to save almost nothing. A .zip or .7z somebody
+// dropped in the library is the opposite case on every count.
+func worthUnpacking(k SourceKind) bool {
+	return k == SourceZip || k == Source7z
+}
+
 func rank(k SourceKind) int {
 	switch k {
 	case SourceSNG:
@@ -422,7 +437,7 @@ type Archive struct {
 func (ix *Index) Archives() []Archive {
 	byPath := map[string]*Archive{}
 	for _, e := range ix.entries {
-		if e.Kind == SourceDir || e.Kind == SourceSNG {
+		if !worthUnpacking(e.Kind) {
 			continue
 		}
 		rel, err := filepath.Rel(ix.Root, e.Path)
