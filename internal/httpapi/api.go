@@ -34,6 +34,22 @@ import (
 type Server struct {
 	Store *library.Store
 	Packs *packcache.Cache
+	// UnpackOps says who may unpack an archive over HTTP; AdminSecret is what
+	// they must present. Both off/empty by default - a deployment must never
+	// acquire the ability to write to the library by being upgraded.
+	UnpackOps   config.WriteAccess
+	AdminSecret string
+	// UnpackDir is where unpacked songs land. Empty means beside the archive,
+	// which does not work where the library is mounted read-only.
+	UnpackDir string
+	// Unpack is the single running job. Nil disables the routes as surely as
+	// UnpackOps being off, and a Server built without one is the honest state
+	// for a deployment that never configured any of this.
+	Unpack *UnpackJob
+	// OnUnpacked is called after an archive is unpacked, so the index can be
+	// rebuilt. Without it the songs exist on disk and nowhere else until the
+	// server is restarted.
+	OnUnpacked func()
 	// BrowseUI serves the phone-friendly catalog page at "/". It exposes
 	// nothing the API does not already serve unauthenticated, so it defaults on;
 	// an operator who wants the API and no page can turn it off.
@@ -101,6 +117,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/songs/{hash}", s.song)
 	mux.HandleFunc("POST /api/v1/have", s.have)
 	mux.HandleFunc("POST /api/v1/check", s.check)
+	mux.HandleFunc("GET /api/v1/unpack", s.unpackStatusHandler)
+	mux.HandleFunc("POST /api/v1/unpack", s.unpackHandler)
 	mux.HandleFunc("GET /song/{file}", s.songFile)
 
 	return mux

@@ -39,6 +39,40 @@ type Config struct {
 	// ConfigWrites says who may change a feature at runtime over HTTP: off,
 	// local, or lan. See writes.go for why it is not a bool.
 	ConfigWrites WriteAccess
+	// UnpackOps says who may unpack an archive in the library over HTTP: off,
+	// local, or lan. Same vocabulary as ConfigWrites, deliberately, because an
+	// operator should not have to learn two of them.
+	//
+	// OFF by default. Unpacking writes to the library, and no deployment should
+	// acquire the ability to do that by being upgraded.
+	UnpackOps WriteAccess
+	// AdminSecret is a shared secret a caller must present to unpack.
+	//
+	// It is what locality cannot provide. The deployment this is for is a phone
+	// on the same LAN as the server, so UnpackOps must be "lan" for it to work
+	// at all - and "lan" alone means every device on the network, including the
+	// ones nobody is thinking about.
+	//
+	// It is NOT a security boundary and must not be described as one. This
+	// server speaks plain HTTP, so the secret crosses the network in clear and
+	// anyone who can watch the traffic has it. What it buys is that unpacking
+	// cannot happen by accident, by a misconfigured client, or by somebody
+	// poking at the port out of curiosity. Treat it as the cover on a switch.
+	//
+	// Empty with UnpackOps set to anything but off is refused at startup: a
+	// secret nobody set is not a secret, and silently allowing it would make
+	// the cover ornamental.
+	AdminSecret string
+	// UnpackDir is where unpacked songs are written. Empty means beside the
+	// archive they came from.
+	//
+	// It exists because the live deployment mounts the library READ-ONLY, on
+	// purpose, so that the server cannot damage what it serves. Unpacking needs
+	// somewhere writable, and the choice between "make the whole library
+	// writable" and "make one directory writable" belongs to the operator, at
+	// the machine. This is how they say which. It must be a directory the
+	// server also scans, or the songs will be extracted and never appear.
+	UnpackDir string
 }
 
 // Defaults are what the server does when told nothing.
@@ -83,6 +117,9 @@ func Defaults() Config {
 		// over the network by being upgraded, and this server has no
 		// authentication to put in front of that ability.
 		ConfigWrites: WritesOff,
+		// Off, like ConfigWrites and for a stronger reason: this one writes to the
+		// library. No deployment may acquire that by being upgraded.
+		UnpackOps: WritesOff,
 	}
 }
 
@@ -198,8 +235,18 @@ func ApplyTracked(c *Config, r io.Reader) ([]string, error) {
 				return nil, fmt.Errorf("line %d: config_writes: %w", line, err)
 			}
 			c.ConfigWrites = w
+		case "unpack_ops":
+			w, err := ParseWriteAccess(value)
+			if err != nil {
+				return nil, fmt.Errorf("line %d: unpack_ops: %w", line, err)
+			}
+			c.UnpackOps = w
+		case "admin_secret":
+			c.AdminSecret = value
+		case "unpack_dir":
+			c.UnpackDir = value
 		default:
-			return nil, fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max, browse_ui, check_uploads, check_max_bytes, config_writes", line, key)
+			return nil, fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max, browse_ui, check_uploads, check_max_bytes, config_writes, unpack_ops, admin_secret, unpack_dir", line, key)
 		}
 		keys = append(keys, key)
 	}

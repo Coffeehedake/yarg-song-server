@@ -47,6 +47,19 @@ func WalkLibrary(root string, emit func(Result)) error {
 		}
 
 		if d.IsDir() {
+			// A directory something is still writing is not a library yet. Without this, an
+			// archive being unpacked is indexed WHILE it is being written: the walk finds
+			// half a song folder, scans whatever files have landed so far, and publishes a
+			// chart hash for a song whose audio has not arrived. The suffix is the same
+			// device the sync client uses on a part-downloaded file, for the same reason -
+			// nothing trusts a name until the thing under it is complete.
+			//
+			// Skipped by name rather than by asking who is writing, because the answer has to
+			// survive the server being restarted in the middle of an unpack.
+			if p != root && strings.HasSuffix(d.Name(), InProgressSuffix) {
+				return filepath.SkipDir
+			}
+
 			song, serr := ScanDir(os.DirFS(p))
 			if errors.Is(serr, ErrNoChart) {
 				return nil // an ordinary folder on the way to a song

@@ -1,7 +1,6 @@
 package scan
 
 import (
-	"archive/zip"
 	"bytes"
 	"errors"
 	"fmt"
@@ -10,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/bodgit/sevenzip"
 
 	"github.com/coffeehedake/yarg-song-server/internal/catalog"
 	"github.com/coffeehedake/yarg-song-server/internal/sng"
@@ -176,60 +173,16 @@ func OpenContainer(p string) (fs.FS, io.Closer, error) {
 // Decoding does not weaken the blindness check: it only alters names that are not valid UTF-8,
 // and a backslash-separated name is plain ASCII, so it arrives here exactly as stored.
 func openArchive(p string) (fs.FS, []string, io.Closer, error) {
-	var (
-		fsys   fs.FS
-		closer io.Closer
-		raw    []string
-	)
-	switch strings.ToLower(filepath.Ext(p)) {
-	case ".zip":
-		r, err := zip.OpenReader(p)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("scan: open zip: %w", err)
-		}
-		items := make([]archiveItem, 0, len(r.File))
-		for _, f := range r.File {
-			raw = append(raw, decodeEntryName(f.Name))
-			items = append(items, archiveItem{
-				stored:   f.Name,
-				size:     int64(f.UncompressedSize64),
-				modified: f.Modified,
-				open:     func() (io.ReadCloser, error) { return f.Open() },
-			})
-		}
-		fsys, closer = newArchiveFS(items), r
-	case ".7z":
-		r, err := sevenzip.OpenReader(p)
-		if err != nil {
-			// A password-protected .7z fails deep inside the LZMA reader, and the message it
-			// produces - "newRangeDecoder: first byte not zero" - tells an operator nothing.
-			// This case stopped being hypothetical the day YARN entered the picture: every
-			// setlist it publishes is an AES-256 .7z, so somebody downloading one by hand and
-			// dropping it in the library is a thing that will happen.
-			//
-			// We cannot tell "encrypted" from "corrupt" without a password to try, so the
-			// error says both and names the likely remedy rather than guessing.
-			if looks7z(p) {
-				return nil, nil, nil, fmt.Errorf("%w: %s", ErrUnopenable7z, err)
-			}
-			return nil, nil, nil, fmt.Errorf("scan: open 7z: %w", err)
-		}
-		items := make([]archiveItem, 0, len(r.File))
-		for _, f := range r.File {
-			raw = append(raw, decodeEntryName(f.Name))
-			items = append(items, archiveItem{
-				stored:   f.Name,
-				size:     int64(f.UncompressedSize),
-				modified: f.Modified,
-				open:     func() (io.ReadCloser, error) { return f.Open() },
-			})
-		}
-		fsys, closer = newArchiveFS(items), r
-	default:
-		return nil, nil, nil, fmt.Errorf("scan: %q is not a container this server reads", filepath.Ext(p))
+	items, closer, err := archiveItems(p)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
-	return fsys, raw, closer, nil
+	raw := make([]string, 0, len(items))
+	for _, it := range items {
+		raw = append(raw, decodeEntryName(it.stored))
+	}
+	return newArchiveFS(items), raw, closer, nil
 }
 
 // looksLikeASong reports whether any entry name in the archive is a song.ini or

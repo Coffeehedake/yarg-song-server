@@ -215,6 +215,15 @@ func resolveAll(configPath string, flagged config.Config, given map[string]bool)
 	apply("check-max-bytes", func() { res.CheckMaxBytes = flagged.CheckMaxBytes })
 	apply("config-writes", func() { res.ConfigWrites = flagged.ConfigWrites })
 
+	// A secret nobody set is not a secret. Unpacking writes to the library, and allowing it
+	// with an empty admin_secret would mean anyone who can reach the port can rewrite what is
+	// in it - while the config file still reads as though something were guarding it. Refusing
+	// to start says so once, at the machine, rather than leaving an ornamental setting behind.
+	if res.UnpackOps != config.WritesOff && res.AdminSecret == "" {
+		return res, fmt.Errorf("unpack_ops is %q but admin_secret is empty; "+
+			"set admin_secret, or set unpack_ops = off", res.UnpackOps)
+	}
+
 	return res, nil
 }
 
@@ -336,6 +345,26 @@ func run(opt config.Resolved, log *slog.Logger) error {
 		Features:   opt.Features(),
 		Writes:     opt.ConfigWrites,
 		ConfigPath: opt.File,
+
+		UnpackOps:   opt.UnpackOps,
+		AdminSecret: opt.AdminSecret,
+		UnpackDir:   opt.UnpackDir,
+		Unpack:      &httpapi.UnpackJob{},
+	}
+
+	// Unpacking changes the library on disk, and nothing else would notice: the index is built
+	// once at startup. Rebuilding it here is what makes the songs appear without a restart,
+	// and it is the first use of library.Store.Replace - the atomic swap that has existed,
+	// unused, since the store was written for exactly this.
+	api.OnUnpacked = func() {
+		rebuilt, err := library.Build(opt.Songs)
+		if err != nil {
+			log.Error("could not rebuild the index after unpacking", "err", err)
+			return
+		}
+		api.Store.Replace(rebuilt)
+		log.Info("index rebuilt after unpacking",
+			"songs", rebuilt.Len(), "distinct_charts", rebuilt.DistinctCharts())
 	}
 
 	// Name the config file that was actually read, or say that none was.
