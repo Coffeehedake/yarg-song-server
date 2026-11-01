@@ -56,7 +56,15 @@ func WalkLibrary(root string, emit func(Result)) error {
 			//
 			// Skipped by name rather than by asking who is writing, because the answer has to
 			// survive the server being restarted in the middle of an unpack.
-			if p != root && strings.HasSuffix(d.Name(), InProgressSuffix) {
+			// Directories the walk steps over: one still being written, one holding archives
+			// an operator has unpacked but kept, one holding arrivals nobody has asked the
+			// server to take in yet. None of them is a library, and each would do damage if
+			// treated as one - the last most of all, because a file still being copied in
+			// hashes to something, and that something would be published as a song.
+			//
+			// Never the root itself. Pointing --songs at one of these is a deliberate act, and
+			// refusing to look at the directory it was explicitly given would be obtuse.
+			if p != root && IsReservedDir(d.Name()) {
 				return filepath.SkipDir
 			}
 

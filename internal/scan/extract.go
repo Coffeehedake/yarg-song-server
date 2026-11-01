@@ -62,6 +62,44 @@ func archiveItems(p string) ([]archiveItem, io.Closer, error) {
 	return nil, nil, fmt.Errorf("scan: %q is not a container this server reads", filepath.Ext(p))
 }
 
+// IgnoredDirName is a directory the library walk does not look inside, at any depth.
+//
+// It exists so that an archive can stay in the library without costing anything. Unpacking one
+// does not delete it - that stays the operator's decision, made after they have seen the songs
+// arrive - but an archive left where it was is still read on every startup, and reading one
+// song out of a solid .7z was measured at about three minutes. Moving it out of the library
+// entirely works and is miserable: the thing is then in some unrelated folder with nothing to
+// say which songs it produced.
+//
+// So this is the third state. Songs sit beside the archive they came from, and the archive sits
+// in a folder the indexer ignores. A library can hold its own history without paying for it on
+// every restart.
+//
+// Reserved rather than configured, because a name this load-bearing should mean the same thing
+// on every deployment - and because a song folder called "_packed" is not a thing anyone has.
+const IgnoredDirName = "_packed"
+
+// IncomingDirName is where somebody drops songs and archives for the server to take in.
+//
+// Also skipped by the walk, and for a sharper reason than _packed. A file being copied into a
+// library over SMB is indexed the moment the walk reaches it, half-written: a truncated chart
+// hashes to something, and that something is published as a song. Giving arrivals a doorway the
+// indexer does not look through means a copy in progress cannot become a catalogue entry.
+//
+// Nothing here is taken in automatically. That is the same decision unpacking made: writing to
+// the library is an act somebody asks for, not something that happens because a file appeared.
+const IncomingDirName = "_incoming"
+
+// IsReservedDir reports whether the library walk should step over a directory.
+//
+// A directory is reserved because of what it is FOR, never because of what is in it - so this
+// takes a name and nothing else, and cannot be fooled by the contents.
+func IsReservedDir(name string) bool {
+	return name == IgnoredDirName ||
+		name == IncomingDirName ||
+		strings.HasSuffix(name, InProgressSuffix)
+}
+
 // InProgressSuffix marks a directory that is still being written.
 //
 // WalkLibrary skips these, so an archive being unpacked is not indexed halfway through. It is a

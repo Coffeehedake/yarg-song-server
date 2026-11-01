@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/coffeehedake/yarg-song-server/internal/config"
 	"github.com/coffeehedake/yarg-song-server/internal/scan"
@@ -62,8 +61,16 @@ func runUnpack(args []string, opt config.Resolved) error {
 		}
 		fmt.Printf("done: %d files, %.1f MB, %d songs readable afterwards\n",
 			res.FilesWritten, float64(res.BytesWritten)/(1<<20), res.SongsFound)
-		fmt.Printf("the archive is untouched at %s; remove it yourself once you are satisfied\n",
-			res.Archive)
+		// The archive is still there and still being read on every startup, which is the
+		// cost this was meant to remove. Saying so with the command to fix it, because an
+		// operator who stops here has done the expensive half and kept the bill.
+		fmt.Printf("\nthe archive is untouched at %s\n", res.Archive)
+		fmt.Printf("it is still read on every startup until you move it out of the walk:\n")
+		fmt.Printf("  mkdir -p <library>/%s && mv <library>/%q <library>/%s/\n",
+			scan.IgnoredDirName, res.Archive, scan.IgnoredDirName)
+		fmt.Printf("%s is never indexed, so the archive keeps costing nothing while staying\n",
+			scan.IgnoredDirName)
+		fmt.Printf("beside the songs it produced.\n")
 		return nil
 	}
 
@@ -89,7 +96,10 @@ func unpackList(root string) error {
 			return nil // an unreadable corner is not a reason to list nothing
 		}
 		if d.IsDir() {
-			if strings.HasSuffix(d.Name(), scan.InProgressSuffix) {
+			// Same directories the indexer steps over. An archive already parked in _packed
+			// has been dealt with, and listing it as something to unpack would invite doing
+			// the whole expensive job a second time.
+			if p != root && scan.IsReservedDir(d.Name()) {
 				return filepath.SkipDir
 			}
 			return nil
