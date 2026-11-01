@@ -1013,15 +1013,45 @@ only because everything in it is regenerable: the index is rebuilt at startup an
 cache is bounded by `pack_cache_max` and re-packs whatever it evicts. Nothing in `/data` is the
 only copy of anything. **If that ever stops being true, `/data` moves to the share.**
 
-### One number that does not fit, and has not been explained
+### One number that did not fit, and the answer was not storage
 
 Moving 8 GB of archives onto the share over SMB ran at **4.8 MB/s** (1,012 MB in 212 s). A share
 with `shareUseCache="yes"` should be absorbing writes onto NVMe at far more than that on a
 gigabit link, and the cache was 55% full with 1.3 T free, so it was not spilling to the array
 for want of room.
 
-It is recorded here unexplained on purpose. The temptation is to conclude "the array is slow"
-and move the library to the cache, which would be a large, hard-to-reverse decision taken on one
-measurement with no diagnosis - and this project has been caught before blaming the subject when
-the instrument was at fault. Measure the write path directly on the host (`dd` to
-`/mnt/user/YARG/songs` and to `/mnt/cache` separately) before touching the layout.
+It was recorded unexplained, with a note to measure the write path before touching the layout,
+because the temptation was to conclude "the array is slow" and move the library onto the cache -
+a large, hard-to-reverse decision from one measurement with no diagnosis. That caution was
+right. Measured the same day, in this order:
+
+| Measurement | Result | Rules out |
+|---|---|---|
+| `dd` to `/mnt/user/YARG` (through shfs) | 647 MB/s | the array, the share, FUSE |
+| `dd` to `/mnt/cache` | 873 MB/s | the cache pool |
+| vault2 `eth0` | 1000 Mb/s full duplex | the server's link |
+| robocopy `/J` vs `Copy-Item`, same file, same contention | 1.3 vs 1.4 MB/s | **the copy tool** |
+
+The fourth line is the one worth keeping. Buffered copying over SMB is a known bottleneck and
+robocopy with unbuffered I/O is the usual remedy, so that was the hypothesis - and it was wrong,
+measured at 1.0x. The comparison was set up as a RATIO under identical load precisely so that it
+could come back negative, which it did.
+
+What was left was the client:
+
+```
+ENG-2   192.168.2.46/23 on Wi-Fi        Ethernet: Disconnected
+        SSID SchillingHaus-Legacy, channel 1 (2.4 GHz), 802.11ax
+        transmit rate 135 Mbps, signal 66%
+ping    min 17 ms  avg 33.8 ms  max 58 ms   -- to the same subnet
+```
+
+A Wi-Fi 6E adapter parked on 2.4 GHz channel 1, with LAN round trips an order of magnitude
+worse than a LAN should be. 135 Mb/s is about 17 MB/s before protocol overhead, and SMB is
+chatty enough that 34 ms round trips account for the rest.
+
+**So the storage layout was never implicated.** Nothing about the array, the cache or the
+docker mounts needed changing, and changing them would have made the transfer no faster while
+making the deployment worse. The number came from the machine doing the copying, which was not
+part of the system under test at all - the fourth time on this project that the instrument was
+the fault.
