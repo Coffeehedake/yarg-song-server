@@ -81,6 +81,14 @@ func (o Options) Inspect(rel string) (*Plan, error) {
 		return nil, fmt.Errorf("unpack: %s is not an archive this server reads", rel)
 	}
 
+	// Refused rather than attempted. A part of a split set can look like a complete archive -
+	// measured here, where part one of a two-part export reported 158 songs - so unpacking it
+	// would succeed, pass verification, and leave a library quietly missing whatever lives in
+	// the other parts.
+	if set, serr := SetFor(filepath.Dir(archive), filepath.Base(archive)); serr == nil && set != nil {
+		return nil, fmt.Errorf("unpack: %s", describeSet(set))
+	}
+
 	entries, bytes, err := scan.ArchiveSize(archive)
 	if err != nil {
 		return nil, err

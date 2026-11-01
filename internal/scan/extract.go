@@ -181,15 +181,34 @@ func ArchiveSize(p string) (entries int, bytes int64, err error) {
 // paths and any ".." element - so an archive cannot be made to write outside dir. That is the
 // zip-slip defence and it is a property of the names, not of this loop.
 func ExtractTo(archivePath, dir string) (files int, written int64, err error) {
+	if _, err := os.Stat(dir); err == nil {
+		return 0, 0, fmt.Errorf("scan: %s already exists", dir)
+	}
+	return extract(archivePath, dir)
+}
+
+// ExtractMergeInto adds an archive's entries to a directory that may already hold some.
+//
+// This is what a split set needs and what ExtractTo deliberately refuses. A Google Takeout
+// export of a large folder arrives as "Name-<timestamp>-1-001.zip", "-002", and so on, each
+// holding a slice of ONE tree - so the parts have to land on top of each other to reassemble
+// it, and extracting each to its own destination would produce "Name", "Name (2)", "Name (3)"
+// and a library where no song is whole.
+//
+// Merging is still not overwriting: a file that already exists is an error, not something to
+// replace. Two parts claiming the same path means the set is not what it appears to be, and
+// quietly keeping whichever arrived last would hide that.
+func ExtractMergeInto(archivePath, dir string) (files int, written int64, err error) {
+	return extract(archivePath, dir)
+}
+
+func extract(archivePath, dir string) (files int, written int64, err error) {
 	items, closer, err := archiveItems(archivePath)
 	if err != nil {
 		return 0, 0, err
 	}
 	defer closer.Close()
 
-	if _, err := os.Stat(dir); err == nil {
-		return 0, 0, fmt.Errorf("scan: %s already exists", dir)
-	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return 0, 0, fmt.Errorf("scan: create %s: %w", dir, err)
 	}
@@ -226,6 +245,11 @@ func ExtractTo(archivePath, dir string) (files int, written int64, err error) {
 }
 
 // writeOne copies a single entry to disk, closing both ends whatever happens.
+//
+// O_EXCL rather than Create: an entry that would land on a file already there is refused.
+// Within one archive that cannot happen; across the parts of a split set it means two parts
+// disagree about what belongs at that path, and replacing one with the other would turn a
+// detectable problem into a library that is subtly wrong.
 func writeOne(it archiveItem, target string) (int64, error) {
 	rc, err := it.open()
 	if err != nil {
@@ -233,8 +257,11 @@ func writeOne(it archiveItem, target string) (int64, error) {
 	}
 	defer rc.Close()
 
-	f, err := os.Create(target)
+	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
+		if os.IsExist(err) {
+			return 0, fmt.Errorf("scan: %s is already there; two parts claim the same file", target)
+		}
 		return 0, fmt.Errorf("scan: create %s: %w", target, err)
 	}
 

@@ -47,6 +47,60 @@ func runUnpack(args []string, opt config.Resolved) error {
 		printPlan(plan)
 		return nil
 
+	case len(args) == 1 && args[0] == "sets":
+		sets, err := unpack.FindSets(opt.Songs)
+		if err != nil {
+			return err
+		}
+		if len(sets) == 0 {
+			fmt.Println("no archives split across parts in", opt.Songs)
+			return nil
+		}
+		for _, st := range sets {
+			fmt.Printf("%-46s %2d parts  %8.1f MB\n", st.Base, len(st.Parts),
+				float64(st.Bytes)/(1<<20))
+		}
+		fmt.Println("\ncheck-set <name> says what unpacking one would do; run-set <name> does it")
+		return nil
+
+	case len(args) == 2 && (args[0] == "check-set" || args[0] == "run-set"):
+		sets, err := unpack.FindSets(opt.Songs)
+		if err != nil {
+			return err
+		}
+		var found *unpack.Set
+		for i := range sets {
+			if sets[i].Base == args[1] {
+				found = &sets[i]
+			}
+		}
+		if found == nil {
+			return fmt.Errorf("no split set called %q; `unpack sets` lists them", args[1])
+		}
+
+		plan, err := opts.InspectSet(opt.Songs, *found)
+		if err != nil {
+			return err
+		}
+		printPlan(plan)
+		fmt.Printf("parts   : %d\n", len(found.Parts))
+		for _, part := range found.Parts {
+			fmt.Printf("          %s\n", part)
+		}
+		if args[0] == "check-set" {
+			return nil
+		}
+
+		fmt.Println("\nunpacking every part into ONE directory; each is read once, in stored order")
+		res, rerr := opts.RunSet(opt.Songs, *found)
+		if rerr != nil {
+			return rerr
+		}
+		fmt.Printf("done: %d files, %.1f MB, %d songs readable afterwards\n",
+			res.FilesWritten, float64(res.BytesWritten)/(1<<20), res.SongsFound)
+		fmt.Printf("\nthe parts are untouched.\n")
+		return nil
+
 	case len(args) == 2 && args[0] == "run":
 		plan, err := opts.Inspect(args[1])
 		if err != nil {
@@ -85,6 +139,9 @@ func runUnpack(args []string, opt config.Resolved) error {
 		"  --songs <library> unpack list                list the archives in the library\n" +
 		"  --songs <library> unpack check <archive>     say what unpacking would do, writing nothing\n" +
 		"  --songs <library> unpack run <archive>       unpack it\n" +
+		"  --songs <library> unpack sets                archives split across parts\n" +
+		"  --songs <library> unpack check-set <name>    what unpacking a whole set would do\n" +
+		"  --songs <library> unpack run-set <name>      unpack every part into one directory\n" +
 		"\n" +
 		"--unpack-dir <dir> sends the result somewhere other than beside the archive,\n" +
 		"which is what a library mounted read-only needs")

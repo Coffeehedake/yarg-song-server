@@ -60,6 +60,8 @@ func main() {
 		"largest body POST /api/v1/check will accept, in bytes; 0 means unbounded")
 	flag.StringVar(&flagged.UnpackDir, "unpack-dir", def.UnpackDir,
 		"where unpacked songs are written; empty means beside the archive they came from")
+	flag.StringVar(&flagged.IncomingDir, "incoming-dir", def.IncomingDir,
+		"the drop folder to take songs in from; empty means <songs>/"+scan.IncomingDirName)
 	flag.Parse()
 
 	if *showVersion {
@@ -222,6 +224,7 @@ func resolveAll(configPath string, flagged config.Config, given map[string]bool)
 		"check-uploads":   "check_uploads",
 		"check-max-bytes": "check_max_bytes",
 		"unpack-dir":      "unpack_dir",
+		"incoming-dir":    "incoming_dir",
 	}
 	apply := func(name string, set func()) {
 		if !given[name] {
@@ -239,6 +242,7 @@ func resolveAll(configPath string, flagged config.Config, given map[string]bool)
 	apply("check-uploads", func() { res.CheckUploads = flagged.CheckUploads })
 	apply("check-max-bytes", func() { res.CheckMaxBytes = flagged.CheckMaxBytes })
 	apply("unpack-dir", func() { res.UnpackDir = flagged.UnpackDir })
+	apply("incoming-dir", func() { res.IncomingDir = flagged.IncomingDir })
 	apply("config-writes", func() { res.ConfigWrites = flagged.ConfigWrites })
 
 	// A secret nobody set is not a secret. Unpacking writes to the library, and allowing it
