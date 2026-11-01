@@ -66,6 +66,10 @@ dd{margin:0;min-width:0;overflow-wrap:anywhere}
 #health li{padding:3px 0;word-break:break-all}
 #health .why{color:var(--ink-faint)}
 .err{color:var(--warn)}
+#archives{margin:8px 12px 0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+#archives summary{padding:10px 12px;cursor:pointer;color:var(--ink-dim);font-size:14px}
+#archives ol{margin:0;padding:4px 12px 10px 28px;font-size:13px}
+#archives .why{color:var(--ink-faint);font-size:12px}
 #settings{margin:8px 12px 0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 #settings summary{padding:10px 12px;cursor:pointer;color:var(--ink-dim);font-size:14px}
 #settings .f{display:flex;align-items:flex-start;gap:10px;padding:8px 12px;border-top:1px solid var(--line)}
@@ -78,6 +82,12 @@ dd{margin:0;min-width:0;overflow-wrap:anywhere}
 #settings .note{padding:8px 12px;font-size:12px;color:var(--ink-faint);border-top:1px solid var(--line)}
 #settings .note code{color:var(--ink-dim)}
 #settings .warn{color:var(--warn)}
+#health .act,#archives .act{display:flex;gap:8px;align-items:center;margin:6px 0 2px;flex-wrap:wrap}
+#health .act button,#archives .act button{height:30px;padding:0 10px;font-size:13px}
+#health input.sec,#archives input.sec{height:30px;padding:0 8px;font-size:13px;min-width:160px}
+#health .plan,#archives .plan{font-size:12px;color:var(--ink-faint);margin:4px 0 0}
+#health .plan b,#archives .plan b{color:var(--ink-dim);font-weight:normal}
+#health .ren,#archives .ren{font-family:ui-monospace,monospace;font-size:12px}
 #checkbox{margin:8px 12px 0;border:1px dashed var(--line);border-radius:10px;padding:14px 12px;
   text-align:center;color:var(--ink-dim);font-size:14px}
 #checkbox.over{border-color:var(--accent);color:var(--ink)}
@@ -102,6 +112,7 @@ dd{margin:0;min-width:0;overflow-wrap:anywhere}
   </div>
 </header>
 <details id="health" hidden></details>
+<details id="archives" hidden></details>
 <details id="settings" hidden></details>
 <div id="checkbox" hidden>
   Drop a <b>.sng</b>, <b>.zip</b> or <b>.7z</b> here to see whether it would work.
@@ -145,7 +156,9 @@ async function loadLibrary(){
       o.textContent = a.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
       sel.appendChild(o);
     }
+    await probeUnpack();
     showProblems(lib.problems);
+    showArchives(lib.archives);
     // The server says whether it will take an upload. Guessing would offer a
     // drop zone against a server that answers 404, and the whole reason this
     // page reads its vocabulary from /api/v1/library is not to guess.
@@ -262,13 +275,212 @@ function showProblems(problems){
   }
 
   const n = problems.length;
-  const items = problems.map(p =>
-    "<li>" + esc(p.path) + "<br><span class=\"why\">" + esc(p.error) + "</span></li>").join("");
+  const items = problems.map((p, i) => {
+    // An archive is the one kind of problem this page can DO something about.
+    // Everything else is reported and left alone.
+    const act = (unpackReady && isArchive(p.path))
+      ? '<div class="act" data-i="' + i + '">' +
+        '<button type="button" class="chk" data-path="' + esc(p.path) + '">Check</button>' +
+        '</div><div class="plan" data-plan="' + i + '"></div>'
+      : "";
+    return "<li>" + esc(p.path) + '<br><span class="why">' + esc(p.error) + "</span>" +
+           act + "</li>";
+  }).join("");
 
   box.innerHTML =
     "<summary>" + n + (n === 1 ? " item" : " items") +
     " could not be read \u2014 tap for details</summary><ol>" + items + "</ol>";
   box.hidden = false;
+
+  for (const b of box.querySelectorAll("button.chk")) {
+    b.addEventListener("click", () => checkArchive(b));
+  }
+}
+
+// Archives that WORK, and could work faster.
+//
+// This list exists because a healthy archive is otherwise invisible as an
+// archive: its songs are indexed and served like any others, and nothing says
+// that fetching one means decompressing the container around it. On a solid
+// .7z that was measured at about three minutes a song - which no one notices
+// inside a background index, and everyone notices on a loading screen.
+//
+// Unpacking is therefore offered here rather than next to the problems, where
+// an earlier version of this page put it. The problems list holds archives
+// that FAILED; those have no songs to unpack, so the offer reached exactly the
+// archives it could not help.
+function showArchives(archives){
+  const box = el("archives");
+  if (!unpackReady || !Array.isArray(archives) || archives.length === 0) {
+    box.hidden = true;
+    return;
+  }
+
+  const n = archives.length;
+  const items = archives.map((a, i) => {
+    const songs = a.songs + (a.songs === 1 ? " song" : " songs");
+    return "<li>" + esc(a.path) +
+      '<br><span class="why">' + songs + " \u2014 unpacking makes them load without " +
+      "decompressing the archive first</span>" +
+      '<div class="act" data-i="a' + i + '">' +
+      '<button type="button" class="chk" data-path="' + esc(a.path) + '">Check</button>' +
+      '</div><div class="plan" data-plan="a' + i + '"></div></li>';
+  }).join("");
+
+  box.innerHTML =
+    "<summary>" + n + (n === 1 ? " archive" : " archives") +
+    " could be unpacked \u2014 tap for details</summary><ol>" + items + "</ol>";
+  box.hidden = false;
+
+  for (const b of box.querySelectorAll("button.chk")) {
+    b.addEventListener("click", () => checkArchive(b));
+  }
+}
+
+// Unpacking: offered only when this server says it is there, and never before
+// the operator has been told what they are about to create.
+//
+// The page does not assume the capability exists. GET /api/v1/unpack answers
+// 404 when unpack_ops is off - the same 404 an unknown path gets, because a
+// disabled feature is absent rather than forbidden - and 403 when it is on but
+// this caller has not shown who they are. One probe tells those apart.
+let unpackReady = false;
+let adminSecret = null;
+
+const isArchive = (p) => /[.](zip|7z)$/i.test(String(p || ""));
+
+async function probeUnpack(){
+  try {
+    const r = await fetch("api/v1/unpack");
+    unpackReady = (r.status !== 404);
+  } catch (_) { unpackReady = false; }
+}
+
+// Held in memory for this page only. Not localStorage: it would outlive the tab
+// on a machine anyone can walk up to, and it buys nothing, because this page is
+// opened to do one job and then closed.
+function needSecret(act, then){
+  if (adminSecret) { then(); return; }
+  act.innerHTML =
+    '<input class="sec" type="password" placeholder="Admin secret" autocomplete="off">' +
+    '<button type="button" class="go">Unlock</button>';
+  const input = act.querySelector("input.sec");
+  const go = () => {
+    if (!input.value) return;
+    adminSecret = input.value;
+    then();
+  };
+  act.querySelector("button.go").addEventListener("click", go);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+  input.focus();
+}
+
+async function unpackFetch(body){
+  const r = await fetch("api/v1/unpack", {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-Admin-Secret": adminSecret || ""},
+    body: JSON.stringify(body),
+  });
+  const text = await r.text();
+  let parsed = null;
+  try { parsed = JSON.parse(text); } catch (_) { /* reported as the raw status below */ }
+  return {ok: r.ok, status: r.status, body: parsed};
+}
+
+function wireCheck(act, path){
+  act.innerHTML = '<button type="button" class="chk">Check</button>';
+  const b = act.querySelector("button.chk");
+  b.dataset.path = path;
+  b.addEventListener("click", () => checkArchive(b));
+  return b;
+}
+
+function checkArchive(btn){
+  const act = btn.parentElement;
+  const path = btn.dataset.path;
+  const plan = act.parentElement.querySelector('[data-plan="' + act.dataset.i + '"]');
+
+  needSecret(act, async () => {
+    act.innerHTML = "Checking\u2026";
+    const res = await unpackFetch({archive: path, check: true});
+    if (res.status === 403) {
+      // Wrong secret, almost certainly. Forgetting it is what lets them retype.
+      adminSecret = null;
+      act.innerHTML = '<span class="why">' + esc(describe(res)) + "</span>";
+      wireCheck(act, path);
+      return;
+    }
+    if (!res.ok) {
+      act.innerHTML = '<span class="why">' + esc(describe(res)) + "</span>";
+      return;
+    }
+    showPlan(act, plan, path, res.body);
+  });
+}
+
+// What unpacking would do, said out loud before anything is written.
+//
+// The rewritten names matter more than they look. Decoding a name inside an
+// index costs nothing when it is wrong - rebuild and it is gone - but writing
+// it to disk makes it permanent. So it is shown here, above the button that
+// makes it so.
+function showPlan(act, plan, path, p){
+  const mb = (p.bytes / (1024*1024)).toFixed(1);
+  let html = "<b>" + p.songs + (p.songs === 1 ? " song" : " songs") + "</b>, " +
+             p.entries + " files, " + mb + " MB into <b>" + esc(p.dest) + "</b>";
+  const changes = Array.isArray(p.name_changes) ? p.name_changes : [];
+  if (changes.length) {
+    html += "<br>Names that must be rewritten to be usable:<br>" +
+      changes.slice(0, 8).map(c =>
+        '<span class="ren">' + esc(c.stored) + " \u2192 " + esc(c.written) + "</span>"
+      ).join("<br>");
+    if (changes.length > 8) html += "<br>and " + (changes.length - 8) + " more";
+  }
+  plan.innerHTML = html;
+
+  act.innerHTML = '<button type="button" class="run">Unpack</button>' +
+                  '<span class="why">The archive is kept.</span>';
+  act.querySelector("button.run").addEventListener("click", async () => {
+    act.innerHTML = "Unpacking\u2026 this can take several minutes.";
+    const res = await unpackFetch({archive: path});
+    if (!res.ok) {
+      act.innerHTML = '<span class="why">' + esc(describe(res)) + "</span>";
+      return;
+    }
+    pollUnpack(act);
+  });
+}
+
+// Started, not finished. Extracting a large archive is minutes of work, so the
+// server runs it as a job and this asks where it got to.
+async function pollUnpack(act){
+  for (;;) {
+    await new Promise(r => setTimeout(r, 2000));
+    let st;
+    try {
+      const r = await fetch("api/v1/unpack", {headers: {"X-Admin-Secret": adminSecret || ""}});
+      st = await r.json();
+    } catch (_) {
+      act.innerHTML = '<span class="why">Lost contact with the server.</span>';
+      return;
+    }
+    if (st.running) continue;
+    if (st.error) {
+      act.innerHTML = '<span class="why">' + esc(st.error) + "</span>";
+      return;
+    }
+    const found = st.result ? st.result.songs_found : 0;
+    act.innerHTML = "Unpacked " + found + (found === 1 ? " song" : " songs") + ". Reloading\u2026";
+    // The server rebuilt its index; this page is now the stale one.
+    setTimeout(() => location.reload(), 1200);
+    return;
+  }
+}
+
+function describe(res){
+  if (res.body && res.body.error) return res.body.error;
+  if (res.status === 403) return "The admin secret is missing or wrong.";
+  return "The server answered " + res.status + ".";
 }
 
 function query(){

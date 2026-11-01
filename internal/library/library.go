@@ -142,6 +142,7 @@ func Build(root string) (*Index, error) {
 		Root:      root,
 	}
 
+	var found []*Entry
 	err := scan.WalkLibrary(root, func(r scan.Result) {
 		if r.Err != nil {
 			ix.Problems = append(ix.Problems, Problem{Path: r.Path, Err: r.Err.Error()})
@@ -164,20 +165,75 @@ func Build(root string) (*Index, error) {
 		case ".yargsong":
 			kind = SourceYargsong
 		}
-		e := newEntry(song, kind, filepath.Join(root, filepath.FromSlash(r.Path)), r.Inner)
-
-		ix.entries = append(ix.entries, e)
-		ix.byChart[song.ChartHash] = append(ix.byChart[song.ChartHash], e)
-		if _, seen := ix.byPackage[song.PackageHash]; seen {
-			ix.DuplicatePackages++
-		} else {
-			ix.byPackage[song.PackageHash] = e
-		}
+		found = append(found, newEntry(song, kind,
+			filepath.Join(root, filepath.FromSlash(r.Path)), r.Inner))
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build index: %w", err)
 	}
+
+	ix.adopt(found)
 	return ix, nil
+}
+
+// adopt decides which copies the index will carry, one per package.
+//
+// Identical package hashes mean identical BYTES, so two entries sharing one are not two songs:
+// they are one song found twice. Listing both puts the same row in the library twice, in the
+// browse page and in the game, and that is not hypothetical - unpacking an archive while
+// keeping it produced exactly that, every song doubled.
+//
+// Keeping the archive beside what came out of it has to stay safe, because it is the only
+// thing that makes unpacking reversible. So the duplicate is dropped from the catalogue rather
+// than the archive being deleted from the disk. DuplicatePackages still counts what was
+// dropped, because an operator with a library full of accidental copies should be able to find
+// out.
+//
+// This is deliberately NOT the same as two packages sharing a CHART hash. Those are different
+// bytes - a different mix, different art - and upstream's own cache is hash to a LIST for that
+// reason. Only byte-identical packages collapse here.
+func (ix *Index) adopt(found []*Entry) {
+	best := make(map[string]*Entry, len(found))
+	for _, e := range found {
+		cur, seen := best[e.Song.PackageHash]
+		if !seen {
+			best[e.Song.PackageHash] = e
+			continue
+		}
+		ix.DuplicatePackages++
+		if cheaper(e, cur) {
+			best[e.Song.PackageHash] = e
+		}
+	}
+
+	// Walk order, filtered, so the result does not depend on map iteration.
+	for _, e := range found {
+		if best[e.Song.PackageHash] != e {
+			continue
+		}
+		ix.entries = append(ix.entries, e)
+		ix.byChart[e.Song.ChartHash] = append(ix.byChart[e.Song.ChartHash], e)
+		ix.byPackage[e.Song.PackageHash] = e
+	}
+}
+
+// cheaper reports whether a is the copy worth keeping.
+//
+// Not a judgement about quality - the bytes are identical - but about what serving it costs.
+// A song inside a container has to be decompressed before it can be packed, and on a solid .7z
+// that was measured on vault2 at about three minutes. A loose folder beside it is the same
+// song for free.
+func cheaper(a, b *Entry) bool { return rank(a.Kind) < rank(b.Kind) }
+
+func rank(k SourceKind) int {
+	switch k {
+	case SourceSNG:
+		return 0 // already packed: stream it off disk
+	case SourceDir:
+		return 1 // pack it, but nothing to decompress first
+	default:
+		return 2 // decompress, then pack
+	}
 }
 
 // Len is how many songs are indexed.
@@ -343,4 +399,49 @@ func (s *Store) Replace(ix *Index) {
 	s.mu.Lock()
 	s.ix = ix
 	s.mu.Unlock()
+}
+
+// Archive is one container in the library that holds songs.
+type Archive struct {
+	// Path is relative to the library root, which is what the unpack API takes.
+	Path string `json:"path"`
+	Kind string `json:"kind"`
+	// Songs is how many songs this archive contributed to the index.
+	Songs int `json:"songs"`
+}
+
+// Archives lists the containers the index drew songs from.
+//
+// It exists because an archive that works is still worth acting on, and nothing else reports
+// one. A broken archive shows up in Problems; a healthy one shows up only as the songs it
+// yielded, with no sign that reaching them means decompressing two gigabytes. Measured on
+// vault2: one song out of a solid .7z costs about three minutes, which is invisible inside a
+// background index and very visible on a loading screen.
+//
+// Sorted by path so that two calls agree, because this feeds a list somebody clicks on.
+func (ix *Index) Archives() []Archive {
+	byPath := map[string]*Archive{}
+	for _, e := range ix.entries {
+		if e.Kind == SourceDir || e.Kind == SourceSNG {
+			continue
+		}
+		rel, err := filepath.Rel(ix.Root, e.Path)
+		if err != nil {
+			rel = e.Path
+		}
+		rel = filepath.ToSlash(rel)
+		a, ok := byPath[rel]
+		if !ok {
+			a = &Archive{Path: rel, Kind: string(e.Kind)}
+			byPath[rel] = a
+		}
+		a.Songs++
+	}
+
+	out := make([]Archive, 0, len(byPath))
+	for _, a := range byPath {
+		out = append(out, *a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
 }

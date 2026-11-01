@@ -146,7 +146,14 @@ func (s *Server) libraryInfo(w http.ResponseWriter, r *http.Request) {
 		"duplicate_packages": ix.DuplicatePackages,
 		"built_at":           ix.BuiltAt,
 		"problems":           ix.Problems,
-		"sort_attributes":    library.Attributes,
+		// Containers the index drew songs from. A WORKING archive is reported
+		// here because nothing else reports one: it shows up as the songs it
+		// yielded, with no sign that reaching any of them means decompressing
+		// the whole thing. The problems list only ever holds archives that
+		// FAILED, so anchoring an unpack offer to it would reach exactly the
+		// archives that have nothing to unpack.
+		"archives":        ix.Archives(),
+		"sort_attributes": library.Attributes,
 		// A capability, not a statistic. The browse page reads it for the same
 		// reason it reads sort_attributes: a page that guessed which endpoints
 		// exist would offer a drop zone against a server that answers 404.
