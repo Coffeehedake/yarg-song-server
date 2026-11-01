@@ -69,9 +69,30 @@ func PackFS(fsys fs.FS, w io.Writer) error {
 		files = append(files, n)
 	}
 
-	// Seed the mask with the package hash, over the FULL name list including
-	// song.ini - the same input scan.newSong hashes - so the mask is a function
-	// of the package's content and matches the ETag the server will send for it.
+	return packInto(fsys, names, meta, files, w)
+}
+
+// PackFSWithMetadata packs a source whose metadata does NOT live in a contained song.ini.
+//
+// An SNG carries the song.ini key namespace in its header, so a .yargsong - which is an SNG
+// under its transform - has no song.ini to read. Packing one through PackFS produced a
+// perfectly valid .sng with no title, artist or year at all: the files were right and the
+// song was anonymous. A test caught it; a client would have shown 481 blank rows.
+func PackFSWithMetadata(fsys fs.FS, meta []sng.Pair, w io.Writer) error {
+	names, err := rootNames(fsys)
+	if err != nil {
+		return err
+	}
+	if _, ok := PickChartFile(names); !ok {
+		return ErrNoChart
+	}
+	return packInto(fsys, names, meta, names, w)
+}
+
+// packInto is the shared tail: seed the mask with the package hash, over the FULL name list
+// including song.ini - the same input scan.newSong hashes - so the mask is a function of the
+// package's content and matches the ETag the server will send for it.
+func packInto(fsys fs.FS, names []string, meta []sng.Pair, files []string, w io.Writer) error {
 	pkg, err := packageHash(fsys, names)
 	if err != nil {
 		return fmt.Errorf("pack: derive mask: %w", err)

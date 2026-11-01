@@ -14,6 +14,8 @@ import (
 	"github.com/bodgit/sevenzip"
 
 	"github.com/coffeehedake/yarg-song-server/internal/catalog"
+	"github.com/coffeehedake/yarg-song-server/internal/sng"
+	"github.com/coffeehedake/yarg-song-server/internal/yargsong"
 )
 
 // A song reaches this server in one of four shapes: a loose folder, a .sng, a
@@ -91,6 +93,15 @@ func IsContainer(name string) bool {
 		return true
 	}
 	return false
+}
+
+// IsYargsong reports whether a filename is the container YARG setlists ship in.
+//
+// Kept apart from IsContainer because a .yargsong is not a container holding a song folder -
+// it is a song, the way a .sng is. The distinction matters: a container gets searched for a
+// song root, and a .yargsong would never produce one.
+func IsYargsong(name string) bool {
+	return strings.EqualFold(filepath.Ext(name), ".yargsong")
 }
 
 // OpenContainer opens a .zip or .7z and returns a filesystem rooted at the song
@@ -301,6 +312,25 @@ func PackPath(p string, w io.Writer) error {
 	}
 	if st.IsDir() {
 		return PackFS(os.DirFS(p), w)
+	}
+	if IsYargsong(p) {
+		a, r, err := yargsong.OpenArchive(p)
+		if err != nil {
+			return err
+		}
+		defer r.Close()
+		// Repacked rather than streamed, even though the decoded body IS an SNG. Streaming
+		// it would mean serving a file whose first six bytes are a decoy instead of SNGPKG,
+		// and a client reading our wire format is entitled to the real magic. Packing also
+		// keeps one deterministic producer rather than two ways of making a .sng.
+		//
+		// WithMetadata, because an SNG keeps its song.ini namespace in the header: pack it
+		// as a plain filesystem and the result is a valid, completely anonymous song.
+		meta := make([]sng.Pair, 0, len(a.MetaOrder))
+		for _, k := range a.MetaOrder {
+			meta = append(meta, sng.Pair{Key: k, Value: a.Metadata[k]})
+		}
+		return PackFSWithMetadata(a, meta, w)
 	}
 	fsys, closer, err := OpenContainer(p)
 	if err != nil {

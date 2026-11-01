@@ -9,6 +9,7 @@ import (
 
 	"github.com/coffeehedake/yarg-song-server/internal/catalog"
 	"github.com/coffeehedake/yarg-song-server/internal/sng"
+	"github.com/coffeehedake/yarg-song-server/internal/yargsong"
 )
 
 // Result is one entry produced by walking a library: either a song or the
@@ -105,10 +106,25 @@ func ScanFile(p string) (*catalog.Song, error) {
 	if IsContainer(name) {
 		return ScanContainer(p)
 	}
+	// A .yargsong is a song, not a container: YARN ships setlists this way, and the body
+	// under its transform is an ordinary SNG wearing a decoy magic. Scanned through the same
+	// ScanArchive as a .sng, because once it is open it IS one.
+	if IsYargsong(name) {
+		return scanYargsongFile(p)
+	}
 	if !strings.EqualFold(filepath.Ext(name), ".sng") {
 		return nil, ErrNotASong
 	}
 	return scanSNGFile(p)
+}
+
+func scanYargsongFile(p string) (*catalog.Song, error) {
+	a, r, err := yargsong.OpenArchive(p)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return ScanArchive(a)
 }
 
 func scanSNGFile(p string) (*catalog.Song, error) {
