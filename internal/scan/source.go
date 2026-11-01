@@ -49,6 +49,17 @@ var ErrUnopenable7z = errors.New("scan: this is a 7z archive but it could not be
 // ErrTooManySongs means an archive holds several song folders. The roadmap
 // promises "a .zip of a loose folder", singular, and guessing which one the
 // operator meant would silently publish one song and drop the rest.
+//
+// THE LIBRARY WALK NO LONGER RAISES THIS. WalkLibrary uses ScanContainerAll and publishes
+// every song in an archive, which is what the advice to "unpack it" was a workaround for.
+// What still raises it is the single-verdict path - ScanFile, and therefore the upload check -
+// because that endpoint answers about one file with one song and has nowhere to put twenty.
+//
+// So the two deliberately disagree now, and ScanFile's doc comment promises they do not. That
+// promise is the older of the two and the divergence is real: uploading a multi-song zip is
+// refused while copying the same file into the library succeeds. Worth closing by teaching the
+// check endpoint to report several verdicts; not worth silently picking one song to keep the
+// comment true.
 var ErrTooManySongs = errors.New("scan: archive holds more than one song folder; unpack it and add the songs individually")
 
 // ErrUnreadableArchive means an archive plainly contains a song - there is a
@@ -132,16 +143,42 @@ func looks7z(p string) bool {
 }
 
 func OpenContainer(p string) (fs.FS, io.Closer, error) {
+	fsys, raw, closer, err := openArchive(p)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	root, err := songRoot(fsys)
+	if err != nil {
+		// Before reporting "no chart", ask whether the archive plainly contains a song
+		// anyway. If it does, this is an archive we failed to READ, not an archive of
+		// something else, and the two deserve different answers.
+		if errors.Is(err, ErrNoChart) && looksLikeASong(raw) {
+			err = ErrUnreadableArchive
+		}
+		closer.Close()
+		return nil, nil, err
+	}
+	return root, closer, nil
+}
+
+// openArchive opens a .zip or .7z as a filesystem, without deciding what is a song in it.
+//
+// It also returns the entry names EXACTLY as stored, before any fs view, because the fs view
+// is blind to some of them - an archive written with backslash separators shows a directory
+// with nothing readable underneath, and a check that walks the fs inherits precisely the
+// blindness it exists to detect.
+func openArchive(p string) (fs.FS, []string, io.Closer, error) {
 	var (
 		fsys   fs.FS
 		closer io.Closer
-		raw    []string // entry names EXACTLY as stored, before any fs view
+		raw    []string
 	)
 	switch strings.ToLower(filepath.Ext(p)) {
 	case ".zip":
 		r, err := zip.OpenReader(p)
 		if err != nil {
-			return nil, nil, fmt.Errorf("scan: open zip: %w", err)
+			return nil, nil, nil, fmt.Errorf("scan: open zip: %w", err)
 		}
 		for _, f := range r.File {
 			raw = append(raw, f.Name)
@@ -159,30 +196,19 @@ func OpenContainer(p string) (fs.FS, io.Closer, error) {
 			// We cannot tell "encrypted" from "corrupt" without a password to try, so the
 			// error says both and names the likely remedy rather than guessing.
 			if looks7z(p) {
-				return nil, nil, fmt.Errorf("%w: %s", ErrUnopenable7z, err)
+				return nil, nil, nil, fmt.Errorf("%w: %s", ErrUnopenable7z, err)
 			}
-			return nil, nil, fmt.Errorf("scan: open 7z: %w", err)
+			return nil, nil, nil, fmt.Errorf("scan: open 7z: %w", err)
 		}
 		for _, f := range r.File {
 			raw = append(raw, f.Name)
 		}
 		fsys, closer = r, r
 	default:
-		return nil, nil, fmt.Errorf("scan: %q is not a container this server reads", filepath.Ext(p))
+		return nil, nil, nil, fmt.Errorf("scan: %q is not a container this server reads", filepath.Ext(p))
 	}
 
-	root, err := songRoot(fsys)
-	if err != nil {
-		// Before reporting "no chart", ask whether the archive plainly contains
-		// a song anyway. If it does, this is an archive we failed to READ, not
-		// an archive of something else, and the two deserve different answers.
-		if errors.Is(err, ErrNoChart) && looksLikeASong(raw) {
-			err = ErrUnreadableArchive
-		}
-		closer.Close()
-		return nil, nil, err
-	}
-	return root, closer, nil
+	return fsys, raw, closer, nil
 }
 
 // looksLikeASong reports whether any entry name in the archive is a song.ini or
@@ -305,7 +331,15 @@ func ScanContainer(p string) (*catalog.Song, error) {
 //
 // A .sng is not accepted here: it is already the wire format and is served
 // straight off disk rather than repacked.
-func PackPath(p string, w io.Writer) error {
+func PackPath(p string, w io.Writer) error { return PackPathInner(p, "", w) }
+
+// PackPathInner packs one song out of a source that may hold several.
+//
+// inner is the song's path within an archive, as reported by the walk; "" means the source is
+// a single song. Threading it through is what makes a multi-song archive servable rather than
+// merely listable - without it the packer would find the first song in the file and hand it
+// back for every hash in that archive, which is worse than refusing the archive outright.
+func PackPathInner(p, inner string, w io.Writer) error {
 	st, err := os.Stat(p)
 	if err != nil {
 		return err
@@ -332,6 +366,22 @@ func PackPath(p string, w io.Writer) error {
 		}
 		return PackFSWithMetadata(a, meta, w)
 	}
+	// With an inner path the archive is opened at its ROOT and narrowed here, because
+	// OpenContainer narrows to the one song it found - which is the wrong song, or an error,
+	// as soon as the archive holds several.
+	if inner != "" {
+		fsys, _, closer, err := openArchive(p)
+		if err != nil {
+			return err
+		}
+		defer closer.Close()
+		sub, err := fs.Sub(fsys, inner)
+		if err != nil {
+			return fmt.Errorf("pack: %s in %s: %w", inner, filepath.Base(p), err)
+		}
+		return PackFS(sub, w)
+	}
+
 	fsys, closer, err := OpenContainer(p)
 	if err != nil {
 		return err

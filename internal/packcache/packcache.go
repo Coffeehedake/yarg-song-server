@@ -181,7 +181,7 @@ func (c *Cache) MaxBytes() int64 { return c.maxBytes }
 // the key is the package hash, which is computed from the song's contents, so a
 // song that moves from a folder into a zip keeps the same cache entry and the
 // same bytes.
-func (c *Cache) openOnce(packageHash, src string) (*os.File, error) {
+func (c *Cache) openOnce(packageHash, src, inner string) (*os.File, error) {
 	// The key becomes a FILENAME on the next line, so it is validated here
 	// rather than trusted to have been validated by whoever called.
 	//
@@ -224,7 +224,7 @@ func (c *Cache) openOnce(packageHash, src string) (*os.File, error) {
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }() // no-op once the rename has succeeded
 
-	if err := scan.PackPath(src, tmp); err != nil {
+	if err := scan.PackPathInner(src, inner, tmp); err != nil {
 		tmp.Close()
 		return nil, fmt.Errorf("packcache: pack %s: %w", src, err)
 	}
@@ -306,11 +306,11 @@ const openAttempts = 3
 
 // Open returns an OPEN archive for src, packing it if needed. The caller owns
 // the file and must close it.
-func (c *Cache) Open(packageHash, src string) (*os.File, error) {
+func (c *Cache) Open(packageHash, src, inner string) (*os.File, error) {
 	var err error
 	for attempt := 0; attempt < openAttempts; attempt++ {
 		var f *os.File
-		f, err = c.openOnce(packageHash, src)
+		f, err = c.openOnce(packageHash, src, inner)
 		if err == nil {
 			return f, nil
 		}
@@ -329,8 +329,8 @@ func (c *Cache) Open(packageHash, src string) (*os.File, error) {
 // that are not serving concurrently find it convenient, and because the
 // eviction tests need to assert on paths rather than handles - on Windows an
 // open handle prevents the very removal those tests exist to observe.
-func (c *Cache) Path(packageHash, src string) (string, error) {
-	f, err := c.Open(packageHash, src)
+func (c *Cache) Path(packageHash, src, inner string) (string, error) {
+	f, err := c.Open(packageHash, src, inner)
 	if err != nil {
 		return "", err
 	}

@@ -74,7 +74,7 @@ func TestUnboundedNeverEvicts(t *testing.T) {
 	}
 	for i := range 6 {
 		name := fmt.Sprintf("song%02d", i)
-		if _, err := c.Path(fmt.Sprintf("%064d", i), song(t, src, name, 4096)); err != nil {
+		if _, err := c.Path(fmt.Sprintf("%064d", i), song(t, src, name, 4096), ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -93,7 +93,7 @@ func TestBoundIsEnforced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := probe.Path(fmt.Sprintf("%064d", 99), song(t, src, "probe", 4096))
+	p, err := probe.Path(fmt.Sprintf("%064d", 99), song(t, src, "probe", 4096), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestBoundIsEnforced(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range 8 {
-		if _, err := c.Path(fmt.Sprintf("%064d", i), song(t, src, fmt.Sprintf("song%02d", i), 4096)); err != nil {
+		if _, err := c.Path(fmt.Sprintf("%064d", i), song(t, src, fmt.Sprintf("song%02d", i), 4096), ""); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(5 * time.Millisecond) // keep mtimes distinguishable
@@ -136,7 +136,7 @@ func TestTheArchiveJustPackedIsNeverEvicted(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range 4 {
-		p, err := c.Path(fmt.Sprintf("%064d", i), song(t, src, fmt.Sprintf("song%02d", i), 2048))
+		p, err := c.Path(fmt.Sprintf("%064d", i), song(t, src, fmt.Sprintf("song%02d", i), 2048), "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -151,7 +151,7 @@ func TestLeastRecentlyUsedGoesFirst(t *testing.T) {
 	src, cdir := t.TempDir(), t.TempDir()
 
 	probe, _ := New(t.TempDir())
-	p, err := probe.Path(fmt.Sprintf("%064d", 99), song(t, src, "probe", 4096))
+	p, err := probe.Path(fmt.Sprintf("%064d", 99), song(t, src, "probe", 4096), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,23 +165,23 @@ func TestLeastRecentlyUsedGoesFirst(t *testing.T) {
 
 	hashA, hashB := fmt.Sprintf("%064d", 1), fmt.Sprintf("%064d", 2)
 	dirA := song(t, src, "songA", 4096)
-	if _, err := c.Path(hashA, dirA); err != nil {
+	if _, err := c.Path(hashA, dirA, ""); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(20 * time.Millisecond)
-	if _, err := c.Path(hashB, song(t, src, "songB", 4096)); err != nil {
+	if _, err := c.Path(hashB, song(t, src, "songB", 4096), ""); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(20 * time.Millisecond)
 
 	// Touch A so it is now the MORE recently used of the two. B is the victim.
-	if _, err := c.Path(hashA, dirA); err != nil {
+	if _, err := c.Path(hashA, dirA, ""); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(20 * time.Millisecond)
 
 	// A third song forces one eviction.
-	if _, err := c.Path(fmt.Sprintf("%064d", 3), song(t, src, "songC", 4096)); err != nil {
+	if _, err := c.Path(fmt.Sprintf("%064d", 3), song(t, src, "songC", 4096), ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -211,7 +211,7 @@ func TestBoundIsEnforcedAtStartNotOnlyOnInsert(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range 6 {
-		if _, err := pre.Path(fmt.Sprintf("%064d", i), song(t, src, fmt.Sprintf("song%02d", i), 4096)); err != nil {
+		if _, err := pre.Path(fmt.Sprintf("%064d", i), song(t, src, fmt.Sprintf("song%02d", i), 4096), ""); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -282,7 +282,7 @@ func TestConcurrentRequestsForOneSongPackOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			paths[i], errs[i] = c.Path(hash, dir)
+			paths[i], errs[i] = c.Path(hash, dir, "")
 		}()
 	}
 	wg.Wait()
@@ -341,7 +341,7 @@ func TestEvictionNeverStealsAnArchiveBeforeItsPackerCanOpenIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := sizer.Open(hashes[0], dirs[0])
+	f, err := sizer.Open(hashes[0], dirs[0], "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +369,7 @@ func TestEvictionNeverStealsAnArchiveBeforeItsPackerCanOpenIt(t *testing.T) {
 					// Stagger the starting song per worker so the workers are
 					// not all asking for the same one at the same moment.
 					j := (i + w + r) % songs
-					f, err := c.Open(hashes[j], dirs[j])
+					f, err := c.Open(hashes[j], dirs[j], "")
 					if err != nil {
 						mu.Lock()
 						if len(failures) < 5 {
@@ -436,7 +436,7 @@ func TestAKeyThatCouldBeAPathIsRefused(t *testing.T) {
 		"NOTHEX",
 		"0123456789abcdef!",
 	} {
-		f, err := c.Open(bad, dir)
+		f, err := c.Open(bad, dir, "")
 		if err == nil {
 			f.Close()
 			t.Errorf("key %q was accepted; it can name a file outside the cache", bad)
@@ -449,7 +449,7 @@ func TestAKeyThatCouldBeAPathIsRefused(t *testing.T) {
 	}
 
 	// And a well-formed one still gets through to the packing path.
-	if _, err := c.Open(strings.Repeat("a", 64), filepath.Join(dir, "nope")); err == nil {
+	if _, err := c.Open(strings.Repeat("a", 64), filepath.Join(dir, "nope"), ""); err == nil {
 		t.Error("a well-formed key with a missing source should fail at packing, not validation")
 	} else if strings.Contains(err.Error(), "is not a package hash") {
 		t.Errorf("a well-formed key was rejected as malformed: %v", err)

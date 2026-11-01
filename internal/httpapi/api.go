@@ -380,7 +380,7 @@ func (s *Server) songFile(w http.ResponseWriter, r *http.Request) {
 	var f *os.File
 	var err error
 	if entry.Kind.NeedsPacking() {
-		f, err = s.Packs.Open(entry.Song.PackageHash, entry.Path)
+		f, err = s.Packs.Open(entry.Song.PackageHash, entry.Path, entry.Inner)
 		if err != nil {
 			s.logError("pack song", err, "chart_hash", hash)
 			writeError(w, http.StatusInternalServerError, "could not pack this song")

@@ -55,6 +55,11 @@ type Entry struct {
 	// location a client is entitled to see.
 	Kind SourceKind
 	Path string
+	// Inner is the song's path inside an archive that holds several, slash-separated and
+	// empty for every other source. Without it the packer finds the first song in a
+	// multi-song archive and serves it for every hash in that file - which looks like
+	// working and is worse than the refusal it replaced.
+	Inner string
 
 	// Sort keys, precomputed because they are compared O(n log n) times per
 	// request and each one costs a Unicode normalisation.
@@ -66,11 +71,12 @@ type Entry struct {
 }
 
 // newEntry precomputes everything a query touches.
-func newEntry(song *catalog.Song, kind SourceKind, path string) *Entry {
+func newEntry(song *catalog.Song, kind SourceKind, path, inner string) *Entry {
 	e := &Entry{
 		Song:     song,
 		Kind:     kind,
 		Path:     path,
+		Inner:    inner,
 		Name:     sortkey.New(song.Name),
 		Artist:   sortkey.New(song.Artist),
 		Album:    sortkey.New(song.Album),
@@ -158,7 +164,7 @@ func Build(root string) (*Index, error) {
 		case ".yargsong":
 			kind = SourceYargsong
 		}
-		e := newEntry(song, kind, filepath.Join(root, filepath.FromSlash(r.Path)))
+		e := newEntry(song, kind, filepath.Join(root, filepath.FromSlash(r.Path)), r.Inner)
 
 		ix.entries = append(ix.entries, e)
 		ix.byChart[song.ChartHash] = append(ix.byChart[song.ChartHash], e)

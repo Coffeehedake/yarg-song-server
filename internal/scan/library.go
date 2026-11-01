@@ -21,8 +21,12 @@ import (
 type Result struct {
 	// Path is the folder or .sng file this came from, relative to the root.
 	Path string
-	Song *catalog.Song
-	Err  error
+	// Inner is the song's path WITHIN an archive, slash-separated, empty for everything
+	// else and for an archive that is itself one song folder. It is what lets the packer
+	// find this song again among several in the same file.
+	Inner string
+	Song  *catalog.Song
+	Err   error
 }
 
 // WalkLibrary walks root and reports every song it finds.
@@ -49,6 +53,30 @@ func WalkLibrary(root string, emit func(Result)) error {
 			}
 			emit(Result{Path: rel(root, p), Song: song, Err: serr})
 			return nil
+		}
+
+		// An archive may hold several songs, and each one is emitted separately so a pack of
+		// twenty becomes twenty catalogue entries rather than a refusal. ScanFile still
+		// exists and still answers for one file, because the upload check needs a single
+		// verdict - but the walk is the path that can report many.
+		if IsContainer(d.Name()) {
+			songs, cerr := ScanContainerAll(p)
+			for _, cs := range songs {
+				emit(Result{Path: rel(root, p), Inner: cs.Inner, Song: cs.Song})
+			}
+			switch {
+			case cerr == nil:
+				return nil
+			case errors.Is(cerr, ErrNoChart):
+				// An archive of something else entirely. Libraries are full of those.
+				return nil
+			default:
+				// Reported even when some songs came back: an archive that yielded
+				// nineteen songs and one error has a real problem in it, and silence
+				// about the twentieth is how a song disappears unexplained.
+				emit(Result{Path: rel(root, p), Err: cerr})
+				return nil
+			}
 		}
 
 		song, serr := ScanFile(p)
