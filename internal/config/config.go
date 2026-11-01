@@ -63,6 +63,15 @@ type Config struct {
 	// secret nobody set is not a secret, and silently allowing it would make
 	// the cover ornamental.
 	AdminSecret string
+	// IncomingDir is the drop folder somebody puts songs and archives into for
+	// the server to take in. Empty means <songs>/_incoming.
+	//
+	// It is configurable for the same reason UnpackDir is: the library is
+	// mounted read-only on the deployment this was built for, so the one place
+	// anything may be written has to be sayable. It must be a directory the
+	// server can WRITE to - things are moved out of it, not copied - and
+	// nothing is ever taken from it without being asked.
+	IncomingDir string
 	// UnpackDir is where unpacked songs are written. Empty means beside the
 	// archive they came from.
 	//
@@ -245,8 +254,10 @@ func ApplyTracked(c *Config, r io.Reader) ([]string, error) {
 			c.AdminSecret = value
 		case "unpack_dir":
 			c.UnpackDir = value
+		case "incoming_dir":
+			c.IncomingDir = value
 		default:
-			return nil, fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max, browse_ui, check_uploads, check_max_bytes, config_writes, unpack_ops, admin_secret, unpack_dir", line, key)
+			return nil, fmt.Errorf("line %d: unknown setting %q; valid settings are listen, songs, data, pack_cache_max, browse_ui, check_uploads, check_max_bytes, config_writes, unpack_ops, admin_secret, unpack_dir, incoming_dir", line, key)
 		}
 		keys = append(keys, key)
 	}

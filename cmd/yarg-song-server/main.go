@@ -137,6 +137,17 @@ func main() {
 		return
 	}
 
+	// `incoming` is the same shape, for the same reasons: it runs, it exits, and it is how the
+	// drop folder can be pointed at a real folder of real songs before any of it is behind a
+	// button.
+	if args := flag.Args(); len(args) >= 1 && args[0] == "incoming" {
+		if err := runIncoming(args[1:], opt); err != nil {
+			fmt.Fprintln(os.Stderr, "incoming:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(opt, log); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
