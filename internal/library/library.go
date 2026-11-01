@@ -29,6 +29,7 @@ const (
 	SourceDir SourceKind = "dir"
 	SourceZip SourceKind = "zip"
 	Source7z  SourceKind = "7z"
+	SourceRar SourceKind = "rar"
 	// SourceYargsong is the container YARN setlists ship in. It needs packing like the
 	// others and deliberately does NOT reuse SourceSNG: the body under its transform is an
 	// SNG, but the file on disk is not one, and reporting it as "sng" would make an index
@@ -162,6 +163,8 @@ func Build(root string) (*Index, error) {
 			kind = SourceZip
 		case ".7z":
 			kind = Source7z
+		case ".rar":
+			kind = SourceRar
 		case ".yargsong":
 			kind = SourceYargsong
 		}
@@ -237,7 +240,7 @@ func cheaper(a, b *Entry) bool { return rank(a.Kind) < rank(b.Kind) }
 // relationship with the setlist it came from to save almost nothing. A .zip or .7z somebody
 // dropped in the library is the opposite case on every count.
 func worthUnpacking(k SourceKind) bool {
-	return k == SourceZip || k == Source7z
+	return k == SourceZip || k == Source7z || k == SourceRar
 }
 
 func rank(k SourceKind) int {

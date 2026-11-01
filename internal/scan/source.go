@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/coffeehedake/yarg-song-server/internal/catalog"
@@ -15,13 +17,15 @@ import (
 	"github.com/coffeehedake/yarg-song-server/internal/yargsong"
 )
 
-// A song reaches this server in one of four shapes: a loose folder, a .sng, a
-// .zip or a .7z. Three of those are just a filesystem with a chart in it, and
-// this file is what makes them interchangeable.
+// A song reaches this server in one of five shapes: a loose folder, a .sng, a
+// .zip, a .7z or a .rar. Four of those are just a filesystem with a chart in it,
+// and this file is what makes them interchangeable.
 //
-// Nothing here needed an adapter. Both archive/zip's Reader and sevenzip's
-// Reader already expose Open(name) (fs.File, error), so both satisfy fs.FS, and
-// the scanner - which has taken an fs.FS since Phase 1 - reads them unchanged.
+// The archive readers no longer satisfy fs.FS directly - archiveItems and
+// archiveFS sit in between, because the stored ORDER of entries turned out to
+// matter (a solid .7z read out of order costs a decompression pass per entry)
+// and because entry names are not always valid UTF-8. rardecode joined on the
+// same terms: List plus a per-entry Open, with no adapter of its own.
 // The .sng path stays separate for a real reason rather than an accidental one:
 // a .sng carries its metadata in the archive HEADER rather than in a contained
 // song.ini, so it is scanned by ScanArchive, not by ScanDir.
@@ -42,6 +46,16 @@ var ErrRockBandPackage = errors.New("scan: Rock Band console package; its audio 
 // publishes every setlist as an encrypted .7z, and the message leads with that because the
 // person reading it has usually just copied one into the library by hand.
 var ErrUnopenable7z = errors.New("scan: this is a 7z archive but it could not be opened; it is probably password-protected, which is how YARN publishes setlists - install those with yarn-install rather than copying the archive in, since the server does not unpack archives it cannot read")
+
+// ErrUnopenableRar means the file really is a RAR - it carries the signature - and this server
+// could not open it.
+//
+// Separate from ErrUnopenable7z because the likely causes differ and so does the advice. A
+// password is one of them, but the commoner one here is a MULTI-VOLUME set whose other parts
+// are missing: rardecode follows volumes by name, so a lone "X.part3.rar" cannot be read no
+// matter what is in it. Encryption is a permanent refusal; a missing volume is a file the
+// operator can go and fetch, and those should not read the same.
+var ErrUnopenableRar = errors.New("scan: this is a RAR archive but it could not be opened; if it is one part of a multi-volume set the other parts must sit beside it (rardecode follows them by name), and if it is password-protected the server cannot read it at all")
 
 // ErrTooManySongs means an archive holds several song folders. The roadmap
 // promises "a .zip of a loose folder", singular, and guessing which one the
@@ -95,13 +109,54 @@ func IsRockBandPackage(name string) bool {
 // IsContainer reports whether a filename is an archive this server can read as
 // a song folder. .sng is deliberately excluded: it is a song, not a container
 // holding one, and it is served directly rather than repacked.
+//
+// A SECONDARY volume of a multi-volume RAR set is excluded too, and that is not tidiness. Given
+// "X.part1.rar" rardecode reads the whole set; given "X.part2.rar" it either fails - one noisy
+// error per part - or finds part 1 beside it and succeeds, which is worse, because then every
+// song in the set is indexed once per part. The chart hash would collapse the duplicates, so
+// the symptom would be a library that quietly reports the wrong archive as a song's source.
 func IsContainer(name string) bool {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".zip", ".7z":
 		return true
+	case ".rar":
+		return !IsSecondaryRarVolume(name)
 	}
 	return false
 }
+
+// rarPartSuffix matches the ".partN.rar" naming RAR 3.0+ uses for a split set.
+//
+// The older convention - X.rar, X.r00, X.r01 - needs nothing here: those continuation parts do
+// not end in .rar, so IsContainer never offered them in the first place.
+var rarPartSuffix = regexp.MustCompile(`(?i)\.part(\d+)\.rar$`)
+
+// IsSecondaryRarVolume reports whether a filename is a continuation part of a multi-volume RAR
+// set rather than the part that opens it.
+//
+// Only the first part is an entry point. Which number that is depends on the writer's padding -
+// part1, part01 and part001 all occur - so the digits are compared as a NUMBER, not as text.
+func IsSecondaryRarVolume(name string) bool {
+	m := rarPartSuffix.FindStringSubmatch(filepath.Base(name))
+	if m == nil {
+		return false
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		return false // unparseable: treat it as an entry point and let the reader object
+	}
+	return n > 1
+}
+
+// rarSignature is the prefix every RAR file starts with. RAR 1.5-4.x follows it with 0x00 and
+// RAR 5.0 with 0x01 0x00; the shared six bytes are enough to tell a real archive from a file
+// that merely ends in .rar.
+var rarSignature = []byte{0x52, 0x61, 0x72, 0x21, 0x1A, 0x07}
+
+// looksRar reports whether the file carries the RAR signature, separating "a real archive we
+// cannot read" from "a file that merely ends in .rar". Only the first earns an operator a
+// confusing message; the second is obviously junk. Same split as looks7z.
+func looksRar(p string) bool { return hasPrefixBytes(p, rarSignature) }
 
 // IsYargsong reports whether a filename is the container YARG setlists ship in.
 //
@@ -125,18 +180,24 @@ var sevenZSignature = []byte{0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C}
 // looks7z reports whether the file carries the 7z signature, which separates "a real archive
 // we cannot read" from "a file that merely ends in .7z". Only the first costs an operator a
 // confusing message; the second is already obviously junk.
-func looks7z(p string) bool {
+func looks7z(p string) bool { return hasPrefixBytes(p, sevenZSignature) }
+
+// hasPrefixBytes reports whether a file begins with the given signature.
+//
+// A file shorter than the signature, or one that cannot be opened at all, is not a match: the
+// callers are asking "is this really the format it claims to be", and both answers there are no.
+func hasPrefixBytes(p string, sig []byte) bool {
 	f, err := os.Open(p)
 	if err != nil {
 		return false
 	}
 	defer f.Close()
 
-	head := make([]byte, len(sevenZSignature))
+	head := make([]byte, len(sig))
 	if _, err := io.ReadFull(f, head); err != nil {
 		return false
 	}
-	return bytes.Equal(head, sevenZSignature)
+	return bytes.Equal(head, sig)
 }
 
 func OpenContainer(p string) (fs.FS, io.Closer, error) {

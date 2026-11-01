@@ -25,7 +25,7 @@ import (
 // understood - it is refused by name, with a reason - and answering that
 // question does not require a two-gigabyte upload, so it is refused from the
 // NAME before a single byte of the body is read.
-var checkExtensions = map[string]bool{".sng": true, ".zip": true, ".7z": true}
+var checkExtensions = map[string]bool{".sng": true, ".zip": true, ".7z": true, ".rar": true}
 
 // check scans one uploaded archive and answers with the verdict, keeping
 // nothing.

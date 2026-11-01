@@ -46,7 +46,7 @@ heuristics and no fuzzy matching.
 **Will**
 
 - Ingest loose song folders (`song.ini` + `notes.mid`/`notes.chart` + stems), `.sng` containers,
-  and `.zip`/`.7z` archives of a song folder — a song packs to the same bytes whichever of those
+  and `.zip`/`.7z`/`.rar` archives of a song folder — a song packs to the same bytes whichever of those
   it arrived in, so reorganising a library does not make every client re-download it
 - Serve a browsable, searchable catalog over HTTP, sorted by the same attributes YARG sorts by
 - Serve songs as `.sng`, and answer "which of these hashes am I missing?" in bulk
@@ -80,6 +80,7 @@ heuristics and no fuzzy matching.
 | [`docs/ADR-001-server-architecture.md`](docs/ADR-001-server-architecture.md) | Why Go, why two repos, why sync-first, why LGPL |
 | [`docs/ADR-002-v1-store.md`](docs/ADR-002-v1-store.md) | Why the catalog lives in memory, why packed archives are cached, and the two places this server deliberately sorts differently from the client |
 | [`docs/ADR-003-archive-ingest.md`](docs/ADR-003-archive-ingest.md) | Why `.zip`/`.7z` are ingested, what the `.7z` dependency actually costs measured rather than estimated, and why Rock Band packages are refused out loud |
+| [`docs/ADR-007-rar-ingest.md`](docs/ADR-007-rar-ingest.md) | Why `.rar` is a full container rather than unpack-only, the measured access-order numbers that allowed it, why only the first volume of a set is an entry point, and why there is no committed fixture |
 | [`docs/ADR-004-remote-song-source.md`](docs/ADR-004-remote-song-source.md) | How a YARG client could reach a remote library — the six things YARG.Core's code actually says about it, and why the first increment needs no change to YARG.Core at all |
 | [`docs/BUILD.md`](docs/BUILD.md) | Building the client fork — what it costs, what "Success with three errors" meant, and the naming decision a beta has to settle first |
 | [`docs/SYNC-CLIENT.md`](docs/SYNC-CLIENT.md) | `yarg-sync`: flags, what it refuses to touch, why files are named by chart hash, and the Windows Defender false positive |

@@ -271,6 +271,15 @@ exists, and it is the proof that the server is correct.
       recorded with its measured cost in [`ADR-003`](ADR-003-archive-ingest.md) (+1.62 MB,
       3 → 71 compiled packages, no cloud stack despite what `go list -m all` implies).
 
+      **`.rar` joined on 2026-11-01**, as a full container rather than unpack-only, via
+      `github.com/nwaples/rardecode/v2` — +0.43 MB and **one** compiled package, because it
+      is pure Go with no dependencies of its own. The decision hinged on a measurement, not
+      on the format: reading a `.rar` entry OUT OF ORDER costs what reading the first one
+      costs (<1 ms), and enumerating a 6 GB archive takes 33 ms, where a solid `.7z` costs
+      about three minutes per out-of-order entry. Only the FIRST volume of a multi-volume
+      set is an entry point. Numbers, caveats and the absent fixture are in
+      [`ADR-007`](ADR-007-rar-ingest.md).
+
       **No adapter was needed and no scanning logic was duplicated.** `archive/zip`'s Reader
       and sevenzip's Reader both already implement `fs.FS`, and the scanner has taken an
       `fs.FS` since Phase 1, so an archived song is read by exactly the code that reads a

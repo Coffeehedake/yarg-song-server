@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/bodgit/sevenzip"
+	"github.com/nwaples/rardecode/v2"
 )
 
 // archiveItems opens an archive and returns its entries in the order they are STORED.
@@ -59,9 +60,59 @@ func archiveItems(p string) ([]archiveItem, io.Closer, error) {
 			})
 		}
 		return items, r, nil
+
+	case ".rar":
+		// rardecode gives three ways in: a sequential Reader, an fs.FS, and List + per-entry
+		// Open. List is the one that matches archiveItem's contract, which needs a LAZY,
+		// REPEATABLE opener per entry - and the question of whether that is affordable was
+		// measured rather than assumed, because on a solid .7z the same shape costs about
+		// three minutes an entry.
+		//
+		// Measured 2026-11-01 against the two real archives this was added for:
+		//
+		//	Guitar Hero On Tour - Modern Hits.rar   173 MB   307 entries   List 1.098s
+		//	Marathon Hero 2.rar                    5976 MB   951 entries   List  0.033s
+		//
+		// Neither is solid, nothing in either is encrypted, and every stored name is already
+		// valid UTF-8. Reading the LAST entry without touching the ones before it took under
+		// a millisecond, and a 40-entry stored-order pass (498ms) matched the sequential
+		// reader (477ms) - so unlike .7z there is no penalty for reaching into a .rar, and it
+		// can be served as a container rather than only unpacked.
+		//
+		// That is a property of these archives, not of the format: RAR supports solid
+		// compression too, and a solid .rar would cost exactly what a solid .7z costs. The
+		// remedy is the same one .7z already has - unpack it - so this needs no special case,
+		// only the honesty that the measurement above is about two files.
+		files, err := rardecode.List(p)
+		if err != nil {
+			// An encrypted .rar fails somewhere inside the decoder with a message an
+			// operator cannot act on, exactly as a password-protected .7z does.
+			if looksRar(p) {
+				return nil, nil, fmt.Errorf("%w: %s", ErrUnopenableRar, err)
+			}
+			return nil, nil, fmt.Errorf("scan: open rar: %w", err)
+		}
+		items := make([]archiveItem, 0, len(files))
+		for _, f := range files {
+			items = append(items, archiveItem{
+				stored:   f.Name,
+				size:     f.UnPackedSize,
+				modified: f.ModificationTime,
+				open:     func() (io.ReadCloser, error) { return f.Open() },
+			})
+		}
+		// List closes the archive before it returns and every File.Open reopens it, so there
+		// is no handle for the caller to hold. Proved by the probe: entries opened fine after
+		// List had returned. A nil Closer is not an option - every caller defers Close.
+		return items, nopCloser{}, nil
 	}
 	return nil, nil, fmt.Errorf("scan: %q is not a container this server reads", filepath.Ext(p))
 }
+
+// nopCloser stands in where a reader owns no handle the caller must release.
+type nopCloser struct{}
+
+func (nopCloser) Close() error { return nil }
 
 // IgnoredDirName is a directory the library walk does not look inside, at any depth.
 //

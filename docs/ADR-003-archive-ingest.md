@@ -2,6 +2,7 @@
 
 **Status:** accepted, 2026-09-06
 **Supersedes nothing. Constrained by [ADR-001](ADR-001-server-architecture.md).**
+**Extended by [ADR-007](ADR-007-rar-ingest.md), which added `.rar` on 2026-11-01.**
 
 ## Context
 

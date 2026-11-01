@@ -214,7 +214,10 @@ func TestCheckRefusesAConsolePackageWithoutReadingIt(t *testing.T) {
 
 func TestCheckRefusesShapesItDoesNotRead(t *testing.T) {
 	srv, _, _ := checkServer(t, defaultSpecs(), 8<<20)
-	for _, name := range []string{"song.rar", "song", "notes.chart"} {
+	// `song.rar` used to be in this list and was removed on 2026-11-01, when .rar became a
+	// container this server reads (ADR-007). `song.tar.gz` replaces it so the gate itself is
+	// still tested: filepath.Ext gives ".gz", which is not a shape this server reads.
+	for _, name := range []string{"song.tar.gz", "song", "notes.chart"} {
 		resp, _, _ := postCheck(t, srv, name, []byte("x"))
 		if resp.StatusCode != http.StatusUnsupportedMediaType {
 			t.Fatalf("%s: status %d, want 415", name, resp.StatusCode)
@@ -228,6 +231,24 @@ func TestCheckRefusesShapesItDoesNotRead(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("a missing ?name= answered %d, want 400", resp.StatusCode)
+	}
+}
+
+// The other half of the change above: a .rar now gets PAST the extension gate and is judged on
+// what is in it. Without this, removing .rar from the 415 list would leave nothing asserting
+// that it is read at all, and a later edit could quietly put it back.
+func TestCheckReadsARarAndJudgesItOnItsContents(t *testing.T) {
+	srv, _, _ := checkServer(t, defaultSpecs(), 8<<20)
+	resp, out, raw := postCheck(t, srv, "song.rar", []byte("not really a rar"))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d, want 200 - .rar must pass the extension gate: %s",
+			resp.StatusCode, raw)
+	}
+	if out.Accepted {
+		t.Fatal("a file that is not a RAR was accepted")
+	}
+	if out.Reason == "" {
+		t.Fatal("refused with no reason")
 	}
 }
 

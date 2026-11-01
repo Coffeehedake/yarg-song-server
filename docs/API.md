@@ -279,7 +279,7 @@ missing the entire library.
 ## `GET /song/{chart_hash}.sng`
 
 The package bytes, always as `.sng`. A song stored as anything else — a loose folder, a
-`.zip` or a `.7z` — is packed on demand and the archive is cached; packing copies the chart
+`.zip`, a `.7z` or a `.rar` — is packed on demand and the archive is cached; packing copies the chart
 byte for byte, so the song's identity is unchanged by it. The three shapes pack to the same
 bytes, so re-zipping a library does not change what a client downloads.
 
@@ -328,7 +328,7 @@ response is written.
 | **200** with `"accepted": false` and a `reason` | it is not a song this server would take. **A refusal is not an error**: the request succeeded and the answer was no, and a client has to be able to tell that from "the server broke" |
 | **400** | no `?name=` |
 | **413** | body over `check_max_bytes` (default 128 MiB) |
-| **415** | an extension this server does not read; send `.sng`, `.zip` or `.7z` |
+| **415** | an extension this server does not read; send `.sng`, `.zip`, `.7z` or `.rar` |
 
 A Rock Band console package is refused from the **name**, before a byte of the body is read,
 with the same reason a library scan gives — nobody should have to upload two gigabytes to be

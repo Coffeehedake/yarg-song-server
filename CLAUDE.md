@@ -26,6 +26,7 @@ Then, by subject:
 | `docs/ADR-002-v1-store.md` | Why the catalog is in memory, why packed archives are cached to disk, and the two places the server deliberately sorts differently from the client |
 | `docs/ADR-003-archive-ingest.md` | `.zip`/`.7z` ingest, the measured cost of the `.7z` dependency, and why RB packages are refused out loud rather than skipped |
 | `docs/ADR-004-remote-song-source.md` | Phase 3: what YARG.Core's code says about a remote song source, the three increments it implies, and what increment 1 actually shipped |
+| `docs/ADR-007-rar-ingest.md` | `.rar` ingest: the measured access-order numbers, multi-volume sets, and why no fixture is committed |
 | `docs/API.md` | The HTTP surface: every endpoint, what it promises, and what it does not claim |
 | `docs/research/chart-preparsing.md` | Track names, note maps and the false-positive traps, cited per claim. **Read before touching `internal/chart`** |
 | `docs/research/yarg-song-formats.md` | The `.sng` binary layout, song identity, stem naming. Marked as history at the top: parts of it were superseded, and it says which |
