@@ -133,7 +133,7 @@ func main() {
 	// unpackcmd.go.
 	if args := flag.Args(); len(args) >= 1 && args[0] == "unpack" {
 		if err := runUnpack(args[1:], opt); err != nil {
-			fmt.Fprintln(os.Stderr, "unpack:", err)
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
@@ -144,7 +144,7 @@ func main() {
 	// button.
 	if args := flag.Args(); len(args) >= 1 && args[0] == "incoming" {
 		if err := runIncoming(args[1:], opt); err != nil {
-			fmt.Fprintln(os.Stderr, "incoming:", err)
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
