@@ -58,6 +58,8 @@ func main() {
 		"who may change a feature at runtime: off, local or lan")
 	flag.Int64Var(&flagged.CheckMaxBytes, "check-max-bytes", def.CheckMaxBytes,
 		"largest body POST /api/v1/check will accept, in bytes; 0 means unbounded")
+	flag.StringVar(&flagged.UnpackDir, "unpack-dir", def.UnpackDir,
+		"where unpacked songs are written; empty means beside the archive they came from")
 	flag.Parse()
 
 	if *showVersion {
@@ -122,6 +124,17 @@ func main() {
 	if err != nil {
 		log.Error("configuration", "err", err)
 		os.Exit(1)
+	}
+
+	// `unpack` runs and exits: no index, no socket. It has to work without the server, because
+	// the library that most needs unpacking is the one the server cannot finish indexing. See
+	// unpackcmd.go.
+	if args := flag.Args(); len(args) >= 1 && args[0] == "unpack" {
+		if err := runUnpack(args[1:], opt); err != nil {
+			fmt.Fprintln(os.Stderr, "unpack:", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if err := run(opt, log); err != nil {
@@ -197,6 +210,7 @@ func resolveAll(configPath string, flagged config.Config, given map[string]bool)
 		"browse-ui":       "browse_ui",
 		"check-uploads":   "check_uploads",
 		"check-max-bytes": "check_max_bytes",
+		"unpack-dir":      "unpack_dir",
 	}
 	apply := func(name string, set func()) {
 		if !given[name] {
@@ -213,6 +227,7 @@ func resolveAll(configPath string, flagged config.Config, given map[string]bool)
 	apply("browse-ui", func() { res.BrowseUI = flagged.BrowseUI })
 	apply("check-uploads", func() { res.CheckUploads = flagged.CheckUploads })
 	apply("check-max-bytes", func() { res.CheckMaxBytes = flagged.CheckMaxBytes })
+	apply("unpack-dir", func() { res.UnpackDir = flagged.UnpackDir })
 	apply("config-writes", func() { res.ConfigWrites = flagged.ConfigWrites })
 
 	// A secret nobody set is not a secret. Unpacking writes to the library, and allowing it
