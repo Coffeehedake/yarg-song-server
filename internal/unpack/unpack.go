@@ -22,6 +22,7 @@
 package unpack
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,6 +45,11 @@ type Plan struct {
 	// NameChanges are entries whose names must be decoded to be written. These are the
 	// permanent consequence of unpacking and the reason checking is a separate act.
 	NameChanges []scan.NameChange `json:"name_changes,omitempty"`
+	// NestedArchives is how many entries are themselves archives.
+	//
+	// Reported because "0 songs" is otherwise a lie of omission. An archive of archives holds
+	// plenty of songs; they are one level further down than the song count looks.
+	NestedArchives int `json:"nested_archives,omitempty"`
 }
 
 // Result is what an unpack actually did.
@@ -55,6 +61,11 @@ type Result struct {
 	// compared against Plan.Songs, because an extraction that reports success and produces
 	// fewer songs than the archive held has lost something quietly.
 	SongsFound int `json:"songs_found"`
+	// NestedOpened is how many archives found INSIDE this one were also opened.
+	NestedOpened int `json:"nested_opened,omitempty"`
+	// NestedProblems names the inner archives that could not be opened. They are left as
+	// archives rather than lost: the server still serves a song out of a container.
+	NestedProblems []string `json:"nested_problems,omitempty"`
 }
 
 // Options says where the library is and where unpacked songs are allowed to land.
@@ -96,15 +107,36 @@ func (o Options) Inspect(rel string) (*Plan, error) {
 
 	// Song roots come from the stored names, so this costs a directory read rather than a
 	// decompression - the same reason the index can list a 2 GB archive's songs in 116ms.
-	_, roots, closer, err := scan.OpenContainerAll(archive)
-	if err != nil {
+	//
+	// ErrNoChart is NOT fatal here, and that is the whole difficulty with a pack of packs.
+	// "Rock Band 2 DLC" holds 931 entries, almost all of them archives with one song inside,
+	// and no chart at this level at all - so the only thing that could describe it was the one
+	// error that stopped it being described. Carried as zero roots instead, and refused below
+	// only if there is nothing one level down either.
+	var roots []string
+	_, rr, closer, err := scan.OpenContainerAll(archive)
+	switch {
+	case err == nil:
+		roots = rr
+		closer.Close()
+	case errors.Is(err, scan.ErrNoChart):
+		// nothing at this level; the nested count decides
+	default:
 		return nil, err
 	}
-	closer.Close()
 
 	changes, err := scan.ArchiveNameChanges(archive)
 	if err != nil {
 		return nil, err
+	}
+
+	nested, err := scan.ArchiveNestedArchives(archive)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(roots) == 0 && nested == 0 {
+		return nil, fmt.Errorf("unpack: %s holds no songs and no archives", rel)
 	}
 
 	dest, err := o.destFor(archive)
@@ -113,12 +145,13 @@ func (o Options) Inspect(rel string) (*Plan, error) {
 	}
 
 	return &Plan{
-		Archive:     filepath.ToSlash(rel),
-		Dest:        filepath.ToSlash(mustRel(libraryRoot, dest)),
-		Entries:     entries,
-		Bytes:       bytes,
-		Songs:       len(roots),
-		NameChanges: changes,
+		Archive:        filepath.ToSlash(rel),
+		Dest:           filepath.ToSlash(mustRel(libraryRoot, dest)),
+		Entries:        entries,
+		Bytes:          bytes,
+		Songs:          len(roots),
+		NameChanges:    changes,
+		NestedArchives: nested,
 	}, nil
 }
 
@@ -152,6 +185,10 @@ func (o Options) Run(rel string) (*Result, error) {
 		return nil, fmt.Errorf("unpack: %w", err)
 	}
 
+	// Archives inside the archive are opened too, before anything is counted - otherwise the
+	// songs in them are invisible to the verification and to the library.
+	nestedOpened, nestedProblems := expandNested(staging)
+
 	// Verified by scanning what was written, not by trusting that writing it returned no
 	// error. The archive said how many songs it held; the disk has to agree.
 	found := 0
@@ -177,10 +214,12 @@ func (o Options) Run(rel string) (*Result, error) {
 	}
 
 	return &Result{
-		Plan:         *plan,
-		FilesWritten: files,
-		BytesWritten: written,
-		SongsFound:   found,
+		Plan:           *plan,
+		FilesWritten:   files,
+		BytesWritten:   written,
+		SongsFound:     found,
+		NestedOpened:   nestedOpened,
+		NestedProblems: nestedProblems,
 	}, nil
 }
 

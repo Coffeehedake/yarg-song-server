@@ -162,6 +162,10 @@ func (o Options) InspectSet(dir string, set Set) (*Plan, error) {
 			closer.Close()
 		}
 
+		if n, nerr := scan.ArchiveNestedArchives(full); nerr == nil {
+			plan.NestedArchives += n
+		}
+
 		changes, cerr := scan.ArchiveNameChanges(full)
 		if cerr == nil {
 			for _, c := range changes {
@@ -209,6 +213,8 @@ func (o Options) RunSet(dir string, set Set) (*Result, error) {
 		}
 	}
 
+	nestedOpened, nestedProblems := expandNested(staging)
+
 	// Verified against the union of roots across all parts, which is the only count that means
 	// anything for a set. A per-part figure would be meaningless: a part holding audio and no
 	// charts reports zero songs and is not wrong.
@@ -232,7 +238,10 @@ func (o Options) RunSet(dir string, set Set) (*Result, error) {
 		return nil, fmt.Errorf("unpack: publish %s: %w", plan.Dest, err)
 	}
 
-	return &Result{Plan: *plan, FilesWritten: files, BytesWritten: written, SongsFound: found}, nil
+	return &Result{
+		Plan: *plan, FilesWritten: files, BytesWritten: written, SongsFound: found,
+		NestedOpened: nestedOpened, NestedProblems: nestedProblems,
+	}, nil
 }
 
 // destForBase picks the directory a set unpacks into, never merging into one already there.

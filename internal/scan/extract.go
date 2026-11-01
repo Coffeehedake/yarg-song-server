@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -168,6 +169,34 @@ func ArchiveSize(p string) (entries int, bytes int64, err error) {
 		bytes += it.size
 	}
 	return len(items), bytes, nil
+}
+
+// ArchiveNestedArchives counts the entries that are themselves archives.
+//
+// It answers the question "0 songs" cannot. Measured on vault2: "Rock Band 2 DLC" reports zero
+// songs across its sixteen parts, which reads as "this is empty or broken" and is neither - the
+// parts hold 931 entries, almost all of them .7z files with one song in each. The chart is one
+// archive further down than songRoots looks.
+//
+// Counted from the stored names, so this costs a directory read.
+func ArchiveNestedArchives(p string) (int, error) {
+	items, closer, err := archiveItems(p)
+	if err != nil {
+		return 0, err
+	}
+	defer closer.Close()
+
+	n := 0
+	for _, it := range items {
+		name := decodeEntryName(it.stored)
+		if strings.HasSuffix(name, "/") {
+			continue
+		}
+		if IsContainer(path.Base(name)) || IsYargsong(path.Base(name)) {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // ExtractTo writes every entry of an archive into dir, in stored order.

@@ -200,6 +200,16 @@ func printPlan(p *unpack.Plan) {
 	fmt.Printf("holds   : %d songs in %d files, %.1f MB uncompressed\n",
 		p.Songs, p.Entries, float64(p.Bytes)/(1<<20))
 
+	// Without this, a pack of packs reports "0 songs" and nothing else, which reads as empty
+	// or broken when it is neither - the songs are one archive further down.
+	if p.NestedArchives > 0 {
+		fmt.Printf("        : %d of those entries are themselves archives, and will be opened too\n",
+			p.NestedArchives)
+		if p.Songs == 0 {
+			fmt.Printf("          (so the song count above is 0: the songs are one level further down)\n")
+		}
+	}
+
 	if len(p.NameChanges) == 0 {
 		return
 	}
