@@ -936,3 +936,53 @@ package whose metadata has no `;` in a value, which is what the one-line diff sa
 - **There is still no durable registry credential.** This deployment used the `api`-scope token again,
   carefully, rather than the project-scoped `read_registry` deploy token that would make it
   unnecessary.
+
+## v0.1.3-yargsong, 2026-10-31
+
+The deploy that made YARN setlists visible. Index went **128 -> 609 songs**, all 481 added by
+`yarn-install` and indexed through the new `.yargsong` path.
+
+**Built on vault2, not pushed through the registry.** Docker Desktop was not running on ENG-1,
+and the alternative - copying a binary into the running container - leaves a container whose
+image label is a lie. `git archive HEAD` to a tarball, extract on vault2, `docker build` with
+the repo's own Dockerfile. The build stage cross-compiles anyway, so nothing about this needed
+buildx or a second architecture.
+
+```
+docker run -d --name yarg-song-server --restart unless-stopped \
+  -p 8099:8080 \
+  -v /mnt/user/YARG/songs:/songs:ro \
+  -v /mnt/cache/appdata/yarg-song-server/data:/data \
+  yarg-song-server:v0.1.3-yargsong --songs /songs --data /data --listen :8080
+```
+
+Rollback is the previous image, still on the box:
+`registry.badassium.com/fatalexception/yarg-song-server@sha256:2d5ff48a089f...`
+
+Verified from ENG-1 rather than from the container: a song that came from a `.yargsong`
+(`Thomas Arne - A-Hunting We Will Go`, playlist `Keys Packs`) is in the catalogue and
+`GET /song/<hash>.sng` returns 1,282,103 bytes beginning `SNGPKG` - the decoy magic does not
+reach a client.
+
+### The deploy took the service down for ~30 seconds, and it did not have to
+
+The first attempt ran `docker stop` and then `docker rename`, under `set -e`. The rename failed
+because a `yarg-song-server-prev` from seven weeks ago still existed, so the script aborted with
+the service stopped and nothing started. **Stop last, or rename to a name that cannot already be
+taken.** The recovery used a timestamped name; the old containers are still there, which is why
+the collision happened at all.
+
+### Three archives in the library are reported as problems
+
+`/api/v1/library` now carries a `problems` array naming them, which is the scanner doing its
+job rather than a fault:
+
+| File | Reported |
+|---|---|
+| `Green Day Rock Band.zip` | archive holds more than one song folder |
+| `Rock Band 4.7z` | archive holds more than one song folder |
+| `Rock Band 3.zip` | `zip: not a valid zip file` |
+
+The first two are the multi-song case the scanner refuses by design rather than publishing one
+song and dropping the rest. The third is a different thing entirely - that file is not a
+readable zip at all, which usually means a truncated or interrupted download.
