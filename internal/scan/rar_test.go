@@ -156,6 +156,52 @@ func TestAFileMerelyNamedRarIsNotReportedAsAnUnopenableArchive(t *testing.T) {
 	}
 }
 
+// TestStoredNameMarksDirectoriesTheWayCleanEntryNameReadsThem is the ungated half of the
+// 2026-11-01 unpack failure, and it needs no .rar because the defect was never in the RAR
+// decoding - it was in the handover between a library that reports directories with a FLAG and
+// a package that reads them off a trailing SLASH.
+//
+// It asserts both ends, not just storedName's output, because the bug was precisely that the
+// two ends disagreed while each looked right on its own.
+func TestStoredNameMarksDirectoriesTheWayCleanEntryNameReadsThem(t *testing.T) {
+	cases := []struct {
+		name  string
+		isDir bool
+		want  string
+	}{
+		// The RAR shape: a directory, flagged, with nothing in the name to say so.
+		{"Guitar Hero On Tour - Modern Hits/12 Stones - Adrenaline", true,
+			"Guitar Hero On Tour - Modern Hits/12 Stones - Adrenaline/"},
+		// The zip/7z shape: already marked, and must not grow a second slash.
+		{"GH5 Hidden Songs/Dredg - Bug Eyes/", true, "GH5 Hidden Songs/Dredg - Bug Eyes/"},
+		// A file is left alone whatever its name looks like.
+		{"Guitar Hero On Tour - Modern Hits/12 Stones - Adrenaline/notes.mid", false,
+			"Guitar Hero On Tour - Modern Hits/12 Stones - Adrenaline/notes.mid"},
+		// A file is never given a slash just because it has no extension - that is the
+		// entry that collided, and getting this backwards would swap the defect for its
+		// mirror image: real songs silently extracted as empty directories.
+		{"Some Pack/song", false, "Some Pack/song"},
+	}
+
+	for _, c := range cases {
+		got := storedName(c.name, c.isDir)
+		if got != c.want {
+			t.Errorf("storedName(%q, %v) = %q, want %q", c.name, c.isDir, got, c.want)
+		}
+		// The half that matters: whatever storedName emits, cleanEntryName must agree with
+		// it about directory-ness. extract trusts that agreement and writes with O_EXCL.
+		_, isDir, ok := cleanEntryName(got)
+		if !ok {
+			t.Errorf("cleanEntryName(%q) rejected the name storedName produced", got)
+			continue
+		}
+		if isDir != c.isDir {
+			t.Errorf("round trip of %q: storedName said isDir=%v, cleanEntryName read %v",
+				c.name, c.isDir, isDir)
+		}
+	}
+}
+
 // TestRarContainerAgainstARealArchive is the part that needs a file from the wild.
 //
 //	YARG_RAR_LIVE="$env:USERPROFILE\Downloads\Guitar Hero On Tour - Modern Hits.rar" go test ./internal/scan/ -run TestRarContainerAgainstARealArchive -v
@@ -206,6 +252,46 @@ func TestRarContainerAgainstARealArchive(t *testing.T) {
 		if err := PackPathInner(p, s.Inner, discardWriter{}); err != nil {
 			t.Fatalf("pack %q (inner %q): %v", s.Song.Name, s.Inner, err)
 		}
+	}
+
+	// EXTRACTION, which this test did not do when .rar support shipped - and that omission is
+	// the whole reason a broken build reached the library. Everything above reads the archive,
+	// and reading tolerated an unmarked directory because archiveFS.record repairs the shape
+	// on the fly. Unpacking does not, so an archive could pass every assertion here and then
+	// fail on the first song folder it tried to write.
+	//
+	// Point this at the SMALL archive: it writes the whole thing to a temp directory.
+	dirs := 0
+	for _, it := range items {
+		if _, isDir, ok := cleanEntryName(it.stored); ok && isDir {
+			dirs++
+		}
+	}
+	if dirs == 0 {
+		t.Error("no entry read as a directory; a song archive has song folders, " +
+			"so either this .rar is flat or the directory flag is being dropped again")
+	}
+	t.Logf("%d entries read as directories", dirs)
+
+	dest := filepath.Join(t.TempDir(), "out")
+	gotFiles, written, err := ExtractTo(p, dest)
+	if err != nil {
+		t.Fatalf("ExtractTo: %v", err)
+	}
+	t.Logf("extracted %d files, %d bytes", gotFiles, written)
+	if gotFiles == 0 {
+		t.Fatal("extracted nothing")
+	}
+
+	// And what landed has to be the same songs, found by walking real directories this time
+	// rather than an fs.FS that can paper over the difference.
+	onDisk := 0
+	if err := WalkLibrary(dest, func(Result) { onDisk++ }); err != nil {
+		t.Fatalf("WalkLibrary after extract: %v", err)
+	}
+	if onDisk != len(songs) {
+		t.Errorf("extracted library holds %d songs, the container reported %d",
+			onDisk, len(songs))
 	}
 }
 

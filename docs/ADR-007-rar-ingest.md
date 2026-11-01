@@ -113,7 +113,54 @@ So the coverage splits:
   looking for volumes of a set that does not exist). Runs everywhere.
 - **`TestRarContainerAgainstARealArchive`** — gated on `YARG_RAR_LIVE`, and the only thing that
   proves the feature. Against Modern Hits it found **44 songs** in 307 entries and packed every
-  one of them.
+  one of them. It now extracts the archive as well, because the read-only version of it passed
+  on a build that could not unpack a single song folder — see the directory-flag section below.
+
+## RAR marks a directory with a flag, not a trailing slash — and only the WRITER cared
+
+Found on 2026-11-01, unpacking the two archives this ADR was written for. The first `.rar`
+through the new reader died on its first song folder:
+
+```
+unpack: scan: .../Guitar Hero On Tour - Modern Hits.unpacking/Guitar Hero On Tour -
+Modern Hits/12 Stones - Adrenaline is already there; two parts claim the same file
+```
+
+Three things in that message are misleading at once. It is a **split-set** error, on an archive
+with exactly **one** part; and the name it accuses of being duplicated appears once.
+
+The cause is a handover, not a decoder. `cleanEntryName` reads directory-ness off a trailing
+`/`, because that is what the other two readers deliver. Probed, rather than assumed:
+
+| Archive | Directory entries | …ending in `/` |
+|---|---|---|
+| `Guitar Hero On Tour - Modern Hits.rar` | 45 | **0** |
+| `GH5 Hidden Songs.7z` | 6 | 6 |
+
+`archive/zip` and `sevenzip` both append the slash; `rardecode` reports `FileHeader.IsDir` and
+leaves the name alone. So every one of those 45 directories was read as a zero-byte **file**.
+
+**The reason this shipped is that reading repairs it and writing cannot.** `archiveFS.record`
+promotes a path to a directory the moment a child names it as an ancestor, so the `fs.FS` came
+out correct, all 44 songs were found, every one packed, and the live test passed. `writeOne`
+opens with `O_EXCL` — deliberately, so that two parts of a set claiming one path is an error
+rather than a silent overwrite — so the zero-byte file lands on the directory its own children
+just created, and the unpack aborts.
+
+Two things follow, and both are now in the code:
+
+- The conversion belongs at the **reader boundary**, in `storedName`, so `cleanEntryName` stays
+  the single place that decides what a directory is. Not in `extract`, which would leave the
+  `fs.FS` quietly depending on a repair it should never have needed.
+- **A test that only reads cannot see this.** `TestRarContainerAgainstARealArchive` asserted
+  enumeration, scanning and packing, and passed on the broken build. It now also *extracts* and
+  walks the result as a real directory tree. The ungated half,
+  `TestStoredNameMarksDirectoriesTheWayCleanEntryNameReadsThem`, needs no fixture because the
+  defect was never in RAR decoding: it checks both ends of the handover agree, and was watched
+  going red against the old behaviour before being trusted.
+
+The general shape is worth keeping: **a forgiving reader hides a strict writer.** Any new
+container added here is exercised through extraction, not only through the `fs.FS`.
 
 ## Consequences
 

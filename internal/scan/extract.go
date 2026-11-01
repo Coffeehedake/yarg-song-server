@@ -94,8 +94,13 @@ func archiveItems(p string) ([]archiveItem, io.Closer, error) {
 		}
 		items := make([]archiveItem, 0, len(files))
 		for _, f := range files {
+			// RAR MARKS A DIRECTORY WITH A FLAG, NOT A TRAILING SLASH. Measured
+			// 2026-11-01 on Guitar Hero On Tour - Modern Hits.rar: 45 directory entries,
+			// IsDir true on all 45, trailing slash on none. archive/zip and sevenzip both
+			// deliver the slash (6 of 6 on GH5 Hidden Songs.7z), so .rar was the one
+			// container that broke the convention rather than the convention being wrong.
 			items = append(items, archiveItem{
-				stored:   f.Name,
+				stored:   storedName(f.Name, f.IsDir),
 				size:     f.UnPackedSize,
 				modified: f.ModificationTime,
 				open:     func() (io.ReadCloser, error) { return f.Open() },
@@ -107,6 +112,26 @@ func archiveItems(p string) ([]archiveItem, io.Closer, error) {
 		return items, nopCloser{}, nil
 	}
 	return nil, nil, fmt.Errorf("scan: %q is not a container this server reads", filepath.Ext(p))
+}
+
+// storedName renders one entry's name in the convention the rest of this package reads: a
+// directory ends in "/". A reader whose library reports directory-ness some other way
+// converts here, so that `cleanEntryName` stays the single place that decides it.
+//
+// This is load-bearing in one direction only, which is why it went unnoticed. The two halves
+// of the package disagree about how bad an unmarked directory is. READING survives it:
+// archiveFS.record upgrades a path to a directory the moment a child names it as an ancestor,
+// so the fs.FS came out correct, every song packed, and the live .rar test passed. WRITING
+// does not: a directory entry that looks like a file becomes a zero-byte write, writeOne
+// opens with O_EXCL, and it lands on the directory its own children already created. The
+// unpack then dies with "12 Stones - Adrenaline is already there; two parts claim the same
+// file" - a split-set message, on an archive with exactly one part, about a name that is not
+// duplicated anywhere in it. Three misleading things at once, from one missing slash.
+func storedName(name string, isDir bool) string {
+	if isDir && !strings.HasSuffix(name, "/") {
+		return name + "/"
+	}
+	return name
 }
 
 // nopCloser stands in where a reader owns no handle the caller must release.

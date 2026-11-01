@@ -82,6 +82,18 @@ Then, by subject:
   those entries. It inherited exactly the blindness it existed to catch. The check reads the RAW
   stored entry names for that reason, and the failing test is what said so; do not "simplify" it
   back onto the `fs.FS`.
+- **A FORGIVING READER HIDES A STRICT WRITER, so exercise a new container by EXTRACTING it.**
+  `rardecode` marks a directory with `FileHeader.IsDir` and no trailing slash, while
+  `archive/zip` and `sevenzip` both append one — measured 2026-11-01: 45 directory entries in
+  `Guitar Hero On Tour - Modern Hits.rar`, none slashed; 6 of 6 slashed in `GH5 Hidden Songs.7z`.
+  `cleanEntryName` reads the slash, so all 45 were zero-byte *files*. Reading survived it
+  because `archiveFS.record` promotes a path to a directory the moment a child names it as an
+  ancestor: the `fs.FS` was correct, 44 songs were found, all packed, and the gated live test
+  passed. Unpacking did not, because `writeOne` uses `O_EXCL` on purpose — so the first song
+  folder failed with *"two parts claim the same file"*, a split-set error on a single-part
+  archive naming a path that occurs once. **The conversion belongs at the reader boundary**
+  (`storedName`), not in `extract`, or the `fs.FS` keeps depending on a repair it should never
+  need. A test that only reads cannot see any of this.
 - **Silence is a decision, and it needs a rule.** "No chart in a zip" is deliberately quiet
   because libraries are full of archives that are not songs. That same silence is unacceptable
   when the archive visibly holds a song, which is why `ErrUnreadableArchive` exists and is
