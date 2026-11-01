@@ -49,12 +49,25 @@ further down, still true.
 
 ### The git tags have drifted from the image tags — so a version string cannot identify a build
 
-`git describe` is what CI stamps into the binary (`--build-arg VERSION=...`), and
-on 2026-11-01 commit `0c6fa84` produced **`v0.1.2-37-g0c6fa84`**. The newest
-*annotated git tag* is still `v0.1.2`, while the *image* tags have run ahead
-through `v0.1.3-yargsong`, `v0.1.4-multisong`, `v0.1.5-unpack`, `v0.1.7-reserved`,
-`v0.1.8-unpack`, `v0.1.9-sets` and `v0.2.0-nested` — all built on the box, none
-of them a git tag.
+`git describe --tags --always --dirty` is what CI stamps into the binary
+(`--build-arg VERSION=...`). The newest *annotated git tag* is still `v0.1.2`,
+while the *image* tags have run ahead through `v0.1.3-yargsong`,
+`v0.1.4-multisong`, `v0.1.5-unpack`, `v0.1.7-reserved`, `v0.1.8-unpack`,
+`v0.1.9-sets` and `v0.2.0-nested` — all built on the box, none of them a git tag.
+
+> **And the same commit stamps DIFFERENTLY in CI than it does on a workstation.**
+> This section first claimed commit `0c6fa84` would report `v0.1.2-37-g0c6fa84`,
+> because that is what `git describe` prints on ENG-1. The deployed image
+> reports **`0c6fa84`** — measured from the running container, which is what
+> corrected it. CI's clone has **no tags fetched**, so `git describe --tags`
+> finds none and `--always` falls through to the abbreviated commit hash, seven
+> characters. A workstation clone has the tags and so takes the `v0.1.2-37-g…`
+> branch instead.
+>
+> So the version string depends on the clone that built it, which makes it even
+> less usable as an identity than the tag drift above already implied. **Ask the
+> image, never predict it** — the `--version` call below is the only answer that
+> is about the artifact rather than about where it was built.
 
 Two consequences worth having in front of you:
 
@@ -65,6 +78,12 @@ Two consequences worth having in front of you:
   loop asserting `/version` contains `v0.2.` would fail against a correctly
   deployed CI build and roll it back — a check that rejects a good deploy is
   worse than no check. Match the short sha.
+  This is not hypothetical. The 2026-11-01 deploy's health loop matched on
+  `0c6fa84` and passed; the full string this document had predicted,
+  `v0.1.2-37-g0c6fa84`, is **not** what the image reports, so a loop asserting
+  it would have torn down a healthy server and restored the previous one. The
+  check survived its author being wrong about the value, which is the only
+  reason it was a check and not a coin flip.
 
 And because a digest identifies a **build** rather than a commit, verify the
 binary's own idea of what it is *before* swapping, while nothing is stopped yet:
@@ -1139,3 +1158,103 @@ docker mounts needed changing, and changing them would have made the transfer no
 making the deployment worse. The number came from the machine doing the copying, which was not
 part of the system under test at all - the fourth time on this project that the instrument was
 the fault.
+
+## Sixth deployment, 2026-11-01 — `0c6fa84`, the bare-CR fix, and an eleven-minute outage
+
+The first deploy from a **registry image built by CI** since v0.1.2 — everything
+between was built on the box. It carries two code changes, because `0c6fa84`'s
+parent is `59f4449`: the bare-CR `song.ini` fix and `.rar` ingest. One image,
+one restart, both.
+
+**Superseded:** *Current state, measured 2026-09-15* and the `v0.1.3-yargsong`
+block. What runs now:
+
+```
+image    registry.badassium.com/fatalexception/yarg-song-server@sha256:9fa96f075aebe3e4278741fb18c8631c374fc6188a12fb9479d8534cf20a708a
+         (= :0c6fa842, pinned by DIGEST)        CI pipeline 3672, all six jobs green
+/version 0c6fa84      /healthz 200      restart unless-stopped      user nonroot
+mounts   /mnt/user/YARG/songs            -> /songs           ro
+         /mnt/user/YARG/songs/unpacked   -> /songs/unpacked   rw   (nested)
+         /mnt/cache/appdata/yarg-song-server/data -> /data    rw
+args     --songs /songs --data /data --listen :8080 --config /data/yarg-song-server.conf
+port     8099 -> 8080
+index    songs=3067 distinct_charts=3067 duplicate_packages=0 problems=0   took 10m40s
+```
+
+Rollback, kept stopped as `yarg-song-server-prev-20261101-212128` (v0.1.8-unpack):
+
+```bash
+docker rm -f yarg-song-server \
+  && docker rename yarg-song-server-prev-20261101-212128 yarg-song-server \
+  && docker start yarg-song-server
+```
+
+### The library went 1,369 -> 3,067 in the same restart
+
+1,698 songs arrived from Rock Band 2 and Rock Band 3 DLC, unpacked into
+`/songs/unpacked` immediately before the swap. That makes this deploy the first
+time this server has indexed **bulk third-party DLC**, which is the interesting
+part of it.
+
+### Verified against a baseline taken BEFORE the swap
+
+The whole 1,369-song catalogue was snapshotted first — `package_hash` per
+`chart_hash` — and held as a **hard invariant rather than a tolerance**. The hash
+is over source file bytes while the fix only changes how metadata is *parsed*, so
+nothing may move; one that moved would be a finding about the fix.
+
+| Check | Result |
+|---|---|
+| baseline songs absent afterwards | **0** |
+| baseline `package_hash` values moved | **0 of 1,369** |
+| `problems` | **null** — no song failed to pack |
+| issue codes across all 3,067 songs | exactly one, the pre-existing `chart_truncated` |
+| values with a bare CR / LF / reserved key char | **0 / 0 / 0** |
+| songs flagged `metadata_unreachable` | **0** |
+| 12 newly indexed songs fetched spread across the list | **12 of 12** real `SNGPKG`, 19–56 MB, `ETag` == `package_hash` |
+
+The zero got its instrument checked before it was believed, because a zero over
+1,698 new songs is worthless if those songs carry no metadata: all 1,698 carry
+`raw_metadata`, **51,608 key/value pairs over 37 distinct keys**. And indexing is
+not packing — the defect being fixed was an HTTP 500 from `GET /song/<hash>.sng`
+— so archives were actually fetched rather than inferred from the catalogue.
+
+### The fix is deployed and has not yet fired, which is the honest result
+
+**The control-character count stayed at zero.** It was 0 of 1,369 before and it
+is 0 of 3,067 now, across 1,698 freshly unpacked third-party songs where a
+malformed `song.ini` was the expected find. The only known instance anywhere
+remains the one song in `Marathon Hero 2.rar`, which is not in this library.
+
+So the bare-CR fix is verified **harmless** here and not yet verified *useful*
+here. Its usefulness rests on the oracle run in `TEST-CORPUS.md`, where the real
+song packs and the real game accepts it — not on this deployment.
+
+### The service was hard down for 10m47s, and that is the real cost
+
+21:21:31Z to 21:32:18Z. `/healthz` was **connection-refused** for the whole
+window, not 503: the listener does not come up until the index finishes.
+
+The v0.1.3 deploy's ~30 seconds was a 23-song library. **Downtime on this
+architecture scales with library count**, and at 3,067 songs it is eleven
+minutes. At the next doubling it is twenty-odd. Neither this fix nor the DLC
+ingest caused that; the start-up reindex did, and it is worth solving before the
+library grows again. Nothing in this deploy's design would have helped — the
+rollback was armed and the health patience was 1800s precisely *because* a long
+index cannot be distinguished from a hang from the outside.
+
+### What the pre-flight caught, and why it was not optional
+
+Every argument above was read off `docker inspect` of the running container.
+Following this document instead would have produced three wrong arguments, two
+of which fail silently — see *Run it today*, which exists because of this deploy.
+
+Two more, both of which would have turned a working deploy into an incident:
+
+- **`internal/config` treats an unrecognised key as a startup ERROR.** The live
+  config was written for `v0.1.5-unpack`; a key added after `0c6fa84` would have
+  stopped the new binary booting at all. Checked by *booting* `0c6fa84` against a
+  copy of the live key set, not by reading the valid-key list.
+- **The version string was predicted wrongly and the health check survived it.**
+  See the tag-drift section. `git describe` on a workstation and in CI disagree
+  for the same commit, because CI's clone has no tags.
