@@ -2,6 +2,7 @@ package scan
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"path"
@@ -131,12 +132,19 @@ func ScanContainerAll(p string) ([]ContainerSong, error) {
 	defer closer.Close()
 
 	out := make([]ContainerSong, 0, len(roots))
+	var problems []error
+
 	for _, inner := range roots {
 		sub := fsys
 		if inner != "" {
 			sub, err = fs.Sub(fsys, inner)
 			if err != nil {
-				return nil, err
+				// fs.Sub refuses a path that is not valid UTF-8, and archives written by
+				// console-era tools store names in a legacy encoding - measured on vault2,
+				// where "Green Day - ¡Viva la Gloria!" and "Manú - Oye Mi Amor" both failed
+				// with "invalid argument". One such name must not cost the other 82 songs.
+				problems = append(problems, fmt.Errorf("%s: %w", inner, err))
+				continue
 			}
 		}
 		song, err := ScanDir(sub)
@@ -149,12 +157,23 @@ func ScanContainerAll(p string) ([]ContainerSong, error) {
 			err = ErrUnreadableArchive
 		}
 		if err != nil {
-			// One bad song inside an archive of twenty must not lose the other nineteen,
-			// and it must not be silent either. It is reported as its own problem by the
-			// walk, which is why this returns what it has alongside the error.
-			return out, err
+			// One bad song inside an archive of eighty must not lose the other
+			// seventy-nine, and it must not be silent either. Collected and reported
+			// together at the end, so the caller gets every song that IS readable plus a
+			// named problem for each that is not.
+			//
+			// This used to return on the first error. Measured on vault2: a single entry
+			// whose name is not valid UTF-8 turned an 83-song archive into zero songs and
+			// one error, which looks exactly like an archive holding nothing.
+			problems = append(problems, fmt.Errorf("%s: %w", inner, err))
+			continue
 		}
 		out = append(out, ContainerSong{Inner: inner, Song: song})
+	}
+
+	if len(problems) > 0 {
+		return out, fmt.Errorf("%d of %d songs in this archive could not be read: %w",
+			len(problems), len(roots), errors.Join(problems...))
 	}
 	return out, nil
 }

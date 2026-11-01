@@ -55,5 +55,21 @@ func TestProbeRealBigArchives(t *testing.T) {
 			filepath.Base(p), fi.Size()/(1<<20), len(raw),
 			openTook.Round(time.Millisecond), rootsTook.Round(time.Millisecond),
 			len(roots), rerr)
+
+		// The expensive half, and the one that decides whether a redeploy is safe: every
+		// song is hashed, which on a solid .7z means decompressing from it once per song.
+		// Finding the roots being free says nothing about this.
+		if os.Getenv("YARG_FULL_SCAN") == "" {
+			continue
+		}
+		start = time.Now()
+		songs, serr := ScanContainerAll(p)
+		scanTook := time.Since(start)
+		per := time.Duration(0)
+		if len(songs) > 0 {
+			per = scanTook / time.Duration(len(songs))
+		}
+		t.Logf("      FULL SCAN: %d songs in %v (%v each) err=%v",
+			len(songs), scanTook.Round(time.Second), per.Round(time.Millisecond), serr)
 	}
 }
