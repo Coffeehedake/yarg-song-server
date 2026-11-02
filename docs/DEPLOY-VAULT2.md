@@ -143,6 +143,28 @@ than enable pulls: it made "that tag does not exist" distinguishable from "you
 may not ask". The control tag stays in the loop anyway, because it costs one
 query and it is what tells you which of the two regimes you are in.
 
+**Put the control tag in any WATCHER, not just in a one-off check.** A poll that
+asks only about the tag it is waiting for cannot tell "not built yet" from "the
+login lapsed", and it will report the first while meaning the second for as long
+as nobody looks. Asking for a known-present tag in the same poll turns that into
+an explicit `LOGIN_LAPSED`.
+
+#### `docker ps --filter name=yarg-song-server` also matches the CI builder
+
+The filter is a **substring** match, and the multi-arch job must create a
+`docker-container` buildx builder (the default driver cannot emit a manifest
+list at all — see `CLAUDE.md`). So mid-pipeline the box legitimately shows:
+
+```
+yarg-song-server                              <- the server
+buildx_buildkit_yarg-song-server-multiarch0   moby/buildkit:buildx-stable-1
+```
+
+A second container called `…yarg-song-server…`, "Up 17 seconds", on a box where
+nobody is deploying, reads **exactly** like an unannounced deploy. It is the
+pipeline. Check the image and the start time before concluding anything: the
+server's image is the digest pinned above, a builder's is `moby/buildkit`.
+
 *(Not independently verified here — measured on the box by the session holding
 the login, and recorded as theirs.)*
 
