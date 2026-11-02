@@ -285,6 +285,17 @@ exists, and it is the proof that the server is correct.
       set is an entry point. Numbers, caveats and the absent fixture are in
       [`ADR-007`](ADR-007-rar-ingest.md).
 
+      **It shipped unable to unpack a `.rar`, and the tests could not see it.** RAR marks a
+      directory with `FileHeader.IsDir` and no trailing slash, where `archive/zip` and
+      sevenzip both append one — 45 directory entries in Modern Hits, none slashed, against
+      6 of 6 in a `.7z`. So every song folder read as a zero-byte file. READING tolerated
+      that (`archiveFS.record` promotes a path to a directory as soon as a child names it),
+      which is why all 44 songs were found, every one packed, and the gated live test passed;
+      WRITING did not, because `writeOne` uses `O_EXCL` on purpose. Fixed at the reader
+      boundary in `storedName` (`fab8c90`), and the live test now EXTRACTS as well as reads.
+      The rule it earned: a forgiving reader hides a strict writer, so a new container is
+      exercised through extraction and not only through the `fs.FS`.
+
       **No adapter was needed and no scanning logic was duplicated.** `archive/zip`'s Reader
       and sevenzip's Reader both already implement `fs.FS`, and the scanner has taken an
       `fs.FS` since Phase 1, so an archived song is read by exactly the code that reads a
@@ -1807,7 +1818,21 @@ than loopback aliases.
 
 ## Blockers
 
-**None.**
+**None.** One open DEFECT, designed but not implemented, awaiting Jay's decision:
+
+**The start-up index is a data-loss risk, not just an outage.** The listener binds only after
+the whole library is indexed, so a deploy is hard down for the duration — measured on the
+`0c6fa84` deploy as **10m47s** at 3,067 songs, `/healthz` connection-refused rather than 503,
+against 3m39s at 1,369. Per-song cost ROSE over that range (0.160 s → 0.209 s), so linear
+extrapolation understates the next doubling; three points across two library mixes cannot say
+whether that is superlinear in count or a shift toward loose folders. The danger is not the
+wait: `POST /api/v1/have` answering `200` with an incomplete index would tell a sync client
+it has songs the server does not, and a pruning client would delete a player's library. The
+shipped client already fails closed on any non-200 (`postHave` runs first in `Run` and returns
+on a non-200 before downloading or pruning), so **only the server half has to ship** — and the
+distinction between "indexing" and "genuinely empty" has to live in the STATUS CODE, because an
+empty `200` is a legitimate instruction to prune everything. Design, measurements and the
+corrected instrument are in [`ADR-008`](ADR-008-serve-while-indexing.md).
 
 *(A "the Unity editor will not start on ENG-1" blocker was filed here on 2026-09-10 and withdrawn
 the same hour. It was real in the sense that five launches failed, and wrong in every other sense:
