@@ -246,16 +246,21 @@ files.
     probe reported `rchar` **234,002,202,475** — 234 GB of `read()` bytes, with CPU at ~77% of
     elapsed, so compute-bound rather than IO-blocked, and `read_bytes` 0 because shfs/FUSE
     hides the block layer.
-    **The doubling is now quantified rather than inferred by halving that number.** The
-    catalogue carries every asset's size, so the library total can be summed exactly, with no
-    disk I/O at all: **118,083,305,071 bytes — 118.08 GB across 27,541 asset files**, 28.9 MB
-    and 6.7 files per song over 4,085 songs. Against that, `rchar / assets` = **1.982**. One
-    read of the library would be 118 GB and two would be 236 GB; the measurement is 234 GB.
-    *One residual, stated rather than rounded away:* the ratio should sit slightly **above**
-    2.0, because the chart and `song.ini` are not in `assets` and `packageHash` reads them on
-    top of the two asset passes. It is 1.982 — about 0.9% under the model. That shortfall is
-    unexplained. It does not threaten the conclusion, because 1.98 is not 1.0, but anyone
-    quoting "exactly 2×" is quoting a round number rather than this measurement.
+    **The doubling is quantified rather than inferred by halving that number.** The catalogue
+    carries every asset's size, so the library total can be summed exactly, with no disk I/O at
+    all: **118,083,305,071 bytes — 118.08 GB across 27,541 asset files**, 28.9 MB and 6.7 files
+    per song over 4,085 songs. Two reads of that is a floor of 236.17 GB.
+    The raw `rchar` above gives 1.982, which is *below* that floor and so contradicted the
+    model — the chart and `song.ini` are not in `assets`, and `packageHash` reads them on top
+    of the two asset passes, so the ratio must come out slightly **above** 2.0. The model was
+    right and the number was early: **`rchar` was snapshotted at 974s of a 994.49s index**,
+    97.9% through, so 20.5s of reading never reached it. Corrected at the average rate that is
+    +4.92 GB → **238.92 GB, ratio 2.023**, and the 2.76 GB above the floor works out at 659 KB
+    per song for a chart plus an ini — plausible for a library of long Marathon Hero charts.
+    The correction survives its own assumption: at *half* the average rate it still gives
+    236.46 GB and 2.002, above the floor. And the alternative explanation — a library that
+    differed between probe and live run — is ruled out, because both reported
+    `songs=4085 distinct_charts=4080`. Same files; only the moment of reading differed.
     **The fix is to compute each file's SHA-256 once and hand the values to `packageHash`
     instead of re-reading.** It is the only one of these three with *no* semantic risk:
     `package_hash` is the sorted `<name>:<sha256>` construction, so identical per-file digests
@@ -280,14 +285,25 @@ files.
   above:** full-file SHA-256 dominates, every file is hashed twice, and the index is
   compute-bound at ~77% CPU rather than blocked on the array. That came from `/proc/<pid>/io`
   on the probe plus three `assetFor` call sites in `scan.go` — no profiler, no instrumentation.
-  The byte total is **no longer** among the gaps: it was summed from the catalogue at
-  118.08 GB, giving a measured ratio of 1.982 rather than an assumed 2.
-  What is still *not* measured: the split between the two hashing passes and the directory
-  walk itself, and why the ratio lands 0.9% *below* a model that predicts slightly above 2.0.
-  Nothing here distinguishes "the two passes cost the same" from "one is cheaper because the
-  page cache serves the second" — on FUSE with 118 GB against the box's RAM, the second read
-  almost certainly misses cache, but that is reasoning rather than a measurement, and it is
-  the one number that decides whether hashing once wins the full ~2× or rather less.
+  Two gaps that were open earlier are now closed by measurement. The **byte total** was summed
+  from the catalogue at 118.08 GB, and the ratio corrected to 2.023. And **the two passes cost
+  the same**, so eliminating one really does remove half the work:
+
+  > Six real song folders, 155,694,045 bytes, hashed and then re-hashed back to back. Per
+  > song `p1/p2` ran 0.90–1.03; overall **0.970** at ~179 MB/s then ~174 MB/s. The warm pass
+  > was *not* cheaper than the first.
+
+  That is the useful shape of the result: it does **not** settle whether the limit is SHA-256
+  or the array — ~175 MB/s is consistent with either, and caches were deliberately not dropped
+  on a serving box, so pass 1 cannot be called cold. It does not need to. Whichever resource
+  is saturated, the second pass costs what the first costs, so removing it halves the work.
+  The page-cache worry — that pass 2 is nearly free and the prize is therefore small — is
+  answered: it is not nearly free.
+
+  What is still *not* measured: the split between the hashing passes and the directory walk
+  itself, and why the probe's aggregate implies ~311 MB/s of SHA-256 per busy second while this
+  bench sees ~175 MB/s wall. Different tool, different conditions, not reconciled. The sample
+  is also 0.16 GB against a 118 GB library.
 - **That 503 is handled well by every client, as opposed to safely.** `yarg-sync` is
   established above to fail closed. YARG itself, reading a mirror folder on disk under
   increment 1, never talks to this server at all. Any third-party caller is unknown.

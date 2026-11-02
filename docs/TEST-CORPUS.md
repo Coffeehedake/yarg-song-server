@@ -1151,10 +1151,10 @@ containing a space is read, across a whole library, and it is not what made a so
 It wants its own change and its own oracle run, with a corpus case of its own. Recorded so the
 next person starts from a measurement rather than from the comment.
 
-## Seven instrument failures in one night — 2026-11-01, and the one rule that covers all of them
+## Eight instrument failures in one night — 2026-11-01, and the one rule that covers all of them
 
 Not an oracle run. A measurement post-mortem, recorded here because every one of these was a
-**correct number read as the answer to a question it was not answering**, and the corpus exists
+**correct number read as the answer to a question it was not answering** — and the last of them was correct about a *moment* nobody meant, and the corpus exists
 to stop exactly that.
 
 | The instrument | What it was asked | Why it could not answer |
@@ -1165,6 +1165,7 @@ to stop exactly that.
 | `/api/v1/library` → `problems: 0` | "was the song flagged `metadata_unreachable`?" | `Problems` only takes `r.Err != nil`; song issues live in `catalog.Song.Issues` and nothing aggregates one into the other |
 | `os.path.splitext` on `source_path` | "how many songs are loose folders?" | song folders are full of dots — "Mr. Big - To Be With You", "ii (2x bass pedal expert+)" — so ~190 became invented extensions |
 | grep for `playlist_track` on the song payload | "was the field dropped?" | it printed `"playlist_track":16000` — the TOP-LEVEL catalog field carrying the unset default, not the `raw_metadata` key the prediction was about |
+| `/proc/<pid>/io` → `rchar` | "how many bytes did the index read?" | read at 974s of a 994.49s index, so it was a running total 97.9% of the way through — 4.92 GB short, which turned a ratio of 2.023 into 1.982 and made it contradict the model |
 | `docker manifest inspect` → `denied` | "did CI build this tag?" | a refusal about *authentication* is indistinguishable from "never built"; a control tag that certainly existed returned the same |
 
 Most of those were about to be reported as findings, and the `playlist_track` one would have been a false *falsification* of a correct prediction rather than a false confirmation — the same error, pointing the other way. Each would have been a confident wrong
@@ -1181,6 +1182,10 @@ Two corollaries, both of which cost something tonight:
 - **An absence is only a reading if the field could have been present.** `issues` missing from a
   payload that serialises `catalog.Song` directly is a measurement; `issues` missing because
   nobody asked for it is a gap wearing the same clothes.
+- **A counter read from a RUNNING process is a reading of a moment, not a total.** Sample it
+  after the thing finishes, or record the elapsed time beside it so the shortfall is
+  computable later. `rchar` taken 20.5s before an index ended was 4.92 GB light, and that
+  was enough to make a correct model look wrong rather than to look like a bad sample.
 - **Before concluding anything from a refusal or a zero, point the instrument at a case you know
   is positive.** One query that *must* succeed, failing identically, is what proved the registry
   was answering about credentials. There was no equivalent control for the other four, which is
