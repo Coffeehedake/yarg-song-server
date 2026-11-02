@@ -1151,7 +1151,7 @@ containing a space is read, across a whole library, and it is not what made a so
 It wants its own change and its own oracle run, with a corpus case of its own. Recorded so the
 next person starts from a measurement rather than from the comment.
 
-## Eight instrument failures in one night — 2026-11-01, and the one rule that covers all of them
+## Nine instrument failures in one night — 2026-11-01, and the one rule that covers all of them
 
 Not an oracle run. A measurement post-mortem, recorded here because every one of these was a
 **correct number read as the answer to a question it was not answering** — and the last of them was correct about a *moment* nobody meant, and the corpus exists
@@ -1165,6 +1165,7 @@ to stop exactly that.
 | `/api/v1/library` → `problems: 0` | "was the song flagged `metadata_unreachable`?" | `Problems` only takes `r.Err != nil`; song issues live in `catalog.Song.Issues` and nothing aggregates one into the other |
 | `os.path.splitext` on `source_path` | "how many songs are loose folders?" | song folders are full of dots — "Mr. Big - To Be With You", "ii (2x bass pedal expert+)" — so ~190 became invented extensions |
 | grep for `playlist_track` on the song payload | "was the field dropped?" | it printed `"playlist_track":16000` — the TOP-LEVEL catalog field carrying the unset default, not the `raw_metadata` key the prediction was about |
+| a local timestamp with `Z` appended | "when did this start?" | `ps -o lstart=` prints the BOX's local time; vault2 is ET, so `07:05:52` was `12:05:52Z`. Writing `07:05:52Z` asserted UTC and made a six-minute job look five hours overdue |
 | `/proc/<pid>/io` → `rchar` | "how many bytes did the index read?" | read at 974s of a 994.49s index, so it was a running total 97.9% of the way through — 4.92 GB short, which turned a ratio of 2.023 into 1.982 and made it contradict the model |
 | `docker manifest inspect` → `denied` | "did CI build this tag?" | a refusal about *authentication* is indistinguishable from "never built"; a control tag that certainly existed returned the same |
 
@@ -1182,6 +1183,13 @@ Two corollaries, both of which cost something tonight:
 - **An absence is only a reading if the field could have been present.** `issues` missing from a
   payload that serialises `catalog.Song` directly is a measurement; `issues` missing because
   nobody asked for it is a gap wearing the same clothes.
+- **A unit or a timezone is part of the number.** Two of these were a correct value wearing the
+  wrong label rather than a wrong measurement: `311 MB/s` was bytes per CPU-busy second compared
+  against bytes per wall second, and `07:05:52Z` was a local time with a UTC suffix bolted on.
+  Both were acted on by someone else before being caught — one as a 1.78× "unreconciled gap",
+  one as a hung job. **`Z` is the one suffix that asserts a timezone**, so a time taken from a
+  machine's own clock is written in that machine's zone and named, or converted before it is
+  quoted.
 - **A counter read from a RUNNING process is a reading of a moment, not a total.** Sample it
   after the thing finishes, or record the elapsed time beside it so the shortfall is
   computable later. `rchar` taken 20.5s before an index ended was 4.92 GB light, and that

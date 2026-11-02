@@ -305,6 +305,20 @@ songs must answer `200` with an empty list, and a pruning client is *right* to a
   better failure, not a faster one, and it should not be described as a performance fix.
 - **A deploy gate that asserts only "the socket is open" becomes wrong.** Item 4 is load-bearing
   and `docs/DEPLOY-VAULT2.md` needs updating in the same change.
+- **This change INVALIDATES "the port is open" as a readiness signal, everywhere, and that
+  breaks instruments written against the old behaviour.** Before it, the listener came up only
+  when indexing finished, so `listening addr=:8080` in the log *was* completion and any script
+  could treat a successful connect as "ready". After it, the listener binds about a second after
+  launch and the index runs for another fifteen minutes behind it.
+  Caught on the 4,085-song equivalence probe: `listening addr=:8123` is timestamped
+  **07:05:53 ET**, one second after launch, while the index was still running eight minutes
+  later. A readiness check carried over from the previous method would have reported *done*
+  instantly and diffed a half-built catalogue — and would have looked like a passing run.
+  The correct signals are `/healthz` (503 `indexing` → 200 `ok`) or the
+  `msg="library indexed" … took=…` log line. **The fix supplies its own correct instrument and
+  retires the one it replaced**, which is the useful shape of it: anything still asserting
+  "connect succeeds, therefore ready" is now measuring the wrong thing, including monitoring
+  outside this repo.
 - ~~**The last hard restart is the one that ships this.**~~ **WRONG, and the deploy disproved
   it. Measured hard-down: 0.77 seconds.**
   This document claimed — repeatedly, and it was told to Jay as the cost of the change — that
