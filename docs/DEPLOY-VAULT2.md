@@ -62,7 +62,23 @@ further down, still true.
 > The reasoning was broken, not merely imprecise: **the binary that decides
 > whether the port is open during start-up is the one STARTING**, not the one
 > being replaced. The new binary has the fix, so it binds at once; the old one's
-> lack of it stops mattering the moment it stops.
+> lack of it stops mattering the moment it stops. Both of us reasoned about which
+> binary *lacked* the fix instead of asking which binary *opens the port*, and
+> neither asked the question at all — it was assumed symmetrical, and it is not.
+>
+> The server's own log is the cleaner proof, better than the container
+> timestamps:
+>
+> ```
+> 01:09:31.100Z  old container finished
+> 01:09:31.868Z  new container started            -> 0.768s
+> 01:09:32.181Z  listening addr=:8080 version=473aee0
+> 01:25:09.822Z  library indexed songs=4085 took=15m37.632s
+> ```
+>
+> **The listener bound 15m37s before the index finished**, serving 503s for all
+> of it. That single pair of lines is the change working in production and the
+> refutation of what was predicted, in the same four lines.
 >
 > **The error inverts, which is the operationally important half: the ROLLBACK is
 > now the expensive direction.** `fab8c90c` has no readiness gate, so rolling onto
@@ -97,8 +113,29 @@ nested `$()` inside a double-quoted string), not the server; re-asked with the
 body in a file it answers 200 with `library_total 4080`. And issue codes across
 the catalogue are now `chart_truncated: 2` and `metadata_unreachable: 1` — the
 second `chart_truncated` is new since the 3,067-song index and arrived with the
-1,018 newly unpacked songs. It is a chart-content finding, unrelated to this
-change, and is recorded rather than attributed.
+1,018 newly unpacked songs.
+
+**Chased down rather than left as "unrelated": it is truncated inside the source
+zip, and the extraction is faithful.** It is *Beenox Logo* by François Jalbert in
+*Guitar Hero – Smash Hits* — the CP437-named folder, which is why it was checked
+carefully instead of assumed. Every file matches the archive byte for byte, five
+sizes rather than one, because a single match could be luck:
+
+```
+              in archive   on disk
+album.png        492,537    492,537
+desktop.ini          136        136
+guitar.ogg       538,987    538,987
+notes.mid         53,336     53,336
+song.ini           1,129      1,129
+```
+
+So the chart is corrupt in the pack as shipped, and nothing in this project
+broke it. Note what it is, too: a studio logo stinger of a couple of seconds, not
+a song anyone plays. **The useful reading is that the scanner did its job** — it
+flagged a genuinely corrupt chart that YARG would refuse, which is the standard
+`CLAUDE.md` sets. Nothing to fix in our code. The other `chart_truncated`, *All
+Nightmare Long* in Guitar Hero III DLC, predates all of this.
 
 #### What was prepared in advance
 
@@ -317,6 +354,14 @@ which is why Marathon Hero 2 failed to unpack twice. The *stopped* container
 `.rar` ingest, and nothing notices until the next archive arrives.
 
 **Roll back to `fab8c90c`**, pinned by the digest recorded above.
+
+> **AND KNOW WHAT IT COSTS, because this reversed on 2026-11-02.** `fab8c90c`
+> has **no readiness gate**: rolling onto it means a full hard-down index, about
+> **sixteen minutes** at 4,085 songs, with the port closed throughout. Going
+> *forward* to `473aee0` cost **0.77 seconds**. The cheap direction is forward
+> and the expensive direction is back — the reverse of what every note in this
+> document said before that deploy. A rollback is reached for under pressure by
+> someone who has not read this file, so: rolling back is now the outage.
 
 Ask each candidate whether it CONTAINS the fix, rather than which commit came
 first — ancestry answers a question about the graph, a rollback cares about the
