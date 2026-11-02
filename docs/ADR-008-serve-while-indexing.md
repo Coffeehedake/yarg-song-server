@@ -49,6 +49,16 @@ outage*, by indexing the same library in a throwaway instance beside the running
 one. It means the next decision about this does not have to be paid for with
 downtime, which is worth more than either figure.
 
+#### Running a throwaway probe: use the artifact you will deploy
+
+**Probe the CI IMAGE, as a throwaway container on a spare port with the same
+binds.** A locally cross-compiled binary is a different *build* of the same
+source — a different Go version and different flags — and that cost a 9.4%
+optimistic prediction on the `6cbea44` deploy, where a probe at 578.5s preceded a
+production index of 638.7s. Probing the image removes the build variable, makes
+the run a dress rehearsal rather than an approximation, and surfaces changes like
+the readiness-signal one by itself.
+
 #### Running a throwaway probe: stamp it, or hash it
 
 A bare `go build` skips the Makefile's ldflags, so the binary reports `--version`

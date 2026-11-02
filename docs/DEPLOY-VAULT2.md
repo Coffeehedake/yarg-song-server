@@ -83,11 +83,39 @@ two runs on the same box and the same library.
 
 It is still the right tool — it costs no downtime and it was the only way to know
 the sign and rough size of the win beforehand — but **a probe figure is an
-estimate, not a measurement of the thing that will happen.** Quote it with its
-error bar or quote it as a floor. The cause of this run's gap is not established:
-the probe was a bare process and production is a container, and the production run
-had a *warmer* page cache (12 minutes after the probe), which should have made it
-faster rather than slower. Recorded as unexplained rather than attributed.
+estimate, not a measurement of the thing that will happen.** Quote it as a floor,
+with the caveat below attached.
+
+**Why, and it is sharper than "probes are fuzzy": the probe measured a DIFFERENT
+BINARY.** Not a different *source* — identical commit — but a different build. The
+probe was a local cross-compile on ENG-1's Go 1.27.0 with `-trimpath` and custom
+`-ldflags` (which is why it reported `dev`); production runs CI's container build
+with CI's own pinned toolchain. So the 9.4% never isolated hash-once at all: it
+conflates it with *this workstation's Go versus the runner's Go* — different
+compiler version, different flags, possibly different inlining and GC tuning. A
+9% spread between two Go builds of identical source is ordinary.
+
+Two candidates killed by measurement rather than left as "unlikely":
+
+- **cgroup limits: dead.** The container has none — `NanoCpus` 0, `CpuShares` 0,
+  `CpusetCpus` empty, `CpuPeriod`/`CpuQuota` 0, `Memory` 0 — on a 12-CPU,
+  62.7 GB host with no cpuset, so `GOMAXPROCS` was 12 in both runs.
+- **mount shape and `--data` location: real but implausibly small.** `/songs` is a
+  bind with `/songs/unpacked` a second bind *nested inside it*, where the probe
+  read the unpacked path directly; crossing a mountpoint is near-free per lookup,
+  so 27,541 files should not buy 60 seconds. And `/tmp` on that box is tmpfs, so
+  the probe's `--data` lived in RAM against production's btrfs — but the pack
+  cache is tens of files under a 2 GiB bound, far too few to matter.
+
+**THE METHOD FIX, and it is the useful output of the miss: a throwaway probe must
+run THE ARTIFACT THAT WILL BE DEPLOYED.** Pull the CI image and run it as a
+throwaway *container* on a spare port with the same binds — not a locally
+cross-compiled binary. That removes the build variable entirely and makes the
+probe a dress rehearsal instead of an approximation. It would also have surfaced
+the readiness-signal change by itself, rather than needing a warning.
+
+The build difference is a hypothesis with a mechanism, not a measurement, and is
+not recorded as the established cause.
 
 **The real win on this library is therefore 1.468×**, which is also a floor: the
 baseline ran essentially alone while this run followed a probe.
