@@ -47,6 +47,43 @@ docker run -d --name yarg-song-server \
 the command line. `Labels` is empty, which is the "not Unraid-managed" note
 further down, still true.
 
+### Prepared and NOT executed — `473aee0`, the serve-while-indexing deploy
+
+Everything below was checked in advance so that none of it happens under time
+pressure. **Nothing has been deployed; this is awaiting Jay's decision.**
+
+```
+image     registry.badassium.com/fatalexception/yarg-song-server:473aee0d
+digest    sha256:241fc7ee72ea44eb81cd19aab40757792652d2f79e899bac5cf7c67f20130daa
+          multi-arch amd64 + arm64,  --version reports 473aee0
+rollback  fab8c90c
+digest    sha256:08e3df8c2d143fa608ed4287ff48cceb8fabc7ce4a24f5e35e77b098b8964139
+```
+
+| Pre-swap check | Result |
+|---|---|
+| tag PRESENT **and** control tag `ok` on the same poll | built, not merely authorised |
+| `git diff 0c6fa84..473aee0 -- internal/config/` | **empty** — verified locally |
+| valid-key list, both builds | **identical**, 12 keys — verified locally |
+| `--version` asked of the image, not predicted | `473aee0` |
+| rollback target contains the `.rar` fix | `grep -c storedName` = 3 |
+
+The config check is a *proof* rather than a comparison of dates: the live
+`/data/yarg-song-server.conf` is accepted by `0c6fa84` — it is running on it
+now — and `473aee0` accepts exactly the same key set, so it must accept that
+file too. The dangerous direction (an *older* binary meeting a newer config,
+which `internal/config` turns into a refusal to boot) does not arise.
+
+A health loop must match the **short sha `473aee0`**. Anything asserting a
+release-shaped `v0.1.x` string would tear down a correctly deployed server —
+this document has already been wrong about that once.
+
+**The one part no rollback undoes:** the deploy itself costs one more hard-down
+window of roughly seventeen minutes, because the binary being replaced is the one
+without the fix. What it buys is that every restart after it is soft, and the
+4,085-song index stops being an availability cliff that grows with the library.
+Both halves are measured rather than argued.
+
 ### The git tags have drifted from the image tags — so a version string cannot identify a build
 
 `git describe --tags --always --dirty` is what CI stamps into the binary
