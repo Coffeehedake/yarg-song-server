@@ -39,9 +39,19 @@ and is paid in full each time the process starts.
 | 23 (v0.1.3, 2026-09-15) | ~30 s | ~30 s | ~1.3 s |
 | 1,369 | 3m39s | 3m39s | 0.160 s |
 | 3,067 (`0c6fa84`, tonight) | 10m40.186s | **10m47s**, 21:21:31Z–21:32:18Z | 0.209 s |
+| 4,085 (probe, same night) | 16m34.49s | n/a — ran beside the live server | 0.244 s |
 
-**"Roughly linear in song count" is a floor, not a model.** Per-song cost rose 30% between the
-last two rows, so linear extrapolation *understates* the next one. The composition explains it,
+The fourth row is a **throwaway instance on port 8123** indexing the enlarged
+library while 8099 kept serving, so it carries no outage figure. It also ran a
+*different binary* — a cross-compiled `v0.1.2-40-gfab8c90`, not the live
+`0c6fa84`. The figure is taken as transferable because the only Go change in
+that range is `internal/scan/extract.go`'s `.rar` directory handling and the
+indexed set contains no `.rar` at all, but it is a different build and this
+document says so rather than quietly comparing across it.
+
+**"Roughly linear in song count" is a floor, not a model.** Across the three real rows per-song
+cost rose **52%** — 0.160 → 0.211 → 0.244 s — so 3× the songs cost **4.55×** the time. Linear
+extrapolation *understates* every projection made from it. The composition explains it,
 and the composition is measured (below): the 1,698 songs added tonight are loose folders, and a
 loose folder costs more to index than a single-file container because every file in it must be
 opened, read and hashed.
@@ -217,8 +227,24 @@ files.
   cost of deferring it is that same outage at whatever size the library has reached by then —
   which is rising, and rising faster than song count because the mix is shifting toward loose
   folders. There is no restart at which this gets cheaper to adopt.
-- **Indexing cost is untouched and still scales with library bytes.** Two candidates, both
-  deliberately out of scope here:
+- **Indexing cost is untouched and still scales with library bytes.** Three candidates, all
+  deliberately out of scope here, and they are listed cheapest-and-safest first:
+  - ***Stop hashing every file twice.*** `scan()` calls `collectAssets` and then
+    `packageHash` over the same `names`, and both go through `assetFor`, which is
+    `io.Copy(sha256.New(), f)` — a full-byte read. `collectAssets` hashes the album art, the
+    stems and every leftover file; `packageHash` then hashes **every** file again, the stems
+    included. Since audio is almost all of the bytes, **an index reads the library about
+    twice**. That matches the only profile anyone has taken: `/proc/<pid>/io` on the 4,085-song
+    probe reported `rchar` **234,002,202,475** — 234 GB of `read()` bytes, with CPU at ~77% of
+    elapsed, so compute-bound rather than IO-blocked, and `read_bytes` 0 because shfs/FUSE
+    hides the block layer. 234 GB over a library of roughly 117 GB is the doubling, visible
+    from outside.
+    **The fix is to compute each file's SHA-256 once and hand the values to `packageHash`
+    instead of re-reading.** It is the only one of these three with *no* semantic risk:
+    `package_hash` is the sorted `<name>:<sha256>` construction, so identical per-file digests
+    produce a byte-identical hash. A test can pin that against a fixture, and it must — the
+    hash is the `ETag` and the sync identity, and this repo's hardest rule is that it may not
+    move. Expected win up to ~2× for free, before any cache exists.
   - *Parallelise the walk.* Bounded workers; the array is the likely ceiling, so the win is
     unknown until measured.
   - *Persist the index and skip re-hashing unchanged songs,* keyed on path+size+mtime. This is
@@ -230,12 +256,14 @@ files.
 
 ## What this ADR does not establish
 
-- **Where the 10m40s actually goes.** The split between directory walking, chart SHA-1 and
-  whole-file SHA-256 is *not measured*. The code says `packageHash` reads every byte, and that
-  is the obvious suspect, but no profile was taken. A timing run was deliberately not done
-  tonight: archives were being moved onto that box while this was written, so a run would have
-  both contended with it and been contaminated by it. Anything about *which part* dominates is
-  a prediction from the source until someone measures it.
+- ~~**Where the 10m40s actually goes.**~~ **Largely answered, and the answer is in Consequences
+  above:** full-file SHA-256 dominates, every file is hashed twice, and the index is
+  compute-bound at ~77% CPU rather than blocked on the array. That came from `/proc/<pid>/io`
+  on the probe plus three `assetFor` call sites in `scan.go` — no profiler, no instrumentation.
+  What is still *not* measured: the split between the two hashing passes and the directory
+  walk itself, and the library's byte total taken independently rather than inferred by halving
+  `rchar`. So "about 117 GB" and "about 2×" are arithmetic on one number, not two
+  measurements.
 - **That 503 is handled well by every client, as opposed to safely.** `yarg-sync` is
   established above to fail closed. YARG itself, reading a mirror folder on disk under
   increment 1, never talks to this server at all. Any third-party caller is unknown.
