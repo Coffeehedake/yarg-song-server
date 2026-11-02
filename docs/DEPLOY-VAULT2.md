@@ -440,6 +440,25 @@ login lapsed", and it will report the first while meaning the second for as long
 as nobody looks. Asking for a known-present tag in the same poll turns that into
 an explicit `LOGIN_LAPSED`.
 
+#### Counting this server's containers: NAME misses some, IMAGE misses others
+
+Both halves of this were learned the hard way on 2026-11-02, in opposite
+directions, and each fix created the other's blind spot. **The correct sweep is
+the UNION of name and image.**
+
+| Filter | Misses | How it was found |
+|---|---|---|
+| `--filter name=yarg-song-server` | anything started **without `--name`** | a container docker had auto-named `gallant_ardinghelli` ran for **15 hours** while both sessions believed nothing was running. It was the first `unpack sets` call on a stale `:latest` that predated the subcommand, so the arguments were swallowed and the old binary started as a *server*. Measured before being touched: 0 CPU over 14h42m, 123 MB read total all at 21:41Z, so it contaminated none of the timings |
+| `--format '{{.Image}}' \| grep <registry path>` | anything on a **locally-tagged** build | a cleanup sweep filtered on the registry image and reported itself finished, leaving four containers on `v0.1.3-yargsong`, `v0.1.4-multisong` and `v0.1.8-unpack` invisible to it |
+
+A name filter also matches **too much**: see the buildkit note below, where
+`name=yarg-song-server` caught `buildx_buildkit_yarg-song-server-multiarch0`
+mid-pipeline.
+
+So a container census is three questions, not one: match on name, match on image
+*however tagged*, and check the start time and image of anything that comes back
+before concluding what it is.
+
 #### `docker ps --filter name=yarg-song-server` also matches the CI builder
 
 The filter is a **substring** match, and the multi-arch job must create a
