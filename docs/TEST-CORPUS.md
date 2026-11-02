@@ -1150,3 +1150,40 @@ That is a real divergence and it is **deliberately not fixed here**. It changes 
 containing a space is read, across a whole library, and it is not what made a song unservable.
 It wants its own change and its own oracle run, with a corpus case of its own. Recorded so the
 next person starts from a measurement rather than from the comment.
+
+## Five instrument failures in one night — 2026-11-01, and the one rule that covers all of them
+
+Not an oracle run. A measurement post-mortem, recorded here because every one of these was a
+**correct number read as the answer to a question it was not answering**, and the corpus exists
+to stop exactly that.
+
+| The instrument | What it was asked | Why it could not answer |
+|---|---|---|
+| control-character count over `raw_metadata` | "did the bare-CR fix fire?" | the fix *strips* the CR before publishing, so it reads 0 whether the fix works or not |
+| `/api/v1/library` → `archives: []` | "is anything compressed in the indexed set?" | `Archives()` counts `worthUnpacking` = zip\|7z\|rar only, and is silent about 481 `.yargsong` |
+| `/api/v1/library` grepped for a song name | "is this song present?" | that endpoint returns summary counts and carries no song names at all |
+| `/api/v1/library` → `problems: 0` | "was the song flagged `metadata_unreachable`?" | `Problems` only takes `r.Err != nil`; song issues live in `catalog.Song.Issues` and nothing aggregates one into the other |
+| `os.path.splitext` on `source_path` | "how many songs are loose folders?" | song folders are full of dots — "Mr. Big - To Be With You", "ii (2x bass pedal expert+)" — so ~190 became invented extensions |
+| `docker manifest inspect` → `denied` | "did CI build this tag?" | a refusal about *authentication* is indistinguishable from "never built"; a control tag that certainly existed returned the same |
+
+Four of those were about to be reported as findings. Each would have been a confident wrong
+answer with a real number attached, and none of them would have looked like a mistake.
+
+**The rule: when the question is "did X happen", capture the WHOLE answer and judge the record
+afterwards — never pre-select the fields you think matter.** The witness run for the bare-CR
+song survived only because it dumped the entire `/api/v1/songs` payload into a variable rather
+than grepping the four fields someone had decided were the relevant ones. `issues` was not on
+that list, and `issues` was the witness. The raw dump is what made the fifth miss survivable.
+
+Two corollaries, both of which cost something tonight:
+
+- **An absence is only a reading if the field could have been present.** `issues` missing from a
+  payload that serialises `catalog.Song` directly is a measurement; `issues` missing because
+  nobody asked for it is a gap wearing the same clothes.
+- **Before concluding anything from a refusal or a zero, point the instrument at a case you know
+  is positive.** One query that *must* succeed, failing identically, is what proved the registry
+  was answering about credentials. There was no equivalent control for the other four, which is
+  why they survived as long as they did.
+
+This is the same failure as *"a green must come from the thing being tested, not from the tester
+noticing something"* in `CLAUDE.md`, reached from the measurement side rather than the test side.

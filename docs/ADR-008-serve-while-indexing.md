@@ -242,9 +242,12 @@ files.
     **The fix is to compute each file's SHA-256 once and hand the values to `packageHash`
     instead of re-reading.** It is the only one of these three with *no* semantic risk:
     `package_hash` is the sorted `<name>:<sha256>` construction, so identical per-file digests
-    produce a byte-identical hash. A test can pin that against a fixture, and it must — the
-    hash is the `ETag` and the sync identity, and this repo's hardest rule is that it may not
-    move. Expected win up to ~2× for free, before any cache exists.
+    produce a byte-identical hash. **But it moves `package_hash`'s inputs without moving its
+    output, and that is not allowed to ship on "the arithmetic says identical":** the hash is
+    the `ETag` and the sync identity, and this repo's hardest rule is that it may not move. The
+    safety story is a fixture test asserting a known folder still hashes to the same string,
+    **red-proofed by breaking it deliberately first** — per *tune a regression test against the
+    defect, or it is decoration*. Expected win up to ~2× for free, before any cache exists.
   - *Parallelise the walk.* Bounded workers; the array is the likely ceiling, so the win is
     unknown until measured.
   - *Persist the index and skip re-hashing unchanged songs,* keyed on path+size+mtime. This is
