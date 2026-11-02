@@ -84,6 +84,34 @@ without the fix. What it buys is that every restart after it is soft, and the
 4,085-song index stops being an availability cliff that grows with the library.
 Both halves are measured rather than argued.
 
+#### What to verify afterwards — written BEFORE the deploy
+
+"It came back up" is not the claim this change makes, and a deploy that only
+proves liveness proves the wrong thing. **A red-proofed test shows the test
+catches the defect; only the deploy shows the SERVER does.** Those are different
+claims and just the second one is about production, so the checks are recorded
+here first, against which the result can be read rather than interpreted.
+
+| During the ~17-minute window, expect | Why it matters |
+|---|---|
+| TCP connect **refused**, not 503 | the old binary is still the one without the fix; this is the last time it should look like this |
+| after the swap, `/healthz` → **503**, body `indexing`, `Retry-After` set | the whole availability half |
+| `POST /api/v1/have` → **503**, and *never* 200 with an empty list | the data-loss invariant, observed in production rather than in a test |
+| `/version` → 200 `473aee0` throughout the index | the operator can ask what is running while it cannot serve |
+| after the index, `/healthz` → 200 `ok`, songs = 4,085, `problems` null | the ordinary end state |
+
+Falsification, stated too: `/healthz` answering **200 while the index is still
+running** means the readiness gate is not wired in the deployed binary, and the
+visible outage has become an invisible one — roll back on that alone, even
+though the server would look healthy.
+
+**Keep `0c6fa84`'s container even though it is not the rollback target.** It is
+the fastest way back to a known-serving state if `fab8c90c` surprises you, and
+surrendering `.rar` ingest for twenty minutes beats being down.
+
+Pin the **digest**, never the tag: a tag can be rebuilt and repointed, and this
+document already carries the two-builds-of-one-commit case.
+
 ### The git tags have drifted from the image tags — so a version string cannot identify a build
 
 `git describe --tags --always --dirty` is what CI stamps into the binary
