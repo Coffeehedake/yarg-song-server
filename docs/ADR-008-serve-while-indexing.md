@@ -210,6 +210,13 @@ files.
   better failure, not a faster one, and it should not be described as a performance fix.
 - **A deploy gate that asserts only "the socket is open" becomes wrong.** Item 4 is load-bearing
   and `docs/DEPLOY-VAULT2.md` needs updating in the same change.
+- **The last hard restart is the one that ships this, and it is the argument for not waiting.**
+  The fix cannot help its own deployment: the binary being replaced is the one without it, so
+  that restart is hard-down for the full index like every restart before it. Every restart
+  *after* it is soft. So the cost of this change is one more outage of the current size, and the
+  cost of deferring it is that same outage at whatever size the library has reached by then —
+  which is rising, and rising faster than song count because the mix is shifting toward loose
+  folders. There is no restart at which this gets cheaper to adopt.
 - **Indexing cost is untouched and still scales with library bytes.** Two candidates, both
   deliberately out of scope here:
   - *Parallelise the walk.* Bounded workers; the array is the likely ceiling, so the win is
