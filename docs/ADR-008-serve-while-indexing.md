@@ -295,7 +295,30 @@ songs must answer `200` with an empty list, and a pruning client is *right* to a
   build *without* this fix costs a full outage, and that cost grows with the library.
 - **Indexing cost is untouched and still scales with library bytes.** Three candidates, all
   deliberately out of scope here, and they are listed cheapest-and-safest first:
-  - ***Stop hashing every file twice.*** `scan()` calls `collectAssets` and then
+  - ***Stop hashing every file twice.*** **DONE, 2026-11-02 — measured 1.83× on 839 MB, and
+    `package_hash` did not move.** `scan()` now builds one `assetDigests` per song and shares it
+    between `collectAssets` and `packageHashFrom`; the chart's digest is seeded from the bytes
+    already read for identity and preparsing, so its second open goes too. `pack.go` is
+    untouched — it hashes once already and has no `collectAssets` beside it.
+
+    | Check | Result |
+    |---|---|
+    | files opened per song | **1** each (was 2 for audio, art, chart, leftovers) |
+    | `package_hash` over the 26-case corpus, old binary vs new | **0 of 26 moved** |
+    | pinned `package_hash` on a fixed fixture | unchanged, and validated against the *spec* by an independent implementation |
+    | 150 songs × 5 MB = 839 MB, `scan`, best of two | **3.60s → 1.97s, 1.83×** |
+
+    `song.ini` is still opened twice — about a kilobyte, and plumbing its bytes out of
+    `ScanDir` would complicate the one path that must stay easy to follow.
+
+    **1.83× is the local number and is NOT a prediction for vault2.** It was measured on ENG-1's
+    NVMe, where some of the old second read was served from page cache; the ratio also includes
+    the directory walk and JSON encoding, which this change does not touch. The array bench found
+    the second pass *no* cheaper than the first (p1/p2 0.970), which points higher — but this
+    document predicted a seventeen-minute outage that turned out to be 0.77 seconds, so the only
+    honest statement is that the vault2 figure is unmeasured until somebody measures it there.
+
+  - *~~Stop hashing every file twice~~ — the original note, kept for the reasoning:* `scan()` called `collectAssets` and then
     `packageHash` over the same `names`, and both go through `assetFor`, which is
     `io.Copy(sha256.New(), f)` — a full-byte read. `collectAssets` hashes the album art, the
     stems and every leftover file; `packageHash` then hashes **every** file again, the stems

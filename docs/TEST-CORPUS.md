@@ -1193,3 +1193,34 @@ Two corollaries, both of which cost something tonight:
 
 This is the same failure as *"a green must come from the thing being tested, not from the tester
 noticing something"* in `CLAUDE.md`, reached from the measurement side rather than the test side.
+
+## Pinning a hash: the fixture has to make every step load-bearing — 2026-11-02
+
+Written after the hash-once change, where the pin on `package_hash` was the entire safety story
+and **the first version of it could not fail in one of the three ways that mattered.**
+
+`package_hash` is SHA-256 over the sorted `<lowercased name>:<sha256 of content>` lines of every
+file in a package. The fixture pinned it with five files — `song.ini`, `notes.chart`,
+`song.ogg`, `album.png`, `extra.bin`. Red-proofing deleted the `strings.ToLower` and **the pin
+stayed green**, because every name in the fixture was already lowercase, so the step it was
+meant to guard was a no-op on that input. Adding one `ReadMe.TXT` made it load-bearing and the
+pin failed as it should.
+
+Three rules fall out of that, and the second is the one nobody writes down:
+
+1. **Write the pin BEFORE the change, and watch it pass on the OLD code.** A pin written
+   afterwards records what the new code does, which is not the question. This one passed on the
+   pre-change implementation first, so "the value did not move" is a measurement.
+2. **The fixture must exercise every step of the algorithm, or the pin is partial.** Ask, step by
+   step, what input would make this line matter — lowercasing needs a capital, sorting needs
+   names that are out of order, a separator needs a name containing it. A fixture that is
+   uniform in some dimension cannot see that dimension.
+3. **Validate the pinned VALUE against the spec, not against the code that produced it.** An
+   independent implementation of the documented algorithm agreed on
+   `ec39edc6a292076a7b37fff629588000dbba8a98dfa05e799426f635d7996f62`. Without that, a pin only
+   says "the code still does what it did", which is worthless if what it did was wrong.
+
+And the equivalence check that a single fixture cannot replace: the old binary and the new one
+were both run over the whole 26-case corpus — archives, `.sng`, `.yargsong`, broken metadata,
+the bare CR — and **0 of 26 `package_hash` values moved**. One fixture agreeing proves much less
+than twenty-six disagreeing would disprove.

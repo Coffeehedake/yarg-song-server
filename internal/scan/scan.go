@@ -132,10 +132,16 @@ func scan(fsys fs.FS, names []string, ini *songini.File) (*catalog.Song, error) 
 		})
 	}
 
-	if err := collectAssets(s, fsys, names, chartName, ini); err != nil {
+	// One digest per file, shared by the asset list and the package hash.
+	// The chart's is seeded from the bytes already read above rather than by
+	// opening it a second time.
+	digests := newAssetDigests(fsys)
+	digests.putBytes(chartName, chartRaw)
+
+	if err := collectAssets(s, digests, names, chartName, ini); err != nil {
 		return nil, err
 	}
-	pkg, err := packageHash(fsys, names)
+	pkg, err := packageHashFrom(digests, names)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +318,7 @@ func applyIntensities(s *catalog.Song, ini *songini.File) {
 	// Intensities alone are not a measurement of what exists.
 }
 
-func collectAssets(s *catalog.Song, fsys fs.FS, names []string, chartName string, ini *songini.File) error {
+func collectAssets(s *catalog.Song, digests *assetDigests, names []string, chartName string, ini *songini.File) error {
 	coverOverride, _ := ini.String("cover")
 
 	claimed := map[string]bool{chartName: true}
@@ -323,12 +329,12 @@ func collectAssets(s *catalog.Song, fsys fs.FS, names []string, chartName string
 	}
 
 	take := func(n string) (*catalog.Asset, error) {
-		a, err := assetFor(fsys, n)
+		a, err := digests.get(n)
 		if err != nil {
 			return nil, err
 		}
 		claimed[n] = true
-		return a, nil
+		return &a, nil
 	}
 
 	// Album art: the "cover" key wins if it names a file that exists, then the
@@ -421,11 +427,11 @@ func collectAssets(s *catalog.Song, fsys fs.FS, names []string, chartName string
 		if claimed[n] {
 			continue
 		}
-		a, err := assetFor(fsys, n)
+		a, err := digests.get(n)
 		if err != nil {
 			return err
 		}
-		s.Assets.Other = append(s.Assets.Other, *a)
+		s.Assets.Other = append(s.Assets.Other, a)
 	}
 	return nil
 }
@@ -472,6 +478,68 @@ func assetFor(fsys fs.FS, name string) (*catalog.Asset, error) {
 	}, nil
 }
 
+// assetDigests computes each file's SHA-256 at most ONCE per song.
+//
+// It exists because scan() asked for the same digests twice. collectAssets
+// hashed the art, the stems and every leftover file; packageHash then hashed
+// EVERY file again, those included. assetFor is io.Copy(sha256.New(), f) - a
+// full-byte read - and audio is almost all of a song's bytes, so an index read
+// the library about twice over.
+//
+// Measured on the live 4,085-song library rather than reasoned about: rchar
+// 238.92 GB against 118.08 GB of assets in the catalogue, a ratio of 2.023, and
+// a bench hashing six real song folders twice back to back found the second
+// pass no cheaper than the first (p1/p2 0.970). So the second read was real work
+// and removing it removes real work. See docs/ADR-008.
+//
+// This changes what package_hash is computed FROM without changing what it IS:
+// the hash is SHA-256 over sorted "<name>:<sha256>" lines, so identical per-file
+// digests produce an identical package hash. That is pinned by
+// TestPackageHashIsPinnedToAKnownValue, red-proofed against a deliberate break,
+// because package_hash is the ETag and the sync identity and may not move.
+type assetDigests struct {
+	fsys fs.FS
+	// Keyed by the name as it appears in the directory, which is what both
+	// callers use - findCaseInsensitive hands back the real entry name.
+	byName map[string]catalog.Asset
+}
+
+func newAssetDigests(fsys fs.FS) *assetDigests {
+	return &assetDigests{fsys: fsys, byName: make(map[string]catalog.Asset)}
+}
+
+// get returns the file's asset record, reading and hashing it the first time
+// only. It returns a VALUE: callers that store a pointer get their own copy, so
+// nothing in the catalog ends up aliasing the cache.
+func (d *assetDigests) get(name string) (catalog.Asset, error) {
+	if a, ok := d.byName[name]; ok {
+		return a, nil
+	}
+	a, err := assetFor(d.fsys, name)
+	if err != nil {
+		return catalog.Asset{}, err
+	}
+	d.byName[name] = *a
+	return *a, nil
+}
+
+// putBytes records the digest of content already in memory, so the file is not
+// opened again to hash bytes we are holding.
+//
+// Used for the chart, which scan() has already read in full for identity and
+// preparsing. Built to match assetFor field for field: the package hash only
+// consumes Name and SHA256, but a record that disagreed with assetFor on Size
+// or Ext would be a trap for the next reader.
+func (d *assetDigests) putBytes(name string, b []byte) {
+	sum := sha256.Sum256(b)
+	d.byName[name] = catalog.Asset{
+		Name:   name,
+		Ext:    strings.TrimPrefix(path.Ext(strings.ToLower(name)), "."),
+		Size:   int64(len(b)),
+		SHA256: hex.EncodeToString(sum[:]),
+	}
+}
+
 // packageHash is SHA-256 over the sorted "<lowercased name>:<sha256>\n" lines
 // of every file in the package.
 //
@@ -479,10 +547,23 @@ func assetFor(fsys fs.FS, name string) (*catalog.Asset, error) {
 // packages carrying the same chart with different stems are the same song but
 // not the same download. This is our own construction and has no counterpart in
 // YARG - never present it to a client as a YARG concept.
+// It takes an fs.FS for the PACKING path (packInto), which derives the .sng mask
+// from this hash and has no collectAssets beside it, so it already read each file
+// once and needs no cache. The scanning path calls packageHashFrom with the
+// digests collectAssets has already computed.
 func packageHash(fsys fs.FS, names []string) (string, error) {
+	return packageHashFrom(newAssetDigests(fsys), names)
+}
+
+// packageHashFrom builds the same hash from digests that may already be known.
+//
+// Byte-identical to packageHash by construction: the lines are built from the
+// same names and the same per-file SHA-256 values, sorted the same way. The
+// value cannot move unless a digest does.
+func packageHashFrom(d *assetDigests, names []string) (string, error) {
 	lines := make([]string, 0, len(names))
 	for _, n := range names {
-		a, err := assetFor(fsys, n)
+		a, err := d.get(n)
 		if err != nil {
 			return "", err
 		}
