@@ -92,6 +92,61 @@ binary's own idea of what it is *before* swapping, while nothing is stopped yet:
 docker run --rm --entrypoint /usr/local/bin/yarg-song-server "$IMAGE" --version
 ```
 
+#### The drift, finally seen from both sides of ONE commit — 2026-11-01
+
+Earlier this document *predicted* a version string wrongly and was corrected
+afterwards. It has now been observed directly, both halves at once, for the same
+commit `fab8c90`:
+
+| Build of `fab8c90` | Reports |
+|---|---|
+| cross-compiled on a workstation clone | `v0.1.2-40-gfab8c90` |
+| the CI image of the same source | `fab8c90` |
+
+CI's clone fetches no tags, so `git describe --tags --always` finds none and
+falls through to the abbreviated hash; a workstation clone has the tags and takes
+the other branch. **Same source, two strings.** So a health check must match on
+the short SHA and never on the whole string — which this document already said,
+and which is now measured rather than inferred.
+
+#### `denied` from the registry is indistinguishable from `not built`
+
+`docker manifest inspect` answered **`denied: access forbidden`** for a tag CI
+had in fact built, which reads exactly like "the pipeline never published it" —
+and that was nearly written down as a finding about CI.
+
+What settled it was asking for a **control tag that certainly exists**: the tag
+the live container was *running at that moment*. It returned the same `denied`.
+One query that must succeed, failing the same way, proved the answer was about
+authentication and said nothing whatever about the subject. After the login both
+resolved.
+
+Keep the control in the procedure rather than in someone's memory: **before
+concluding anything from a registry refusal, ask it for a tag you know is
+there.** This is the house rule — check the instrument before the subject — and
+on this one night it paid out twice, here and on the `splitext` song-folder count
+in ADR-008.
+
+#### The image the next deploy builds on
+
+```
+registry.badassium.com/fatalexception/yarg-song-server:fab8c90c
+sha256:08e3df8c2d143fa608ed4287ff48cceb8fabc7ce4a24f5e35e77b098b8964139
+multi-arch amd64 + arm64,  --version reports fab8c90
+```
+
+Cleared as a safe swap by the check in the next section rather than by
+assumption: `git diff 0c6fa84..fab8c90 -- internal/config/` is **empty**, so no
+config key was added and this image cannot refuse the live
+`/data/yarg-song-server.conf`. The only Go change in that range is
+`internal/scan/extract.go` and its tests.
+
+Registry credentials live only in docker's own store on the box
+(`/root/.docker/config.json`, mode 600, root-owned) — the route the *Registry
+authentication* section below already sanctions. Do not copy one anywhere else,
+and if one ever has to be reported, report its length and a sha256 prefix, never
+the value.
+
 ### Check the config file against the binary before you swap
 
 `internal/config` treats an **unrecognised key as a startup error**, not a
