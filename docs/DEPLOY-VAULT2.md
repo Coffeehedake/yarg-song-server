@@ -379,6 +379,30 @@ fab8c90   3   -> .rar dirs fixed        <- roll back here
 
 One command, and it answers what the ancestry check only implies.
 
+#### Two things on that box that belong to NEITHER session, so neither removed them
+
+Recorded because an unexplained file is how a future session talks itself into
+deleting something load-bearing.
+
+- **`/tmp/yss-arm64.tar`** — dated 2026-09-06 12:15, two months before any of the
+  2026-11-01/02 work, root-owned 0600, a POSIX tar. Almost certainly left by
+  `ci/verify-multiarch.sh`, which reads the ELF machine type out of the arm64
+  image. Both sessions looked at it, neither put it there, neither touched it.
+- **`/mnt/cache/appdata/yarg-song-server/probe-data`** — an empty directory from
+  an index probe that would not `rmdir`. Harmless: it is in appdata, not under
+  `--songs`, so no library walk ever sees it. Left rather than forced.
+
+And what was deliberately KEPT rather than cleaned:
+`/mnt/cache/appdata/yarg-song-server/unpack-logs/*`, the unpack, index-probe and
+restart records with their measured timings. That is evidence, not scratch — most
+of the numbers in this document's 2026-11-02 sections came out of it.
+
+Scratch that WAS removed, for the record: the probe binaries from both sessions
+(`/tmp/yss-6cbea44`, `/mnt/user/YARG/bin/yss-fab8c90` and the `bin/` directory
+made for it), their data dirs and logs, and the batch scripts. An unsigned 9 MB
+executable on a world-readable SMB share is not a thing to leave behind once the
+registry carries the same build.
+
 Registry credentials live only in docker's own store on the box
 (`/root/.docker/config.json`, mode 600, root-owned) — the route the *Registry
 authentication* section below already sanctions. Do not copy one anywhere else,
