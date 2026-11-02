@@ -155,7 +155,16 @@ func (s *Server) unpackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opts := unpack.Options{LibraryRoot: s.Store.Get().Root, Dir: s.UnpackDir}
+	// Unpacking needs the library root, which comes off the index, and it also
+	// CHANGES the library on disk. Both say refuse while the first index is
+	// still running: writing into a tree that is being walked is how a song
+	// gets indexed half-written, which is the hazard IsReservedDir exists for.
+	ix, ok := s.index(w)
+	if !ok {
+		return
+	}
+
+	opts := unpack.Options{LibraryRoot: ix.Root, Dir: s.UnpackDir}
 
 	if body.Check {
 		plan, err := opts.Inspect(body.Archive)

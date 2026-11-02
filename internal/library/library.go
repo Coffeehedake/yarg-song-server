@@ -405,11 +405,45 @@ type Store struct {
 // NewStore wraps an index.
 func NewStore(ix *Index) *Store { return &Store{ix: ix} }
 
-// Get returns the current index. Never nil once NewStore has been called.
+// NewPendingStore returns a store that has no index YET, because the first one
+// is still being built.
+//
+// It exists so the HTTP listener can be bound before the library has been
+// walked: a 3,067-song index took 10m47s and a 4,085-song one 16m53s, and for
+// the whole of each the port was closed, which is indistinguishable from a
+// crash. See docs/ADR-008.
+//
+// Get deliberately reports NIL in this state rather than an empty index, and
+// that choice is load-bearing rather than stylistic. An empty index is a
+// LIE a caller acts on: syncclient's prune asks for the server's full set and
+// deletes every local .sng that is not in the answer, so "200, I have no
+// songs" told to a pruning client deletes the player's library. A nil index
+// cannot be served by accident - a handler that forgets to check it panics,
+// which net/http turns into a 500 for that one request. Failing loudly beats
+// answering "empty" quietly, every time.
+func NewPendingStore() *Store { return &Store{} }
+
+// Get returns the current index, or NIL if the first index has not been
+// published yet. Callers that need an index must check.
+//
+// It was "never nil once NewStore has been called" until ADR-008; the nil is
+// the not-ready state, and NewPendingStore says why it is nil and not empty.
 func (s *Store) Get() *Index {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.ix
+}
+
+// Ready reports whether an index has been published, so a health check can
+// tell "up, still indexing" from "up and able to answer".
+//
+// Without this the two are the same observation from outside, and a deploy gate
+// that waits for the socket to open would pass on a server that cannot serve a
+// single song - turning a visible outage into an invisible one.
+func (s *Store) Ready() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.ix != nil
 }
 
 // Replace swaps in a freshly built index atomically.

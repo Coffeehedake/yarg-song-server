@@ -147,6 +147,27 @@ authentication* section below already sanctions. Do not copy one anywhere else,
 and if one ever has to be reported, report its length and a sha256 prefix, never
 the value.
 
+#### After ADR-008 ships, `/healthz` means something new
+
+The serve-while-indexing change is implemented but **not yet deployed**. Once it
+is, the health gate's observations change and a deployer should know which is
+which:
+
+| During start-up | Before ADR-008 | After |
+|---|---|---|
+| TCP connect | **refused** | accepted |
+| `/healthz` | nothing to ask | **503**, body `indexing`, with `Retry-After` |
+| `/api/v1/have` | nothing to ask | **503** — never `200`, which is the invariant |
+| `/version` | nothing to ask | `200` — askable throughout |
+
+A gate that waits for `/healthz` to return **200** keeps working unchanged and is
+still correct: 503 means wait. A gate that merely waits for the port to open
+would pass on a server that cannot serve a song, so do not weaken it to that.
+
+**The deploy that ships this is itself still hard-down**, because the binary
+being replaced is the one without the fix. Every restart after it is soft. There
+is no restart at which this gets cheaper to adopt.
+
 ### Check the config file against the binary before you swap
 
 `internal/config` treats an **unrecognised key as a startup error**, not a

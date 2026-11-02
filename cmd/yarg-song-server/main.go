@@ -307,22 +307,21 @@ func run(opt config.Resolved, log *slog.Logger) error {
 		return fmt.Errorf("song library %q is not a readable directory: %w", opt.Songs, err)
 	}
 
-	started := time.Now()
-	ix, err := library.Build(opt.Songs)
-	if err != nil {
-		return fmt.Errorf("index %q: %w", opt.Songs, err)
-	}
-	log.Info("library indexed",
-		"songs", ix.Len(),
-		"distinct_charts", ix.DistinctCharts(),
-		"duplicate_packages", ix.DuplicatePackages,
-		"problems", len(ix.Problems),
-		"took", time.Since(started).Round(time.Millisecond))
-	// Every unreadable folder is named once at start. Reporting only the count
-	// would leave an operator with "17 problems" and nothing to act on.
-	for _, p := range ix.Problems {
-		log.Warn("could not index", "path", p.Path, "err", p.Err)
-	}
+	// The index is built in the BACKGROUND and the listener goes up first.
+	//
+	// It used to be built right here, before anything was bound, and the cost
+	// of that grew with the library: 10m47s of refused connections at 3,067
+	// songs, 16m53s at 4,085. Not slow - refused, because there was nothing
+	// listening to answer. From outside, a long index and a crashed boot are
+	// one observation, which is also why the deploy script's health patience
+	// has to be measured in half-hours.
+	//
+	// Until the first index publishes, every endpoint whose answer depends on
+	// the library refuses with 503, and /healthz says "indexing". Nothing
+	// serves a partial or empty catalogue - see ADR-008 and
+	// library.NewPendingStore for why an empty one would be worse than the
+	// outage it replaces.
+	store := library.NewPendingStore()
 
 	packs, err := packcache.New(filepath.Join(opt.Data, "packs"),
 		packcache.WithMaxBytes(opt.PackCacheMax))
@@ -359,7 +358,7 @@ func run(opt config.Resolved, log *slog.Logger) error {
 	}
 
 	api := &httpapi.Server{
-		Store:         library.NewStore(ix),
+		Store:         store,
 		Packs:         packs,
 		Version:       version,
 		Log:           log,
@@ -460,6 +459,37 @@ func run(opt config.Resolved, log *slog.Logger) error {
 	defer stop()
 
 	errCh := make(chan error, 1)
+
+	// Build the first index while the server is already answering.
+	//
+	// A failure here is still FATAL, exactly as it was when this ran before the
+	// listener existed: it goes down errCh, run returns it and the process
+	// exits non-zero. A server that can never answer must not sit at 503
+	// forever looking like one that is merely slow - that is the same
+	// "indistinguishable from outside" problem this change exists to fix,
+	// moved rather than solved. Note that a song which fails to scan is a
+	// Problem and not an error, so reaching this is a walk-level failure.
+	go func() {
+		started := time.Now()
+		ix, err := library.Build(opt.Songs)
+		if err != nil {
+			errCh <- fmt.Errorf("index %q: %w", opt.Songs, err)
+			return
+		}
+		store.Replace(ix)
+		log.Info("library indexed",
+			"songs", ix.Len(),
+			"distinct_charts", ix.DistinctCharts(),
+			"duplicate_packages", ix.DuplicatePackages,
+			"problems", len(ix.Problems),
+			"took", time.Since(started).Round(time.Millisecond))
+		// Every unreadable folder is named once at start. Reporting only the
+		// count would leave an operator with "17 problems" and nothing to act on.
+		for _, p := range ix.Problems {
+			log.Warn("could not index", "path", p.Path, "err", p.Err)
+		}
+	}()
+
 	go func() {
 		log.Info("listening", "addr", opt.Listen, "songs", opt.Songs, "data", opt.Data, "version", version)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

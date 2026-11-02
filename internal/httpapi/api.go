@@ -126,7 +126,49 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	// "Up" and "able to answer" are different facts and this endpoint now
+	// reports which. The listener is bound before the library is walked
+	// (ADR-008), so for the first ten-to-seventeen minutes of a large library
+	// the server is reachable and cannot say anything about its contents.
+	//
+	// It answers 503 rather than 200-with-a-different-body on purpose: a deploy
+	// gate, a container healthcheck and a load balancer all read the STATUS,
+	// and every one of them should wait. A 200 here would make this change
+	// convert a visible outage into an invisible one.
+	if !s.Store.Ready() {
+		w.Header().Set("Retry-After", retryAfterIndexing)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("indexing\n"))
+		return
+	}
 	_, _ = w.Write([]byte("ok\n"))
+}
+
+// retryAfterIndexing is the Retry-After for every "still indexing" answer, in
+// seconds. Short, because the caller is usually a script in a loop and the
+// index publishes all at once rather than gradually.
+const retryAfterIndexing = "5"
+
+// index returns the published index, or writes the "still indexing" refusal and
+// reports false.
+//
+// Every handler whose answer depends on the library goes through here. The
+// refusal is a STATUS and never a partial payload, which is the one invariant
+// ADR-008 turns on: POST /api/v1/have must never answer 200 while the index is
+// incomplete, because an under-reported library is what makes a pruning sync
+// client delete songs. A genuinely empty library still answers 200 with an
+// empty list - that is true, and a client is right to act on it - so the
+// difference between "nothing yet" and "nothing at all" has to live in the
+// status code.
+func (s *Server) index(w http.ResponseWriter) (*library.Index, bool) {
+	ix := s.Store.Get()
+	if ix != nil {
+		return ix, true
+	}
+	w.Header().Set("Retry-After", retryAfterIndexing)
+	writeError(w, http.StatusServiceUnavailable,
+		"the song library is still being indexed; ask again shortly")
+	return nil, false
 }
 
 func (s *Server) versionInfo(w http.ResponseWriter, r *http.Request) {
@@ -139,7 +181,10 @@ func (s *Server) versionInfo(w http.ResponseWriter, r *http.Request) {
 // quietly indexes 9,000 of 10,000 songs is indistinguishable from one that has
 // 9,000 songs, and the operator has no way to find out which.
 func (s *Server) libraryInfo(w http.ResponseWriter, r *http.Request) {
-	ix := s.Store.Get()
+	ix, ok := s.index(w)
+	if !ok {
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"songs":              ix.Len(),
 		"distinct_charts":    ix.DistinctCharts(),
@@ -242,7 +287,11 @@ func (s *Server) songs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page := s.Store.Get().Query(library.Query{
+	ix, ok := s.index(w)
+	if !ok {
+		return
+	}
+	page := ix.Query(library.Query{
 		Text:       q.Get("q"),
 		SortBy:     sortBy,
 		Descending: order == "desc",
@@ -272,7 +321,11 @@ func (s *Server) songs(w http.ResponseWriter, r *http.Request) {
 // Returning the first would hide the other from every client that asked.
 func (s *Server) song(w http.ResponseWriter, r *http.Request) {
 	hash := strings.ToLower(r.PathValue("hash"))
-	entries := s.Store.Get().ByChartHash(hash)
+	ix, ok := s.index(w)
+	if !ok {
+		return
+	}
+	entries := ix.ByChartHash(hash)
 	if len(entries) == 0 {
 		writeError(w, http.StatusNotFound, "no song with that chart hash")
 		return
@@ -306,6 +359,18 @@ type haveResponse struct {
 // the library that was not in that list. Sorted, so two calls with the same
 // library and the same input give the same bytes.
 func (s *Server) have(w http.ResponseWriter, r *http.Request) {
+	// Readiness is checked FIRST, before the body is read, and this is the
+	// endpoint the whole of ADR-008 turns on. Answering 200 with an
+	// under-reported library here is what makes syncclient's prune delete a
+	// player's songs, so the refusal must not be reachable only after a
+	// well-formed body: a malformed request to a server that cannot answer
+	// gets the "still indexing" status, not a 400 about its JSON. It also
+	// declines to read up to 8 MB it has no use for.
+	ix, ok := s.index(w)
+	if !ok {
+		return
+	}
+
 	// The CLIENT decides this body's size: both sync clients POST every chart
 	// hash they already hold, so it grows with the player's library.
 	//
@@ -334,7 +399,6 @@ func (s *Server) have(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ix := s.Store.Get()
 	missing := ix.Missing(req.ChartHashes)
 	writeJSON(w, http.StatusOK, haveResponse{
 		LibraryTotal: ix.DistinctCharts(),
@@ -356,7 +420,10 @@ func (s *Server) songFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ix := s.Store.Get()
+	ix, ok := s.index(w)
+	if !ok {
+		return
+	}
 
 	var entry *library.Entry
 	if pkg := r.URL.Query().Get("package"); pkg != "" {

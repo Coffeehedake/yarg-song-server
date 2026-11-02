@@ -48,6 +48,16 @@ func (s *Server) check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Part of this endpoint's answer is "do we already have this song", which
+	// only the index can say. Refused while the first index is building rather
+	// than answered with Known=false, because a false "we do not have it" is
+	// exactly as wrong as an empty library and reads as an invitation to upload
+	// something the server already holds.
+	ix, ok := s.index(w)
+	if !ok {
+		return
+	}
+
 	name := r.URL.Query().Get("name")
 	if name == "" {
 		writeError(w, http.StatusBadRequest,
@@ -138,7 +148,7 @@ func (s *Server) check(w http.ResponseWriter, r *http.Request) {
 		resp.Accepted = true
 		resp.Song = song
 		resp.ChartHash = song.ChartHash
-		resp.Known = len(s.Store.Get().ByChartHash(song.ChartHash)) > 0
+		resp.Known = len(ix.ByChartHash(song.ChartHash)) > 0
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

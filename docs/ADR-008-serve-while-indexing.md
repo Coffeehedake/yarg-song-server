@@ -1,7 +1,7 @@
 # ADR-008 — Serving while indexing, and the one answer that must never be `200`
 
-- **Status:** Proposed. The implementation decision is Jay's; this document exists to make it
-  answerable.
+- **Status:** Accepted and **implemented** — the server half, as scoped below. Approved by Jay
+  on 2026-11-02 after the measurements in this document. Not deployed at the time of writing.
 - **Date:** 2026-11-01
 - **Deciders:** Jay
 - **Supersedes:** none. Fixes a defect in the start-up path chosen by ADR-002 ("the catalog is
@@ -182,10 +182,21 @@ readiness — with a status code, never with a partial payload.**
    path `OnUnpacked` already takes.
 
 2. **Index-dependent endpoints return `503` with `Retry-After` until the first index is
-   published.** `POST /api/v1/have`, `GET /api/v1/songs`, `GET /api/v1/songs/{hash}`,
-   `GET /song/{file}`, `GET /api/v1/library`, and the browse page. `/version` and
-   `/api/v1/features` stay available — they do not depend on the index, and during a ten-minute
-   start-up they are exactly what an operator wants to be able to ask.
+   published.** As built, that is `POST /api/v1/have`, `GET /api/v1/songs`,
+   `GET /api/v1/songs/{hash}`, `GET /song/{file}`, `GET /api/v1/library`,
+   `POST /api/v1/check` (part of its answer is "do we already have this song") and
+   `POST /api/v1/unpack` (it needs the library root *and* writes into a tree being walked).
+   `/version` and `/api/v1/features` stay available — they do not depend on the index, and
+   during a seventeen-minute start-up they are exactly what an operator wants to be able to
+   ask.
+   **Correction to this ADR's first draft, found by reading the code rather than reasoning
+   about it:** it listed *the browse page* here. The browse page is static HTML that fetches
+   its data from the API (`internal/httpapi/web.go`), so it carries no claim about the library
+   and is served as normal; its own fetches get the 503. Gating it would have hidden the
+   diagnostic page during exactly the window it is useful.
+   The refusal is reached through one helper, `Server.index`, so a handler cannot answer a
+   question about the library without passing the readiness check, and the route list above is
+   pinned by a test that fails if a new route is added and left ungated.
 
 3. **Publish once, not progressively.** The index becomes visible when it is complete. A
    progressively-published index makes `/have` answer an incomplete truth, which is the prune
@@ -214,6 +225,30 @@ correctness fix to the increment that is live, not a step toward 2 or 3. It touc
 here. The `prune` hazard exists *because* increment 1 put a real sync client in front of this
 server, and that client is the only caller that can turn a server-side ambiguity into deleted
 files.
+
+### How it was built, and how the tests were proved able to fail
+
+`library.NewPendingStore` is a store with no index yet, and `Get` returns **nil** in that state
+rather than an empty index. That is the load-bearing choice: an empty index is a *lie a caller
+acts on*, and a handler that forgets the readiness check panics into a 500 for one request
+instead of quietly telling a pruning client that the library is empty. Failing loudly beats
+answering "empty" quietly.
+
+`internal/httpapi/indexing_test.go` pins the behaviour, and each of its tests was **reintroduced
+against its own defect** before its green was trusted — per *tune a regression test against the
+defect, or it is decoration*:
+
+| Defect reintroduced | Test that went red |
+|---|---|
+| `index()` returns an empty index instead of refusing | refuses-while-indexing, **and** have-never-200 |
+| `/healthz` always answers `ok` | healthz-says-indexing-then-ok |
+| `index()` refuses even when ready | empty-library-still-answers-200 |
+
+All four pass, all four were observed failing, and the tree was restored and re-verified green.
+The last row is the one that stops the distinction being collapsed: a server that really has no
+songs must answer `200` with an empty list, and a pruning client is *right* to act on it.
+
+`go build`, `go vet`, `gofmt -l` and `go test ./... -count=1 -race` are all clean.
 
 ## Consequences
 
