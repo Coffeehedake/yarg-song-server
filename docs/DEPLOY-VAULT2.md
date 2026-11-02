@@ -47,6 +47,54 @@ docker run -d --name yarg-song-server \
 the command line. `Labels` is empty, which is the "not Unraid-managed" note
 further down, still true.
 
+### Eighth deployment — `6cbea44`, hash-once. PRE-REGISTERED, NOT YET RUN
+
+Written before the swap so the result is read against a record. Baseline snapshot
+taken from the live server minutes earlier: `built_at 01:09:32.181Z`, 4,085 songs,
+4,080 distinct, 0 duplicate, `problems` null, every `package_hash` and issue code
+captured.
+
+```
+DEPLOY    :6cbea444  sha256:7bda5f2968680e66ee8178c74c5698ffa85428b869065cdfad917074769bdf99
+ROLLBACK  :473aee0d  sha256:241fc7ee72ea44eb81cd19aab40757792652d2f79e899bac5cf7c67f20130daa
+```
+
+Both pinned now rather than re-resolved mid-incident. Control tag answered on the
+same poll as the deploy tag, so PRESENT means *built*, not *authorised*.
+
+**Why this before/after is weaker than the probe, and what closes the gap.** The
+probe compared two binaries on the same files *at one moment*. This compares one
+binary before against another ~10 minutes after, so **any** library change in the
+window would be attributed to hash-once. Checked seconds before: **0**
+`*.unpacking` directories anywhere, **0** entries under `_incoming`, one container
+box-wide by image. *(The `/api/v1/unpack` probe returned "admin secret is missing
+or wrong" — an auth failure, not an answer, so it establishes nothing and the
+directory checks are what carry it.)*
+
+| Expected | Why |
+|---|---|
+| hard-down ≈ **1 s**, not ~17 min | `473aee0` already has the gate, so the replaced binary binds nothing and the new one binds at once |
+| index ≈ **9m38s**, not 15m37s | hash-once measured at 1.62× on this array |
+| `/healthz` 503 `indexing` → 200 `ok` | the gate, in production again |
+| `POST /api/v1/have` 503, never 200 | the data-loss invariant |
+| **`package_hash`: 0 of 4,085 moved** | the whole claim — this hash is the `ETag` and the sync identity |
+| `chart_hash`: 0 of 4,085 moved | identity is `SHA1(chart bytes)` and nothing here touches chart reading |
+| issue codes unchanged: `chart_truncated: 2`, `metadata_unreachable: 1` | catches the scanner deciding something *different* about identical bytes, which hashing alone cannot show |
+
+**If exactly one `package_hash` moves, look here first:**
+`unpacked/Guitar Hero III DLC/Guitar Hero III DLC/Boston - Peace of Mind`, whose
+`album.PNG` is the single asset name in 26,575 that `strings.ToLower` changes.
+Pre-registering it turns the most confusing possible result into a lookup.
+
+**ROLLBACK TRIGGER, decided now and not in the moment: ANY `package_hash` moving
+→ roll back to `473aee0d` immediately, investigate afterwards.** A moved `ETag` is
+every client re-downloading that song; it is not a thing to debug while live.
+
+**And one thing not to misread:** during the index, any sync client that runs gets
+503 from `/api/v1/have` and aborts. That is the gate working as designed. Last
+night the same window was invisible only because the server was not answering at
+all.
+
 ### Seventh deployment, 2026-11-02 — `473aee0`, and the outage that did not happen
 
 **DEPLOYED and verified.** Live now: `473aee0` on digest `sha256:241fc7ee…`,
