@@ -1230,6 +1230,68 @@ So the bare-CR fix is verified **harmless** here and not yet verified *useful*
 here. Its usefulness rests on the oracle run in `TEST-CORPUS.md`, where the real
 song packs and the real game accepts it — not on this deployment.
 
+### The real-library witness, and the prediction written down BEFORE the measurement
+
+Later the same evening, `Marathon Hero 2.rar` — the archive the defect was found
+in — was unpacked into the live library. **The input is now on disk and the
+claim below is about the input only.**
+
+Established, measured 2026-11-01 on vault2:
+
+```
+/mnt/user/YARG/songs/unpacked/Marathon Hero 2/Marathon Hero 2/Marathon Hero 2/
+  29 - Take this Crusty L/
+  04 Infant Annihilator - Behold the Kingdom of the Wretched Undying/song.ini
+
+  preview_end_time = 905540\r
+  song_length = 1062206\rplaylist_track = 4      <- bare CR, no trailing newline
+```
+
+**1 of 152** `song.ini` files in that pack carries a bare CR, and the unpack did
+not normalise it — the file is CRLF throughout with one bare CR splicing the last
+two pairs. `internal/songini/testdata/bare-cr.song.ini` matches that shape byte
+for byte: 200 bytes, 8 CR against 7 LF, same tail, and `-text` in the index so no
+platform may rewrite it. The regression fixture is the real input rather than a
+reconstruction of it.
+
+**Not established: that the fix has fired.** `/api/v1/library` still reports
+`built_at 2026-11-01T21:21:31.894Z` at 3,067 songs — the start-up index, which
+predates the unpack. On-disk input plus a correct reader *predicts* a behaviour;
+it does not measure one. Same shape as the oracle rule: a green from reasoning
+about someone else's input is not a measurement.
+
+So the prediction goes here, before the index that will judge it:
+
+| After the next index, expect | Why |
+|---|---|
+| the song present, and `GET /song/<hash>.sng` → `200` with `SNGPKG` and `ETag == package_hash` | it 500'd before `0c6fa84` |
+| `raw_metadata["song_length"] == "1062206"` | the value is cut at the CR, not discarded |
+| `playlist_track` **absent** for that song | YARG loses it too; we lose what the game loses |
+| exactly **1** song flagged `metadata_unreachable`, naming `playlist_track = 4` | it is a note, never a refusal |
+| `problems` still `null` | the song is servable, so nothing failed to pack |
+
+**And the instrument that will NOT show this, which is the trap.** The
+control-character count over `raw_metadata` is expected to stay at **0**, because
+the fix *removes* the CR before the value is ever published. A zero there after
+the restart is the fix working, not the fix missing — so that count must not be
+read as the witness. The witness is the `metadata_unreachable` issue code, plus
+`song_length` intact while `playlist_track` is gone. Reading the old count and
+concluding "still nothing" would have been a wrong negative drawn from the right
+number.
+
+What would falsify rather than confirm:
+
+- **song absent entirely** → check the unpack completed before blaming the reader.
+  That pack failed twice earlier the same evening for an unrelated reason: `.rar`
+  directory entries carry a flag rather than a trailing slash, so every song folder
+  read as a zero-byte file. Fixed in `fab8c90`. A missing song is a `.rar` question
+  first and a CR question second.
+- **song present but `GET /song/<hash>.sng` returns 500** → the fix does not work on
+  real input, whatever the corpus said.
+- **song present with no `metadata_unreachable`** → the reader reached the value by
+  some path other than the designed one, and the issue plumbing in `internal/scan`
+  is not wired to what `songini` dropped.
+
 ### The service was hard down for 10m47s, and that is the real cost
 
 21:21:31Z to 21:32:18Z. `/healthz` was **connection-refused** for the whole
