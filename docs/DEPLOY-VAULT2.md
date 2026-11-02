@@ -1849,3 +1849,55 @@ Two more, both of which would have turned a working deploy into an incident:
 - **The version string was predicted wrongly and the health check survived it.**
   See the tag-drift section. `git describe` on a workstation and in CI disagree
   for the same commit, because CI's clone has no tags.
+
+## Ninth deployment, 2026-11-02 — `01e0503`, the song.ini parser, and a dress rehearsal that matched byte for byte
+
+```
+version        01e0503    digest sha256:2fffb37d22f9aca1fd9e5ac99ac8f186db26ca5f516c2c810d72bdef091c933b
+hard-down      0s         first answer was 503 "indexing"
+healthy after  442s       index took=7m21.3s
+songs 4085     distinct 4080     duplicate_packages 0     problems null
+```
+
+**The check that mattered was not "is it up".** A throwaway probe had already indexed the same
+library with the same image on a spare port, and its catalogue was kept. The deploy's
+pre-registered pass condition was that the live catalogue match that snapshot **byte for
+byte**, with any difference triggering an immediate rollback to `6cbea444`:
+
+```
+live sha       1fe46da2f6bb8799
+expected sha   1fe46da2f6bb8799
+IDENTICAL - production matches the probe exactly, field for field
+```
+
+That is a stronger claim than a song count. It pins every field of every one of 4,085 songs,
+including the 16 that this change deliberately altered, and it was decided before the deploy ran
+rather than inspected afterwards.
+
+### The rehearsal earned its place twice
+
+Its **first** attempt died in 0.34 seconds: `packcache: mkdir /data/packs: permission denied`,
+because the probe's data directory was created root-owned and the image is distroless and runs
+as **nonroot uid 65532**. The same mistake in a real deploy is an outage. A locally
+cross-compiled binary run as root cannot reproduce it — which is exactly why ADR-008 now says
+to probe the image rather than a local build.
+
+The worse half was the harness: the wait loop asked only *"does `/healthz` answer"*, which
+cannot distinguish **still indexing** from **died instantly**, and it polled a stopped container
+for **39 minutes**. Both this deploy and the parity runner now check container liveness FIRST on
+every iteration and abort with the container's logs. A readiness check that cannot tell
+not-ready from dead is not a readiness check.
+
+### Probe timing is not a prediction, in either direction
+
+| | probe | production | |
+|---|---|---|---|
+| `6cbea44` | 578s predicted | 639s actual | probe **9.4% optimistic** |
+| `01e0503` | 742s | **441s** | probe **68% pessimistic** |
+
+Two runs, same box, same library, errors in opposite directions. The second is most likely page
+cache — production indexed about an hour after the probe had read the whole library — but that
+is a plausible mechanism and not a measurement, and it is recorded as such. The practical rule
+stands and is now better supported: **quote a probe figure as an estimate with its direction
+unknown.** What the probe reliably delivers is the catalogue to compare against, which is what
+this deploy actually relied on.
