@@ -277,13 +277,22 @@ songs must answer `200` with an empty list, and a pruning client is *right* to a
   better failure, not a faster one, and it should not be described as a performance fix.
 - **A deploy gate that asserts only "the socket is open" becomes wrong.** Item 4 is load-bearing
   and `docs/DEPLOY-VAULT2.md` needs updating in the same change.
-- **The last hard restart is the one that ships this, and it is the argument for not waiting.**
-  The fix cannot help its own deployment: the binary being replaced is the one without it, so
-  that restart is hard-down for the full index like every restart before it. Every restart
-  *after* it is soft. So the cost of this change is one more outage of the current size, and the
-  cost of deferring it is that same outage at whatever size the library has reached by then —
-  which is rising, and rising faster than song count because the mix is shifting toward loose
-  folders. There is no restart at which this gets cheaper to adopt.
+- ~~**The last hard restart is the one that ships this.**~~ **WRONG, and the deploy disproved
+  it. Measured hard-down: 0.77 seconds.**
+  This document claimed — repeatedly, and it was told to Jay as the cost of the change — that
+  "the fix cannot help its own deployment: the binary being replaced is the one without it, so
+  that restart is hard-down for the full index." That reasoning is simply broken. **The binary
+  that decides whether the port is open during start-up is the one STARTING, not the one being
+  replaced.** The new binary has the fix, so it binds immediately; the old one's lack of it
+  stops mattering the moment it is stopped. Measured on 2026-11-02: the previous container
+  finished at `01:09:31.100Z`, the new one started at `01:09:31.868Z`, and the first poll —
+  at t=0 — already got `503 indexing`. Under a second, against a predicted seventeen minutes.
+  **And the error inverts: the ROLLBACK is now the expensive direction.** `fab8c90c` does not
+  have the fix, so rolling onto it costs a full hard-down index — about sixteen minutes at
+  4,085 songs. That is worth knowing before anyone reaches for it under pressure, and it is the
+  opposite of what this document implied.
+  The argument for not deferring survives, but it is a different argument: each deploy of a
+  build *without* this fix costs a full outage, and that cost grows with the library.
 - **Indexing cost is untouched and still scales with library bytes.** Three candidates, all
   deliberately out of scope here, and they are listed cheapest-and-safest first:
   - ***Stop hashing every file twice.*** `scan()` calls `collectAssets` and then

@@ -47,10 +47,63 @@ docker run -d --name yarg-song-server \
 the command line. `Labels` is empty, which is the "not Unraid-managed" note
 further down, still true.
 
-### Prepared and NOT executed — `473aee0`, the serve-while-indexing deploy
+### Seventh deployment, 2026-11-02 — `473aee0`, and the outage that did not happen
 
-Everything below was checked in advance so that none of it happens under time
-pressure. **Nothing has been deployed; this is awaiting Jay's decision.**
+**DEPLOYED and verified.** Live now: `473aee0` on digest `sha256:241fc7ee…`,
+4,085 songs, `problems` null.
+
+> **The predicted cost was wrong by three orders of magnitude, and this deploy is
+> what disproved it.** Every version of this document, and the ADR, said the
+> deploy shipping the fix would itself be hard-down for ~17 minutes "because the
+> binary being replaced is the one without the fix". **Measured hard-down: 0.77
+> seconds.** The previous container finished `01:09:31.100Z`, the new one started
+> `01:09:31.868Z`, and the first poll at t=0 already answered `503 indexing`.
+>
+> The reasoning was broken, not merely imprecise: **the binary that decides
+> whether the port is open during start-up is the one STARTING**, not the one
+> being replaced. The new binary has the fix, so it binds at once; the old one's
+> lack of it stops mattering the moment it stops.
+>
+> **The error inverts, which is the operationally important half: the ROLLBACK is
+> now the expensive direction.** `fab8c90c` has no readiness gate, so rolling onto
+> it costs a full hard-down index — about sixteen minutes at this library size.
+> Reaching for a rollback under pressure now costs vastly more than the deploy
+> did.
+
+What it did, against the checks written before it ran:
+
+| Pre-registered | Observed |
+|---|---|
+| hard-down during the swap | **0.77 s** (predicted ~17 min) |
+| `/healthz` 503, body `indexing`, `Retry-After` | **503, `indexing`, `Retry-After: 5`** |
+| `POST /api/v1/have` 503 throughout | **503**, `{"error":"the song library is still being indexed; ask again shortly"}` |
+| `/have` ever 200 while indexing | **no** — the data-loss payload never appeared |
+| `/version` 200 throughout the index | **200 `473aee0`** at every poll, 0 s to 922 s |
+| after the index: 200 `ok`, 4,085 songs, `problems` null | **all three**, healthy at 942 s |
+
+The index itself took 942 s against 1008 s for the same 4,085 songs on `0c6fa84`
+— not a controlled comparison, and not claimed as one.
+
+And the bare-CR witness still holds on the new binary: exactly **1** song
+carrying `metadata_unreachable` naming `playlist_track = 4`, `song_length`
+intact at `1062206`, `playlist_track` absent from `raw_metadata`, and
+`GET /song/b67974e3….sng` → 200, 38,972,988 bytes, `SNGPKG`, `ETag ==
+package_hash`. Control characters across all 4,085 songs: **0**, which is the fix
+working rather than missing.
+
+Two honest footnotes. `POST /api/v1/have` is **200** after the index — the deploy
+script reported 400 for it, which was that script's own quoting (JSON through a
+nested `$()` inside a double-quoted string), not the server; re-asked with the
+body in a file it answers 200 with `library_total 4080`. And issue codes across
+the catalogue are now `chart_truncated: 2` and `metadata_unreachable: 1` — the
+second `chart_truncated` is new since the 3,067-song index and arrived with the
+1,018 newly unpacked songs. It is a chart-content finding, unrelated to this
+change, and is recorded rather than attributed.
+
+#### What was prepared in advance
+
+Everything below was checked before the deploy so that none of it happened under
+time pressure.
 
 ```
 image     registry.badassium.com/fatalexception/yarg-song-server:473aee0d
@@ -78,11 +131,12 @@ A health loop must match the **short sha `473aee0`**. Anything asserting a
 release-shaped `v0.1.x` string would tear down a correctly deployed server —
 this document has already been wrong about that once.
 
-**The one part no rollback undoes:** the deploy itself costs one more hard-down
-window of roughly seventeen minutes, because the binary being replaced is the one
-without the fix. What it buys is that every restart after it is soft, and the
-4,085-song index stops being an availability cliff that grows with the library.
-Both halves are measured rather than argued.
+**The one part no rollback undoes** *(written before the deploy, and WRONG — see
+the correction at the top of this section)*: the deploy was expected to cost one
+more hard-down window of roughly seventeen minutes, on the reasoning that the
+binary being replaced is the one without the fix. It cost **0.77 seconds**. What
+it does buy is real: the 4,085-song index stops being an availability cliff that
+grows with the library.
 
 #### What to verify afterwards — written BEFORE the deploy
 
