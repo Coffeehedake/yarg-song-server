@@ -89,6 +89,56 @@ func cutAtLineBreak(s string) (head, rest string) {
 	return s[:i], strings.TrimSpace(s[i+1:])
 }
 
+// splitModifier reads one line the way YARG does, which is NOT by splitting on '='.
+//
+// YARGTextReader.ExtractModifierName takes the key to be the maximal run of characters
+// ABOVE 32 that are not '=' - so the key ends at the first whitespace OR the first '='.
+// SkipWhitespaceAndEquals then advances over every character that is whitespace (except a
+// newline, which ends the line) or '=', and the value is whatever remains.
+//
+// Three divergences follow from that, and the old split-on-first-'=' reading got all three
+// wrong. Measured against the live 4,085-song library on 2026-11-02 - 3,476 song.ini files
+// found and 3,476 read, Marathon Hero 2 included - NONE of the three occurs even once:
+//
+//	A  "album track = 5"   YARG: key "album", value "track = 5".  Was: key "album track",
+//	                       value "5". YARG shows the player a wrong ALBUM; we showed a key
+//	                       the game never reads. 0 instances.
+//	B  "genre Rock"        YARG reads a pair from a line with NO '=' at all. We skipped the
+//	                       line entirely, so raw_metadata could never have revealed this -
+//	                       it had to be measured on the raw files. 0 instances.
+//	C  "name == Foo"       YARG skips BOTH '=' and reads "Foo". We kept the second one and
+//	                       stored "= Foo". 0 instances.
+//
+// So this changes no song in the library today. That is the argument for doing it now rather
+// than later: the code path runs for every song, and the behaviour it corrects is one nobody
+// is currently relying on. The 4,085-song before/after comparison is what proves the first
+// half of that claim.
+//
+// ok is false for a line that yields no key at all. A key is NOT rejected here for being
+// unknown to YARG: upstream discards unknown keys at this point (YARGIniReader only keeps a
+// name found in its outlines), and this reader deliberately keeps them, because the catalog
+// reports them as `unknown_keys` and an operator finding a typo'd key is worth more than
+// matching upstream's forgetting of it.
+func splitModifier(line string) (key, val string, ok bool) {
+	i := 0
+	for i < len(line) && line[i] <= ' ' {
+		i++
+	}
+	start := i
+	for i < len(line) && line[i] > ' ' && line[i] != '=' {
+		i++
+	}
+	if i == start {
+		return "", "", false
+	}
+	key = strings.ToLower(line[start:i])
+
+	for i < len(line) && (line[i] <= ' ' || line[i] == '=') {
+		i++
+	}
+	return key, strings.TrimRight(line[i:], " \t"), true
+}
+
 // reservedInKey are the characters the .sng writer cannot put at the start of a
 // re-emitted song.ini line (see sng.validateMeta). A key containing one is
 // dropped rather than carried into metadata, and nothing is lost by that: YARG
@@ -117,11 +167,10 @@ const reservedInKey = "=;\r\n"
 // reading nothing, because the server's catalog would then disagree with what
 // the player sees on their own screen.
 //
-// UNVERIFIED against upstream: the exact whitespace and multiple-'=' handling
-// lives in YARGTextReader.ExtractModifierName, which has not been read. The
-// behaviour here - split on the FIRST '=', trim spaces and tabs from both sides
-// - is the conventional Clone Hero reading and matches every chart tested, but
-// it is an assumption, not a measurement. Settle it before shipping a writer.
+// VERIFIED against upstream, 2026-11-02. This used to split on the FIRST '='
+// and trim both sides - "the conventional Clone Hero reading", recorded as an
+// assumption rather than a measurement. YARGTextReader has now been read and
+// the assumption was wrong in three separate ways; see splitModifier.
 func Parse(raw []byte) *File {
 	f := &File{Values: make(map[string]string)}
 
@@ -157,13 +206,8 @@ func Parse(raw []byte) *File {
 			continue
 		}
 
-		eq := strings.IndexByte(line, '=')
-		if eq < 0 {
-			continue
-		}
-		key := strings.ToLower(strings.TrimSpace(line[:eq]))
-		val := strings.TrimSpace(line[eq+1:])
-		if key == "" {
+		key, val, ok := splitModifier(line)
+		if !ok {
 			continue
 		}
 		// A bare CR inside the VALUE ends it, and whatever followed on this
@@ -179,8 +223,16 @@ func Parse(raw []byte) *File {
 		// being carried into metadata and refused there. YARG ignores such a
 		// key too, so the song keeps every field the game can see - whereas
 		// refusing it at the writer loses the whole song. See reservedInKey.
+		//
+		// NOT recorded in Dropped, and that changed with splitModifier. Dropped
+		// means "text YARG can read and we cannot represent", and it is what
+		// raises metadata_unreachable. A key can now only reach here by
+		// containing ';' - every other reserved character ends the key instead
+		// of entering it - and YARG reads such a name, finds it in no outline
+		// and discards it. Nothing is unreachable, so nothing is reported.
+		// Recording it would fire metadata_unreachable on every song.ini with a
+		// ';' comment line, which is a large share of any real library.
 		if strings.ContainsAny(key, reservedInKey) {
-			f.Dropped = append(f.Dropped, line)
 			continue
 		}
 

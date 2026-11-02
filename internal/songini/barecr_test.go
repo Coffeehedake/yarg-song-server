@@ -111,7 +111,17 @@ func TestLineBreakVariantsNeverProduceAnUnwritableValue(t *testing.T) {
 		// CR is 13, so YARG reads the key "na", fails the table lookup and
 		// discards the line. The next line must survive.
 		{"cr inside a key", "[Song]\r\nna\rme = X\r\nartist = Y\r\n", "artist", "Y", true},
-		{"cr inside a key drops it", "[Song]\r\nna\rme = X\r\nartist = Y\r\n", "na", "", false},
+		// "na" is now KEPT, and that is a deliberate change from the first
+		// version of this case. It used to assert the key was absent, because
+		// the old split-on-'=' reading produced the key "na\rme", which carries
+		// a reserved character and was therefore dropped. splitModifier stops
+		// the key at the CR exactly as ExtractModifierName does, so what is
+		// left is the perfectly ordinary unknown key "na" - and this reader
+		// keeps unknown keys on purpose (see TestUnknownKeysArePreservedNotDropped;
+		// 2,524 songs in the live library carry "link_name_a", which YARG also
+		// discards). Upstream forgets it; we report it as unknown_keys, which is
+		// how an operator finds a mangled line in their own library.
+		{"cr inside a key keeps the truncated name", "[Song]\r\nna\rme = X\r\nartist = Y\r\n", "na", "me = X", true},
 		// But a CR BETWEEN the key and its '=' is only whitespace to YARG:
 		// ExtractModifierName stops on it and SkipWhitespaceAndEquals skips
 		// it, so the pair is read. MEASURED - corpus case

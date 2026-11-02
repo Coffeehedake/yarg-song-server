@@ -69,8 +69,22 @@ func TestMalformedLinesAreSkippedNotFatal(t *testing.T) {
 	if v, _ := f.String("name"); v != "survives" {
 		t.Fatalf("name = %q", v)
 	}
-	if len(f.Values) != 1 {
-		t.Fatalf("Values = %v, want only the one good key", f.Values)
+	// A line with NO '=' is not malformed to YARG - ExtractModifierName ends the
+	// key at the first space and SkipWhitespaceAndEquals leaves the rest as the
+	// value, so "garbage line with no equals" is the pair garbage="line with no
+	// equals". YARG then discards it for being in no outline; we keep it as an
+	// unknown key, as we keep every unknown key. This used to assert one value
+	// because the old reader skipped any line without an '=' - which was the
+	// divergence, not the leniency.
+	if v, ok := f.String("garbage"); !ok || v != "line with no equals" {
+		t.Fatalf("garbage = %q %v, want %q true", v, ok, "line with no equals")
+	}
+	// A line that begins with '=' still yields no key at all, and is skipped.
+	if _, ok := f.String(""); ok {
+		t.Fatal(`"= novalue" produced an empty key`)
+	}
+	if len(f.Values) != 2 {
+		t.Fatalf("Values = %v, want exactly name and garbage", f.Values)
 	}
 }
 

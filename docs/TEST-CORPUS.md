@@ -1151,6 +1151,43 @@ containing a space is read, across a whole library, and it is not what made a so
 It wants its own change and its own oracle run, with a corpus case of its own. Recorded so the
 next person starts from a measurement rather than from the comment.
 
+#### Fixed 2026-11-02, and it was THREE divergences rather than one
+
+`splitModifier` now reproduces `ExtractModifierName` followed by `SkipWhitespaceAndEquals`.
+Reading the caller as well as the function — `YARGIniReader.ExtractModifiers` — turned one
+divergence into three, and the two extra ones are the interesting part:
+
+| | A line like | YARG reads | The old reader read |
+|---|---|---|---|
+| **A** | `album track = 5` | key `album`, value `track = 5` | key `album track`, value `5` |
+| **B** | `genre Rock` | key `genre`, value `Rock` | **nothing — the line was skipped** |
+| **C** | `name == Foo` | key `name`, value `Foo` | key `name`, value `= Foo` |
+
+**B is the one that could not have been found from our own output.** A line with no `=` was
+skipped, so it never reached `raw_metadata` — and the first attempt to size this change counted
+keys-containing-whitespace in `raw_metadata`, got a confident `0 of 4,085`, and was structurally
+blind to B. The count had to be taken from the **raw `song.ini` files**, which is a different
+instrument answering a different question. Eleventh entry for the table below, found while
+scoping the fix for the thing the table is about.
+
+**Measured before changing anything**, over the live library: **3,476 `song.ini` files found,
+3,476 read** — accounting asserted rather than eyeballed, after the earlier passes of this scan
+silently read fewer files than they found. **A: 0. B: 0. C: 0.** Not one line in the library
+exercises any of the three.
+
+That is the argument for doing it *then* rather than later. Nothing in the catalogue moves
+today, so the change is verifiable as a no-op against 4,085 real songs; the behaviour it
+corrects is one nobody is yet relying on. Wait until a pack arrives with such a line and the
+same change becomes one that silently rewrites a player's metadata.
+
+Two things deliberately **not** copied from upstream. YARG discards a key it finds in no
+outline; this reader keeps it, because `unknown_keys` is how an operator finds a mangled line
+in their own library — 2,524 songs carry `link_name_a`, which the game also throws away. And a
+key containing `;` is still dropped, but **no longer recorded in `Dropped`**: `Dropped` means
+"text YARG can read and we cannot represent" and is what raises `metadata_unreachable`, while a
+`;` key is one YARG reads and discards. Recording it would have fired that issue on every
+`song.ini` carrying a comment line.
+
 ## Ten instrument failures in one night — 2026-11-01, and the one rule that covers all of them
 
 Not an oracle run. A measurement post-mortem, recorded here because every one of these was a
