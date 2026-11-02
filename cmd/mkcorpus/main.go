@@ -217,6 +217,37 @@ var cases = []aCase{
 	// assumed either way; BareCRBadAlbum appearing in the cache settles it.
 	{dir: "26-barecr-before-equals", probe: "a bare CR between a key and its '=' - does YARG still read the pair",
 		ini: []byte("[Song]\nname = BareCR Before Equals\nartist = Corpus Artist\nyear = 1994\nalbum = BareCRGoodAlbum\nalbum\r = BareCRBadAlbum\n")},
+
+	// 27-29 probe how a line becomes a PAIR at all, which splitModifier changed on
+	// 2026-11-02 after reading ExtractModifierName and its caller. Each case sets a good
+	// album first and then a malformed line also claiming album, so the album that survives
+	// into songcache.bin says which reading the game really uses. None of these shapes
+	// occurs anywhere in the live library - 3,476 song.ini files scanned, zero hits - so
+	// the corpus is the only place they can be exercised against the real game.
+
+	// Key ends at the first whitespace, not at the '='. If YARG reads it the way the source
+	// says, the album becomes the whole remainder of the line.
+	//   SpaceKeyProbe present as the album -> key stopped at the space (what we now do)
+	//   SpaceKeyGoodAlbum survives         -> the line was read as key "album spacekeyprobe"
+	{dir: "27-space-in-key", probe: "a key containing a space - does YARG stop the key at the space and take the rest as the value",
+		ini: []byte("[Song]\nname = Space In Key\nartist = Corpus Artist\nyear = 1994\nalbum = SpaceKeyGoodAlbum\nalbum SpaceKeyProbe = SpaceKeyTail\n")},
+
+	// A line with NO '=' anywhere. ExtractModifierName takes the key, SkipWhitespaceAndEquals
+	// steps over the space, and the rest is the value - so this should be a pair despite
+	// looking like a comment or a stray line.
+	//   NoEqualsProbe present as the album -> a pair was read from a line with no '='
+	//   NoEqualsGoodAlbum survives         -> the line was skipped, as the old reader did
+	{dir: "28-no-equals", probe: "a line with no '=' at all - does YARG still read it as a key and value",
+		ini: []byte("[Song]\nname = No Equals\nartist = Corpus Artist\nyear = 1994\nalbum = NoEqualsGoodAlbum\nalbum NoEqualsProbe\n")},
+
+	// Two '=' between key and value. SkipWhitespaceAndEquals consumes BOTH, so the second
+	// should not survive into the value.
+	//   "=DoubleEqProbe" present -> the second '=' was kept, which is the old reading
+	//   "DoubleEqProbe" present without the leading '=' -> both were skipped
+	// The sentinel deliberately has no space after the second '=', so the two outcomes differ
+	// by one byte that a cache search can tell apart.
+	{dir: "29-double-equals", probe: "two '=' between key and value - is the second one skipped or kept in the value",
+		ini: []byte("[Song]\nname = Double Equals\nartist = Corpus Artist\nyear = 1994\nalbum ==DoubleEqProbe\n")},
 }
 
 func write(root string) error {

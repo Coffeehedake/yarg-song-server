@@ -1056,6 +1056,29 @@ where metadata is stored as length-prefixed UTF-8 and can simply be searched.
 
 Plus the real song, twice: as a loose folder and as our own repack of it.
 
+### And three more on 2026-11-02, for how a line becomes a pair at all
+
+`27-space-in-key`, `28-no-equals` and `29-double-equals`, added with the `splitModifier`
+change. Same technique and for the same reason — these songs are accepted, so `badsongs.txt`
+says nothing and only the cache can report what was *read*. Each sets a good album first and
+then a malformed line also claiming `album`, so whichever album survives names the reading.
+
+| Corpus case | Probes | Cache shows the new reading if | …the old reading if |
+|---|---|---|---|
+| `27-space-in-key` | `album SpaceKeyProbe = SpaceKeyTail` | album is `SpaceKeyProbe = SpaceKeyTail` | album stays `SpaceKeyGoodAlbum` |
+| `28-no-equals` | `album NoEqualsProbe`, no `=` at all | album is `NoEqualsProbe` | album stays `NoEqualsGoodAlbum` |
+| `29-double-equals` | `album ==DoubleEqProbe` | `DoubleEqProbe` with **no** leading `=` | `=DoubleEqProbe`, the second `=` kept |
+
+Case 29's sentinel has no space after the second `=` on purpose: the two outcomes then differ
+by a single byte, which a cache search can tell apart. A sentinel that differed only by
+whitespace would be indistinguishable in a length-prefixed binary blob.
+
+**These three have NOT yet been run against the game.** Our reader produces the predicted
+outcome for all three, and the prediction comes from reading `ExtractModifierName`,
+`SkipWhitespaceAndEquals` and `YARGIniReader.ExtractModifiers` — but reading source is not
+measuring behaviour, which is the entire point of this corpus. Until the oracle has run, the
+three rows above are a hypothesis with the discriminator already written down.
+
 | Step | Outcome |
 |---|---|
 | Corpus cases | 26 generated + the real song loose + the real song packed by us |
