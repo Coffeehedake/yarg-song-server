@@ -127,6 +127,25 @@ there.** This is the house rule — check the instrument before the subject — 
 on this one night it paid out twice, here and on the `splitext` song-folder count
 in ADR-008.
 
+**Amendment, measured later the same night: once authenticated, the registry's
+"no" becomes truthful, and the two cases separate.** Asked for three tags with
+the login in place:
+
+```
+0c6fa842   PRESENT            <- the control: the tag the live container runs
+fab8c90c   PRESENT
+473aee0d   NO: no such manifest
+```
+
+An *unbuilt* tag now says **`no such manifest`** — a different answer from
+`denied: access forbidden`, and an honest one. So restoring the login did more
+than enable pulls: it made "that tag does not exist" distinguishable from "you
+may not ask". The control tag stays in the loop anyway, because it costs one
+query and it is what tells you which of the two regimes you are in.
+
+*(Not independently verified here — measured on the box by the session holding
+the login, and recorded as theirs.)*
+
 #### The image the next deploy builds on
 
 ```
@@ -140,6 +159,14 @@ assumption: `git diff 0c6fa84..fab8c90 -- internal/config/` is **empty**, so no
 config key was added and this image cannot refuse the live
 `/data/yarg-song-server.conf`. The only Go change in that range is
 `internal/scan/extract.go` and its tests.
+
+**The rollback target is NOT the container that is running.** `0c6fa84` is live,
+and it predates the `.rar` directory-flag fix: a song folder inside a `.rar`
+read as a zero-byte file, which is why Marathon Hero 2 failed to unpack twice.
+`fab8c90` carries that fix and `473aee0` builds on it. So rolling a future
+deploy back onto the stopped `0c6fa84` container would silently give up `.rar`
+ingest. **Roll back to `fab8c90c`** — pinned by the digest recorded above — and
+keep the old container only as the second fallback.
 
 Registry credentials live only in docker's own store on the box
 (`/root/.docker/config.json`, mode 600, root-owned) — the route the *Registry

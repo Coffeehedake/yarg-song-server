@@ -245,6 +245,20 @@ defect, or it is decoration*:
 | `index()` refuses even when ready | empty-library-still-answers-200 |
 
 All four pass, all four were observed failing, and the tree was restored and re-verified green.
+
+**Independently re-verified on a second checkout**, by the session that did the ops work rather
+than by the author of the tests — `gofmt -l`, `go vet` and `go test ./... -count=1 -race` clean,
+and the dangerous defect reintroduced there too. It printed the payload the whole ADR exists to
+prevent, which is worth having in words:
+
+```
+have(empty list) answered 200 while indexing:
+{"library_total":0,"missing":[],"missing_count":0}
+```
+
+`library_total: 0` and `missing: []` from a 4,085-song server is exactly what tells a pruning
+client to delete a player's library. The test catches it **by value, not by inference** — which
+is the difference between a regression test and a comment.
 The last row is the one that stops the distinction being collapsed: a server that really has no
 songs must answer `200` with an empty list, and a pruning client is *right* to act on it.
 
