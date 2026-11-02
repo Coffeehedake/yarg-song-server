@@ -49,6 +49,34 @@ outage*, by indexing the same library in a throwaway instance beside the running
 one. It means the next decision about this does not have to be paid for with
 downtime, which is worth more than either figure.
 
+#### Running a throwaway probe: stamp it, or hash it
+
+A bare `go build` skips the Makefile's ldflags, so the binary reports `--version`
+as **`dev`** — the one answer that cannot be checked against anything. Tonight's
+own rule, *ask the artifact and never predict it*, applies to a scratch probe as
+much as to a registry image. Stamp it:
+
+```bash
+V=$(git describe --tags --always --dirty)
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+  -ldflags "-s -w -X main.version=$V" -o yss-probe ./cmd/yarg-song-server
+```
+
+If a probe is already running unstamped, the fallback is to identify it by its
+**bytes** rather than by a claim about its provenance: compare the sha256 of the
+binary you built with the one on the box, and confirm the process is executing
+that file.
+
+```bash
+readlink -f /proc/<pid>/exe     # which file is running
+sha256sum <that file>           # against the local build
+```
+
+Done for the 4,085-song equivalence probe: `40dd7c12…` on both sides, with
+`/proc/<pid>/exe` pointing at it. A stamp is still better, because it needs no
+original to compare against — but a matching hash is a measurement where written
+provenance is only an assertion.
+
 The fourth row is a **throwaway instance on port 8123** indexing the enlarged
 library while 8099 kept serving, so it carries no outage figure. It also ran a
 *different binary* — a cross-compiled `v0.1.2-40-gfab8c90`, not the live
