@@ -138,10 +138,17 @@ fab8c90c   PRESENT
 ```
 
 An *unbuilt* tag now says **`no such manifest`** — a different answer from
-`denied: access forbidden`, and an honest one. So restoring the login did more
-than enable pulls: it made "that tag does not exist" distinguishable from "you
-may not ask". The control tag stays in the loop anyway, because it costs one
-query and it is what tells you which of the two regimes you are in.
+`denied: access forbidden`, and an honest one.
+
+*Measured vs inferred, because this was first written down here as though it
+were all one thing:* the two **wordings** in the two **auth states** were
+observed. That the authentication is what *causes* the difference is a reading
+consistent with them, not a controlled test — nobody re-broke the login to
+confirm the old wording comes back. So treat "authenticated, the registry's no
+is legible" as the working explanation and not as established.
+
+Which is exactly why **the control tag stays in the loop regardless**: it costs
+one query, and it makes the distinction unnecessary to reason about.
 
 **Put the control tag in any WATCHER, not just in a one-off check.** A poll that
 asks only about the tag it is waiting for cannot tell "not built yet" from "the
@@ -182,13 +189,31 @@ config key was added and this image cannot refuse the live
 `/data/yarg-song-server.conf`. The only Go change in that range is
 `internal/scan/extract.go` and its tests.
 
-**The rollback target is NOT the container that is running.** `0c6fa84` is live,
-and it predates the `.rar` directory-flag fix: a song folder inside a `.rar`
-read as a zero-byte file, which is why Marathon Hero 2 failed to unpack twice.
-`fab8c90` carries that fix and `473aee0` builds on it. So rolling a future
-deploy back onto the stopped `0c6fa84` container would silently give up `.rar`
-ingest. **Roll back to `fab8c90c`** — pinned by the digest recorded above — and
-keep the old container only as the second fallback.
+**The instinctive rollback target is THE BUILD CURRENTLY RUNNING, and it is the
+wrong one.** Under pressure the version you reach for is the one you just came
+from — here `0c6fa84`, which is live and which **predates the `.rar`
+directory-flag fix**: a song folder inside a `.rar` read as a zero-byte file,
+which is why Marathon Hero 2 failed to unpack twice. The *stopped* container
+(`v0.1.8-unpack`) is older still. So both obvious fallbacks silently give up
+`.rar` ingest, and nothing notices until the next archive arrives.
+
+**Roll back to `fab8c90c`**, pinned by the digest recorded above.
+
+Ask each candidate whether it CONTAINS the fix, rather than which commit came
+first — ancestry answers a question about the graph, a rollback cares about the
+behaviour of the thing you land on:
+
+```bash
+git show <candidate>:internal/scan/extract.go | grep -c storedName
+```
+
+```
+0c6fa84   0   -> .rar unpack BROKEN     (live; the instinctive target)
+fab8c90   3   -> .rar dirs fixed        <- roll back here
+473aee0   3   -> .rar dirs fixed
+```
+
+One command, and it answers what the ancestry check only implies.
 
 Registry credentials live only in docker's own store on the box
 (`/root/.docker/config.json`, mode 600, root-owned) — the route the *Registry
