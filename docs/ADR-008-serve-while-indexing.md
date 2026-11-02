@@ -349,16 +349,34 @@ songs must answer `200` with an empty list, and a pruning client is *right* to a
     | `package_hash` over the 26-case corpus, old binary vs new | **0 of 26 moved** |
     | pinned `package_hash` on a fixed fixture | unchanged, and validated against the *spec* by an independent implementation |
     | 150 songs × 5 MB = 839 MB, `scan`, best of two | **3.60s → 1.97s, 1.83×** |
+    | **the live 4,085-song library, both binaries, same moment** | **0 of 4,085 `package_hash` moved** |
+    | …and `chart_hash` | 0 of 4,085 moved |
+    | …and the per-asset SHA-256s underneath them | **27,541 checked, 0 songs with any difference** |
+    | **index time on the real array** | **15m37.632s → 9m38.478s, 1.62×** |
 
     `song.ini` is still opened twice — about a kilobyte, and plumbing its bytes out of
     `ScanDir` would complicate the one path that must stay easy to follow.
 
-    **1.83× is the local number and is NOT a prediction for vault2.** It was measured on ENG-1's
-    NVMe, where some of the old second read was served from page cache; the ratio also includes
-    the directory walk and JSON encoding, which this change does not touch. The array bench found
-    the second pass *no* cheaper than the first (p1/p2 0.970), which points higher — but this
-    document predicted a seventeen-minute outage that turned out to be 0.77 seconds, so the only
-    honest statement is that the vault2 figure is unmeasured until somebody measures it there.
+    **The vault2 figure was deliberately left unmeasured rather than predicted, and then
+    measured: 1.62×.** 15m37.632s on `473aee0` against 9m38.478s on `6cbea44`, both indexing the
+    same 4,085 songs on the same box. Note which way the prediction would have gone wrong: the
+    local NVMe number was 1.83× and the array bench (p1/p2 0.970) pointed *higher* than that, so
+    a guess from either would have overstated it. Having been three orders of magnitude wrong
+    about the deploy outage earlier the same night, not guessing was the whole point.
+
+    It is a measurement, not a controlled A/B: the two runs were eleven hours apart, and the
+    `6cbea44` run happened *while the live server was also running and serving*, which if
+    anything handicaps it. So 1.62× is conservative rather than tuned.
+
+    **The equivalence claim is about the library, not about fixtures.** Both binaries indexed the
+    live library and every `package_hash` was compared — 4,085 of 4,085 unchanged, `chart_hash`
+    too, and the 27,541 per-asset SHA-256s underneath them, because a compensating pair of errors
+    could leave a rolled-up hash intact while the digests beneath it moved. That covers what
+    `mkcorpus` cannot synthesise: 481 `.yargsong` files, triple-nested Marathon Hero paths,
+    CP437-derived folder names, the single `album.PNG` in 26,575 asset names, the truncated Beenox
+    chart and the bare-CR song. And it is attributable: the only non-test Go change between those
+    two commits is this one, verified by `git diff`, so nothing else could have accounted for a
+    difference.
 
   - *~~Stop hashing every file twice~~ — the original note, kept for the reasoning:* `scan()` called `collectAssets` and then
     `packageHash` over the same `names`, and both go through `assetFor`, which is
