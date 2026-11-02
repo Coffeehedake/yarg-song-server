@@ -1220,6 +1220,37 @@ Three rules fall out of that, and the second is the one nobody writes down:
    `ec39edc6a292076a7b37fff629588000dbba8a98dfa05e799426f635d7996f62`. Without that, a pin only
    says "the code still does what it did", which is worthless if what it did was wrong.
 
+### What the hole was actually worth: 1 uppercase name in 26,575
+
+The real library was then asked, rather than reasoned about — one read-only pass over
+`/api/v1/songs` across 4,085 songs:
+
+| | |
+|---|---|
+| asset names collected | 26,575 |
+| **distinct** asset names | **41** |
+| non-ASCII filenames | **0** |
+| filenames containing uppercase | **1** — `album.PNG` |
+| non-ASCII *and* cased | 0 |
+
+So the lowercasing in `package_hash` is load-bearing for exactly **one song in 4,085**. Had the
+pin stayed unable to fail on it, and had someone later dropped `strings.ToLower`, the blast
+radius would have been one `package_hash` moving: one `ETag`, one silent re-download for every
+client, no error, no 500, no log line. **It was not just a test that could not fail — it was a
+test that could not fail about a defect that could not be seen.** The second is worse, and it is
+the case regression tests exist for.
+
+Unicode case folding is therefore untested by any fixture, and **deliberately stays that way**:
+a non-ASCII *filename* is exactly the fixture `CLAUDE.md` forbids, because macOS normalises
+filenames to NFD and `macos-verify.yml` fails when macOS and Linux disagree hash for hash. The
+folding is covered instead by feeding a non-ASCII name as a Go **string literal** through
+`putBytes`, which never touches the filesystem — no file, nothing to normalise, and the test
+asserts the un-folded name hashes differently so its green cannot be vacuous.
+
+One more thing that pass turned up, worth having for the differential-index design: **41 distinct
+asset names across the whole library.** The name space is tiny and highly repetitive, so keying a
+cache on names is cheap and the per-file digests are the entire cost.
+
 And the equivalence check that a single fixture cannot replace: the old binary and the new one
 were both run over the whole 26-case corpus — archives, `.sng`, `.yargsong`, broken metadata,
 the bare CR — and **0 of 26 `package_hash` values moved**. One fixture agreeing proves much less

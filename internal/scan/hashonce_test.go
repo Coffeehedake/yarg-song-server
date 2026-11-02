@@ -1,6 +1,8 @@
 package scan
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -198,5 +200,59 @@ func TestPrimedChartDigestMatchesAssetFor(t *testing.T) {
 
 	if primed != *read {
 		t.Fatalf("primed digest disagrees with assetFor\n  primed %+v\n  read   %+v", primed, *read)
+	}
+}
+
+// TestNonASCIINamesAreLowercasedInTheHash covers the layer below the fixture: a
+// non-ASCII name, where strings.ToLower does real Unicode case folding rather
+// than the ASCII no-op that ReadMe.TXT exercises.
+//
+// DELIBERATELY NOT A FIXTURE FILE. `.gitattributes` and CLAUDE.md say never add a
+// fixture a platform is allowed to rewrite, and a non-ASCII FILENAME is exactly
+// that: macOS normalises filenames to NFD, so the same fixture would hash
+// differently there and .github/workflows/macos-verify.yml - which fails if
+// macOS and Linux disagree hash for hash - would go red for a reason unrelated
+// to this code. Same trap as the reference-notes.chart CRLF one, different
+// clothes.
+//
+// putBytes takes a name as a Go string literal and never touches the
+// filesystem, so the hash construction can be fed a non-ASCII name with nothing
+// on disk to normalise. The expected value is computed from the documented
+// algorithm here rather than copied from a run, so it is not circular.
+//
+// Why bother, given the real library has 0 non-ASCII names in 26,575? Because
+// the ONE uppercase name it does have - album.PNG - means dropping the
+// lowercasing moves exactly one song's package_hash in 4,085: one ETag, one
+// silent re-download, no error anywhere. A library with non-ASCII names would
+// make that bigger, and nothing else would catch it.
+func TestNonASCIINamesAreLowercasedInTheHash(t *testing.T) {
+	const upper = "ÄLBUM.PNG"
+	const lower = "älbum.png"
+	body := []byte("cover bytes")
+
+	d := newAssetDigests(nil) // nil fs.FS: putBytes must never open anything
+	d.putBytes(upper, body)
+	got, err := packageHashFrom(d, []string{upper})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The documented algorithm, spelled out: sorted "<lowercased name>:<sha256>\n"
+	// lines, hashed. One file, so the sort is trivial.
+	contentSum := sha256.Sum256(body)
+	line := lower + ":" + hex.EncodeToString(contentSum[:]) + "\n"
+	lineSum := sha256.Sum256([]byte(line))
+	want := hex.EncodeToString(lineSum[:])
+
+	if got != want {
+		t.Errorf("non-ASCII name was not lowercased the way the algorithm says\n  got  %s\n  want %s\n  (if strings.ToLower were dropped this would differ)", got, want)
+	}
+
+	// And prove the assertion is load-bearing: the un-lowercased name hashes
+	// differently, so a green above really does mean the folding happened.
+	rawLine := upper + ":" + hex.EncodeToString(contentSum[:]) + "\n"
+	rawSum := sha256.Sum256([]byte(rawLine))
+	if hex.EncodeToString(rawSum[:]) == want {
+		t.Fatal("ÄLBUM.PNG and älbum.png hash the same, so this test cannot detect the defect")
 	}
 }
