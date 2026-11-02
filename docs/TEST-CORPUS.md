@@ -1193,10 +1193,41 @@ blind to B. The count had to be taken from the **raw `song.ini` files**, which i
 instrument answering a different question. Eleventh entry for the table below, found while
 scoping the fix for the thing the table is about.
 
-**Measured before changing anything**, over the live library: **3,476 `song.ini` files found,
-3,476 read** — accounting asserted rather than eyeballed, after the earlier passes of this scan
-silently read fewer files than they found. **A: 0. B: 0. C: 0.** Not one line in the library
-exercises any of the three.
+**Measured before changing anything**, over the live library: 3,476 `song.ini` files found,
+3,476 read — accounting asserted rather than eyeballed. **A: 0. B: 0. C: 0.**
+
+**That measurement was wrong, and the 4,085-song parity run is what caught it.** 16 songs
+changed. The corrected scan, over the whole library rather than one subtree and counting both
+shapes of B:
+
+| | lines |
+|---|---|
+| A, key contains whitespace | 0 |
+| B1, no `=`, with a value | 0 |
+| **B2, no `=`, bare key alone** | **27** — 16 × `icon_rbtp_vol_1`, 11 × `;` |
+| C, multiple `=` | 0 |
+
+3,604 found, 3,604 read. **Two independent failures** produced the earlier zero, and both
+deserve naming because the scan *asserted its own completeness* and was believed:
+
+1. **The scan root was wrong.** It walked `songs/unpacked/` — but 128 song.ini files live
+   directly under `songs/`, and all 16 affected songs are there. `found == read` proves a scan
+   read everything it FOUND; it says nothing about whether it found everything that EXISTS.
+   Those are different claims and only the first was checked.
+2. **The B detector excluded the shape that occurs.** It required `key<space>value` and so
+   scored a bare `key` with no value as "not B" — which is exactly what
+   `icon_rbtp_vol_1` is.
+
+The line is a typo left in place: `icon_rbtp_vol_1` on one line, `icon=rbtp_vol_1` corrected on
+the next. YARG reads the stray name, finds it in no outline, discards it, then reads `icon`
+properly. So does this reader — and then keeps the stray in `unknown_keys`.
+
+**What actually changed: 16 of 4,085 songs gained one entry in `unknown_keys`. No
+player-visible field moved anywhere, no `chart_hash`, no `package_hash`, and the issue census
+is identical either side (2 `chart_truncated`, 1 `metadata_unreachable`).** Keeping it is the
+faithful choice rather than the convenient one: YARG *does* read a bare known key as that key
+with an empty value, so suppressing value-less lines would diverge again the moment one of them
+is a real key. None of the 27 is.
 
 That is the argument for doing it *then* rather than later. Nothing in the catalogue moves
 today, so the change is verifiable as a no-op against 4,085 real songs; the behaviour it
