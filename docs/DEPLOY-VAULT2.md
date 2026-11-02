@@ -1347,6 +1347,50 @@ What would falsify rather than confirm:
   some path other than the designed one, and the issue plumbing in `internal/scan`
   is not wired to what `songini` dropped.
 
+### RESULT — all four predictions hit, 2026-11-02, and the fix is now verified USEFUL
+
+The library was re-indexed at `00:20:22Z` and came back with 4,085 songs. Read off
+the live server directly rather than from another session's transcription of it:
+
+```
+issues      [{"code":"metadata_unreachable",
+              "detail":"1 piece(s) of song.ini text are unreachable to YARG and
+                        were dropped: playlist_track = 4"}]
+            -- and exactly ONE song in 4,085 carries that code
+raw_metadata song_length = "1062206"      intact
+             playlist_track               ABSENT
+GET /song/b67974e38009f0c20180ab46351274885888d894.sng
+            -> 200, 38,972,988 bytes, magic SNGPKG, ETag == package_hash
+date_added  2026-11-02T00:26:26Z          indexed in this run
+problems    null                          as predicted; it never carries issue codes
+```
+
+**So the caveat recorded above is now discharged.** The bare-CR fix was
+*verified harmless* on this library and explicitly **not** verified useful; the
+endpoint that returned HTTP 500 for this song now returns a 38 MB archive with a
+matching strong `ETag`, and the only field lost is the one YARG loses too. The
+fix has a real-library witness, not just a corpus case — and the prediction was
+written down in `73b3179` **before** the index that produced it, so the match is
+a measurement rather than a reading.
+
+Note the `source_path`: `unpacked/Marathon Hero 2/Marathon Hero 2/Marathon Hero 2/…`
+— triple-nested. That is the doubled-nesting unpack issue, not a CR issue, and it
+is cosmetic here.
+
+#### A fifth near-miss, and the raw dump saved it again
+
+A convenience grep for "is `playlist_track` present?" printed
+**`"playlist_track":16000`**, which reads as a flat contradiction of the
+prediction. It is not. That is the **top-level catalog field**, carrying the
+default for a key that was never set; the prediction is about `raw_metadata`,
+where the key is genuinely absent. Two fields, one name, opposite answers.
+
+Reported as a grep line it would have been a *false falsification of a correct
+prediction*. What saved it was capturing the whole payload and judging it
+afterwards instead of pre-selecting fields — the fifth instance of one error in
+one night, and the fifth time the raw dump was the thing that caught it. See
+*Five instrument failures in one night* in `TEST-CORPUS.md`.
+
 ### The service was hard down for 10m47s, and that is the real cost
 
 21:21:31Z to 21:32:18Z. `/healthz` was **connection-refused** for the whole

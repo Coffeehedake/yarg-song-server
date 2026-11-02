@@ -40,6 +40,14 @@ and is paid in full each time the process starts.
 | 1,369 | 3m39s | 3m39s | 0.160 s |
 | 3,067 (`0c6fa84`, tonight) | 10m40.186s | **10m47s**, 21:21:31Z–21:32:18Z | 0.209 s |
 | 4,085 (probe, same night) | 16m34.49s | n/a — ran beside the live server | 0.244 s |
+| 4,085 (**live**, `0c6fa84`) | 16m48.052s | **16m53s**, 00:20:21Z–00:37:14Z | 0.247 s |
+
+**The probe predicted the live cost to within 14 seconds** — 16m34.49s against
+16m48.052s on the real container, 1.4% apart. That validates the method as much
+as the number: *a future restart's cost can be measured without taking an
+outage*, by indexing the same library in a throwaway instance beside the running
+one. It means the next decision about this does not have to be paid for with
+downtime, which is worth more than either figure.
 
 The fourth row is a **throwaway instance on port 8123** indexing the enlarged
 library while 8099 kept serving, so it carries no outage figure. It also ran a
@@ -237,8 +245,17 @@ files.
     twice**. That matches the only profile anyone has taken: `/proc/<pid>/io` on the 4,085-song
     probe reported `rchar` **234,002,202,475** — 234 GB of `read()` bytes, with CPU at ~77% of
     elapsed, so compute-bound rather than IO-blocked, and `read_bytes` 0 because shfs/FUSE
-    hides the block layer. 234 GB over a library of roughly 117 GB is the doubling, visible
-    from outside.
+    hides the block layer.
+    **The doubling is now quantified rather than inferred by halving that number.** The
+    catalogue carries every asset's size, so the library total can be summed exactly, with no
+    disk I/O at all: **118,083,305,071 bytes — 118.08 GB across 27,541 asset files**, 28.9 MB
+    and 6.7 files per song over 4,085 songs. Against that, `rchar / assets` = **1.982**. One
+    read of the library would be 118 GB and two would be 236 GB; the measurement is 234 GB.
+    *One residual, stated rather than rounded away:* the ratio should sit slightly **above**
+    2.0, because the chart and `song.ini` are not in `assets` and `packageHash` reads them on
+    top of the two asset passes. It is 1.982 — about 0.9% under the model. That shortfall is
+    unexplained. It does not threaten the conclusion, because 1.98 is not 1.0, but anyone
+    quoting "exactly 2×" is quoting a round number rather than this measurement.
     **The fix is to compute each file's SHA-256 once and hand the values to `packageHash`
     instead of re-reading.** It is the only one of these three with *no* semantic risk:
     `package_hash` is the sorted `<name>:<sha256>` construction, so identical per-file digests
@@ -263,10 +280,14 @@ files.
   above:** full-file SHA-256 dominates, every file is hashed twice, and the index is
   compute-bound at ~77% CPU rather than blocked on the array. That came from `/proc/<pid>/io`
   on the probe plus three `assetFor` call sites in `scan.go` — no profiler, no instrumentation.
+  The byte total is **no longer** among the gaps: it was summed from the catalogue at
+  118.08 GB, giving a measured ratio of 1.982 rather than an assumed 2.
   What is still *not* measured: the split between the two hashing passes and the directory
-  walk itself, and the library's byte total taken independently rather than inferred by halving
-  `rchar`. So "about 117 GB" and "about 2×" are arithmetic on one number, not two
-  measurements.
+  walk itself, and why the ratio lands 0.9% *below* a model that predicts slightly above 2.0.
+  Nothing here distinguishes "the two passes cost the same" from "one is cheaper because the
+  page cache serves the second" — on FUSE with 118 GB against the box's RAM, the second read
+  almost certainly misses cache, but that is reasoning rather than a measurement, and it is
+  the one number that decides whether hashing once wins the full ~2× or rather less.
 - **That 503 is handled well by every client, as opposed to safely.** `yarg-sync` is
   established above to fail closed. YARG itself, reading a mirror folder on disk under
   increment 1, never talks to this server at all. Any third-party caller is unknown.

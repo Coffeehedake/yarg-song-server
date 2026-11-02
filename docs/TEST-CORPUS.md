@@ -1151,7 +1151,7 @@ containing a space is read, across a whole library, and it is not what made a so
 It wants its own change and its own oracle run, with a corpus case of its own. Recorded so the
 next person starts from a measurement rather than from the comment.
 
-## Five instrument failures in one night — 2026-11-01, and the one rule that covers all of them
+## Seven instrument failures in one night — 2026-11-01, and the one rule that covers all of them
 
 Not an oracle run. A measurement post-mortem, recorded here because every one of these was a
 **correct number read as the answer to a question it was not answering**, and the corpus exists
@@ -1164,9 +1164,10 @@ to stop exactly that.
 | `/api/v1/library` grepped for a song name | "is this song present?" | that endpoint returns summary counts and carries no song names at all |
 | `/api/v1/library` → `problems: 0` | "was the song flagged `metadata_unreachable`?" | `Problems` only takes `r.Err != nil`; song issues live in `catalog.Song.Issues` and nothing aggregates one into the other |
 | `os.path.splitext` on `source_path` | "how many songs are loose folders?" | song folders are full of dots — "Mr. Big - To Be With You", "ii (2x bass pedal expert+)" — so ~190 became invented extensions |
+| grep for `playlist_track` on the song payload | "was the field dropped?" | it printed `"playlist_track":16000` — the TOP-LEVEL catalog field carrying the unset default, not the `raw_metadata` key the prediction was about |
 | `docker manifest inspect` → `denied` | "did CI build this tag?" | a refusal about *authentication* is indistinguishable from "never built"; a control tag that certainly existed returned the same |
 
-Four of those were about to be reported as findings. Each would have been a confident wrong
+Most of those were about to be reported as findings, and the `playlist_track` one would have been a false *falsification* of a correct prediction rather than a false confirmation — the same error, pointing the other way. Each would have been a confident wrong
 answer with a real number attached, and none of them would have looked like a mistake.
 
 **The rule: when the question is "did X happen", capture the WHOLE answer and judge the record
