@@ -47,7 +47,59 @@ docker run -d --name yarg-song-server \
 the command line. `Labels` is empty, which is the "not Unraid-managed" note
 further down, still true.
 
-### Eighth deployment — `6cbea44`, hash-once. PRE-REGISTERED, NOT YET RUN
+### Eighth deployment, 2026-11-02 — `6cbea44`, hash-once. DEPLOYED, invariants held
+
+**Live now:** `6cbea44` on digest `sha256:7bda5f29…`, 4,085 songs, `problems` null.
+
+| Pre-registered | Observed | |
+|---|---|---|
+| hard-down ≈ 1 s | **0.977 s** — prev finished `12:27:46.736Z`, new started `12:27:47.712Z`, `listening` at `12:27:48.141Z` | ✅ |
+| `/healthz` 503 `indexing` + `Retry-After` | **503, `indexing`, `Retry-After: 5`** | ✅ |
+| `POST /api/v1/have` 503, never 200 | **503** throughout; never 200 while indexing | ✅ |
+| `/version` 200 throughout | **200 `6cbea44`** at every poll, 0 s–621 s | ✅ |
+| **`package_hash`: 0 of 4,085 moved** | **0** | ✅ |
+| `chart_hash`: 0 of 4,085 moved | **0** | ✅ |
+| issue codes unchanged | `chart_truncated: 2`, `metadata_unreachable: 1` — and **0** songs with a changed issue set | ✅ |
+| the `album.PNG` song, checked by name | `15465de7…` **unchanged** | ✅ |
+| index ≈ **9m38s** | **10m38.744s** | ❌ |
+
+Also 0 songs absent and 0 newly present, so the before/after compared the same
+4,085 songs rather than a shifted set — the gap the stability check existed to
+protect.
+
+#### The one miss: the probe was 9.4% OPTIMISTIC, and its accuracy is not a property of the method
+
+```
+baseline 473aee0   937.632s
+probe predicted    578.478s      implied 1.621x
+production actual  638.744s      real    1.468x     probe -9.4%
+```
+
+The throwaway-instance method predicted the `473aee0` deploy to **within 14
+seconds (1.4%)**, and this one to within **60 seconds (9.4%)** — and in the
+optimistic direction both in the ratio and in the absolute. So the earlier 1.4%
+was not a property of the method; its error varied by a factor of seven between
+two runs on the same box and the same library.
+
+It is still the right tool — it costs no downtime and it was the only way to know
+the sign and rough size of the win beforehand — but **a probe figure is an
+estimate, not a measurement of the thing that will happen.** Quote it with its
+error bar or quote it as a floor. The cause of this run's gap is not established:
+the probe was a bare process and production is a container, and the production run
+had a *warmer* page cache (12 minutes after the probe), which should have made it
+faster rather than slower. Recorded as unexplained rather than attributed.
+
+**The real win on this library is therefore 1.468×**, which is also a floor: the
+baseline ran essentially alone while this run followed a probe.
+
+#### Housekeeping noted, not acted on
+
+Six containers now exist for this image, five of them stopped — back to
+`yarg-song-server-prev` from seven weeks ago on `:027d331f`. The two most recent
+are deliberate fallbacks; the older ones are clutter on somebody's decision, not
+mine to remove.
+
+#### What was pre-registered, before the swap
 
 Written before the swap so the result is read against a record. Baseline snapshot
 taken from the live server minutes earlier: `built_at 01:09:32.181Z`, 4,085 songs,

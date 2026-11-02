@@ -353,6 +353,7 @@ songs must answer `200` with an empty list, and a pruning client is *right* to a
     | …and `chart_hash` | 0 of 4,085 moved |
     | …and the per-asset SHA-256s underneath them | **27,541 checked, 0 songs with any difference** |
     | **index time on the real array** | **15m37.632s → 9m38.478s, 1.62×** |
+    | **index time IN PRODUCTION** | **15m37.632s → 10m38.744s, 1.468×** — the probe was 9.4% optimistic |
 
     `song.ini` is still opened twice — about a kilobyte, and plumbing its bytes out of
     `ScanDir` would complicate the one path that must stay easy to follow.
