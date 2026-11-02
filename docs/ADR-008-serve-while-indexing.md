@@ -278,9 +278,14 @@ songs must answer `200` with an empty list, and a pruning client is *right* to a
     stems and every leftover file; `packageHash` then hashes **every** file again, the stems
     included. Since audio is almost all of the bytes, **an index reads the library about
     twice**. That matches the only profile anyone has taken: `/proc/<pid>/io` on the 4,085-song
-    probe reported `rchar` **234,002,202,475** — 234 GB of `read()` bytes, with CPU at ~77% of
-    elapsed, so compute-bound rather than IO-blocked, and `read_bytes` 0 because shfs/FUSE
-    hides the block layer.
+    probe reported `rchar` **234,002,202,475** — 234 GB of `read()` bytes — with `read_bytes` 0
+    because shfs/FUSE hides the block layer, and 753s of CPU against 974s elapsed.
+    *That 77% was first written down here as "compute-bound rather than IO-blocked", and that
+    overstates it.* CPU/wall = **0.773 is mean parallelism below one**: the index is effectively
+    **single-threaded with about 23% of its wall time spent waiting**. Which matters, because it
+    names a *second* lever — hashing files concurrently — that is independent of hashing them
+    once. Whether the walk can be parallelised safely is unmeasured and not proposed here; the
+    point is only that **~2× is not the ceiling**.
     **The doubling is quantified rather than inferred by halving that number.** The catalogue
     carries every asset's size, so the library total can be summed exactly, with no disk I/O at
     all: **118,083,305,071 bytes — 118.08 GB across 27,541 asset files**, 28.9 MB and 6.7 files
@@ -305,8 +310,12 @@ songs must answer `200` with an empty list, and a pruning client is *right* to a
     safety story is a fixture test asserting a known folder still hashes to the same string,
     **red-proofed by breaking it deliberately first** — per *tune a regression test against the
     defect, or it is decoration*. Expected win up to ~2× for free, before any cache exists.
-  - *Parallelise the walk.* Bounded workers; the array is the likely ceiling, so the win is
-    unknown until measured.
+  - *Hash files concurrently.* Mean parallelism during the 4,085-song index was **0.773** —
+    below one — so the index is effectively single-threaded and spends about 23% of its wall
+    time waiting. This is **independent of hashing once**: one removes half the work, the other
+    stops the remaining half running on a single core. Bounded workers, and the array may
+    become the ceiling, so the win is unknown until measured — but the two compose, and the
+    ~2× above is therefore not the ceiling.
   - *Persist the index and skip re-hashing unchanged songs,* keyed on path+size+mtime. This is
     the real answer to "scales with library size" and it is the dangerous one: `package_hash` is
     both the `ETag` and the sync identity, so one stale cache entry serves wrong bytes under a
@@ -317,9 +326,11 @@ songs must answer `200` with an empty list, and a pruning client is *right* to a
 ## What this ADR does not establish
 
 - ~~**Where the 10m40s actually goes.**~~ **Largely answered, and the answer is in Consequences
-  above:** full-file SHA-256 dominates, every file is hashed twice, and the index is
-  compute-bound at ~77% CPU rather than blocked on the array. That came from `/proc/<pid>/io`
-  on the probe plus three `assetFor` call sites in `scan.go` — no profiler, no instrumentation.
+  above:** full-file SHA-256 dominates and every file is hashed twice. That came from
+  `/proc/<pid>/io` on the probe plus three `assetFor` call sites in `scan.go` — no profiler, no
+  instrumentation. What it does **not** establish is that the index is *compute-bound*: at
+  CPU/wall 0.773 it is single-threaded with real waiting, and an earlier draft of this section
+  claimed otherwise.
   Two gaps that were open earlier are now closed by measurement. The **byte total** was summed
   from the catalogue at 118.08 GB, and the ratio corrected to 2.023. And **the two passes cost
   the same**, so eliminating one really does remove half the work:
@@ -336,9 +347,20 @@ songs must answer `200` with an empty list, and a pruning client is *right* to a
   answered: it is not nearly free.
 
   What is still *not* measured: the split between the hashing passes and the directory walk
-  itself, and why the probe's aggregate implies ~311 MB/s of SHA-256 per busy second while this
-  bench sees ~175 MB/s wall. Different tool, different conditions, not reconciled. The sample
-  is also 0.16 GB against a 118 GB library.
+  itself, and a throughput gap between the probe and the bench — **240 MB/s against 175 MB/s
+  wall, a factor of 1.37.**
+
+  > *An earlier draft put that gap at 311 against 175, or 1.78×, and that was a unit
+  > conflation rather than a measurement.* 311 MB/s is `rchar` divided by **CPU** time — bytes
+  > per *busy* second. 175 MB/s is bytes per *wall* second. Comparing them pits a
+  > rate-while-working against a rate-including-waiting. The probe's wall figure is
+  > 238.92 GB / 994.49s = **240 MB/s**, and that is the number the bench is comparable to.
+
+  The residual 1.37× is left open with a stated likely cause rather than closed: the bench is 6
+  folders and 0.16 GB against the probe's 4,085 folders and 239 GB, so the file-size mix
+  differs by orders of magnitude and large sequential stems get readahead a small sample mostly
+  does not. That is reasoning, not a measurement, and it does not bear on the finding — which
+  rests on the two passes costing the same, not on either absolute rate.
 - **That 503 is handled well by every client, as opposed to safely.** `yarg-sync` is
   established above to fail closed. YARG itself, reading a mirror folder on disk under
   increment 1, never talks to this server at all. Any third-party caller is unknown.

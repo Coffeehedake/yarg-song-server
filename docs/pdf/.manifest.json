@@ -9,7 +9,7 @@
     "docs/ADR-005-upload-check.md": "8afe6d0d7105eddc35becc3b4193fc7ae41337f496f2971be9c395257a7399e5",
     "docs/ADR-006-self-update.md": "0720fd32fd7828b3116db19283cd9ca2cf0f99a299260abf75512e4f107a70c4",
     "docs/ADR-007-rar-ingest.md": "4cf0c92e751085a0a43831cb60792a44a541804e7f9addeb0b62bb5213722ac5",
-    "docs/ADR-008-serve-while-indexing.md": "051cce9bd19d7eeefad3282fbddb4cd797a5847339b06fd7e3136e3256bc2aa4",
+    "docs/ADR-008-serve-while-indexing.md": "c7391fca8f0f92317cf3d6d6906e327a92696c9dd9a6f36c235f7772f601a530",
     "docs/API.md": "507624be4bcbc16b116e475d27f47a510a8333b4574080e9892714e76dfe880e",
     "docs/BUILD.md": "d27ab6e35ac923a78b13b78ae72b85048c8b7c63dec4389e45e2589e7bfbe8df",
     "docs/DEPLOY-VAULT2.md": "5b74be109951c2a236050a16aab34a59e4a85e973b9f4d11246ff1259092c971",
