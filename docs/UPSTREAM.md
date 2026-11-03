@@ -64,7 +64,12 @@ handling changes of early 2024.
   author's words it *"allows to open `yarg_host:9090`, be presented with basic list of songs
   in the library, upon clicking on them they will become selected in yarg"* — he labels it
   *"Very basic version of #860"* and *"more of PoC to get some general feedback on the idea"*.
-  It has since collected a `Has Conflicts` label and no reviews.
+  It had collected a `Has Conflicts` label and no reviews.
+
+  > **CLOSED WITHOUT MERGING, 2026-09-11** — three days after this paragraph was written, which
+  > is the document's own warning about rotting facts landing almost immediately. One commit, six
+  > comments, no reviews, still carrying `Has Conflicts`. So the only attempt at the queue half of
+  > #860 is now closed, and the enthusiasm quoted below was never acted on. Verified 2026-11-03.
 
 **Read the discussion on it before writing anything about #860.** `joewestcott` tried it and
 replied: *"I've just checked this out and it works really well!"*, that it *"could lay the
@@ -259,9 +264,15 @@ day, correcting a framing this document had been carrying:
 Those two together settle more than the post itself:
 
 - **ADR-004 increments 2 and 3 stop being "waiting on upstream" entirely.** Not "not yet" —
-  simply ours to decide. What is left is an ordinary engineering question with a measurable
+  simply ours to decide. What was left was an ordinary engineering question with a measurable
   answer: whether they need `YARG.Core` changes at all, or whether the Unity layer can
-  materialise a song before the loader runs the way increment 1 already does. See ADR-004.
+  materialise a song before the loader runs the way increment 1 already does.
+
+  > **ANSWERED, 2026-11-02: no `YARG.Core` change was needed.** Increment 2 shipped by
+  > materialising in the Unity layer exactly as guessed — `GameManager.Loading` downloads the
+  > `.sng` and lets the real scanner produce the entry before any loader runs. Measured against
+  > the live 4,085-song server: three catalogue-only songs returned real charts. The consequence
+  > for the post below is in question 1: **we no longer need what it asks for.**
 - **The `SngFile.TryLoadFromStream` question changes shape.** As a request it waits for beta.
   As a *change*, it is ours to make in our own copy whenever we need it — the patch is already
   written and measured in `docs/patches/`. What it costs is a fork of the `YARG.Core` submodule
@@ -275,6 +286,35 @@ Those two together settle more than the post itself:
   PR numbers and a measured claim about `YARG.Core` having no networking. Re-verify every one
   of those before sending — they were true on 2026-09-07 and nothing here will notice when
   they stop being.
+
+### Re-verified 2026-11-03, against `YARG.Core` `6c0923e`
+
+Done because yesterday's merge moved the submodule twice (`028969a` → `8ae7718` → `6c0923e`)
+and this document's facts are pinned to the first of those. **One had rotted; the rest held,
+and two got stronger.**
+
+| Claim | Then | Now |
+|---|---|---|
+| #984, the one attempt at #860's queue half | "still open as a draft" | **closed unmerged, 2026-09-11** — rotted three days after it was written |
+| #860 itself | open, unclaimed | **still open, no assignee, no labels**, untouched since 2025-02-26 |
+| #167 "Online Servers" | open, and not about song serving | still open |
+| `YARG.Core` has no networking | measured | **still zero** `HttpClient`, `System.Net` or `WebRequest` across the whole library |
+| `SngFile` unchanged since early 2024 | asserted | **confirmed**: `git log 028969a9..6c0923e -- SngFile.cs` is empty, and `028969a9` is a real ancestor — the empty range was checked rather than assumed |
+| the two-bug patch | "two lines against `028969a9`" | **applies cleanly to `6c0923e`**, and both bugs are still present verbatim |
+
+The last two are the useful ones. The patch in `docs/patches/` was written against a commit now
+three months old, and the natural assumption is that it needs rebasing; it does not. Both the
+leaked `FileStream` on a failed tag check and the unconditional `_tracker.Dispose()` are exactly
+where they were, so the measurement behind them stands without being redone.
+
+**What changed in the ASK, rather than in upstream.** Question 1 of the draft asks for
+`SngFile.TryLoadFromStream` so that `.sng` bytes without a path can be read. We no longer need
+it: increment 2 ships by writing the bytes to disk and letting the real scanner read them, which
+is slower and has the compensating virtue of never being a second `.sng` reader that could
+disagree with the first. The question is still worth asking — it is a genuine extract-method
+that helps anyone holding bytes rather than a path — but it should be put as something offered,
+not something wanted, because a request we do not need and would not use if granted is a worse
+first contribution than the bug fix sitting next to it.
 
 The draft is kept because writing it is what forced the code reading that produced ADR-004.
 Jay sends it, under his own account; nothing goes out without him.
