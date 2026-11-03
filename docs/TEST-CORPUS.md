@@ -1073,11 +1073,12 @@ Case 29's sentinel has no space after the second `=` on purpose: the two outcome
 by a single byte, which a cache search can tell apart. A sentinel that differed only by
 whitespace would be indistinguishable in a length-prefixed binary blob.
 
-**These three have NOT yet been run against the game.** Our reader produces the predicted
-outcome for all three, and the prediction comes from reading `ExtractModifierName`,
-`SkipWhitespaceAndEquals` and `YARGIniReader.ExtractModifiers` — but reading source is not
-measuring behaviour, which is the entire point of this corpus. Until the oracle has run, the
-three rows above are a hypothesis with the discriminator already written down.
+**All three were measured against the game on 2026-11-02** — the eleventh oracle run, at the
+end of this document. Each landed in the new-reading column, and our scanner reads a string
+identical to YARG's in all three. The prediction came from reading `ExtractModifierName`,
+`SkipWhitespaceAndEquals` and `YARGIniReader.ExtractModifiers`, and it turned out to be right;
+it was a hypothesis all the same until the cache said so, because reading source is not
+measuring behaviour.
 
 | Step | Outcome |
 |---|---|
@@ -1359,3 +1360,84 @@ And the equivalence check that a single fixture cannot replace: the old binary a
 were both run over the whole 26-case corpus — archives, `.sng`, `.yargsong`, broken metadata,
 the bare CR — and **0 of 26 `package_hash` values moved**. One fixture agreeing proves much less
 than twenty-six disagreeing would disprove.
+
+## Eleventh oracle run — 2026-11-02, how a line becomes a pair, settled by the game
+
+The `splitModifier` change shipped on three predictions about `song.ini` lines that are
+malformed but still accepted, taken from reading YARG.Core. This run measured all three.
+`scripts/oracle.ps1` against the 29-case corpus, cache written **8,726 bytes**, then each
+sentinel looked up in `songcache.bin` by its length prefix.
+
+| Corpus case | The line | YARG's cached `album` | Prefix | Reading |
+|---|---|---|---|---|
+| `27-space-in-key` | `album SpaceKeyProbe = SpaceKeyTail` | `SpaceKeyProbe = SpaceKeyTail` | 28 | **new** |
+| `28-no-equals` | `album NoEqualsProbe` | `NoEqualsProbe` | 13 | **new** |
+| `29-double-equals` | `album ==DoubleEqProbe` | `DoubleEqProbe` | 13 | **new** |
+
+In every case the *good* album set on the line above — `SpaceKeyGoodAlbum`,
+`NoEqualsGoodAlbum` — is **absent** from the cache, which is what makes each a discriminator
+rather than a coincidence: the malformed line did not merely parse, it *won*. Case 29's prefix
+of 13 is the whole result on its own, since `=DoubleEqProbe` would be 14 — the second `=` is
+skipped, as predicted. Our scanner reads the identical string in all three, so the three
+divergences A, B and C are closed.
+
+The instrument was validated before being believed: `BareCRBadAlbum` present and
+`BareCRGoodAlbum` absent reproduces run 10's case-26 result exactly, from this run's own cache.
+
+| Step | Outcome |
+|---|---|
+| Corpus cases | 28 folders + `23-zipped.zip` = 29 |
+| `badsongs.txt` | **3** — `13-mid-beats-chart`, `19-no-audio`, `21-ultrastar-no-title`, all independently flagged |
+| YARG refused, we passed | **0** — the standard held |
+| we flagged, YARG accepted | 5 — 05, 17, 18 (`no_metadata_section` / `no_song_ini`) and 24, 25 (`metadata_unreachable`); allowed, a warning may be stricter than a refusal |
+| `songcache.bin` | 8,726 bytes |
+
+### A logged exception that is NOT a defect, and nearly became an upstream report
+
+`18-empty-song-ini` makes YARG.Core log an exception with a stack trace, every run:
+
+```
+[YARGIniReader.cs:ReadIniFile:34] Index was outside the bounds of the array.
+System.IndexOutOfRangeException
+  at YARG.Core.IO.FixedArray`1[T].At (System.Int32 index)
+  at YARG.Core.IO.YARGTextReader.TryUTF8 (...)
+```
+
+This was written up here as "a real but contained defect, a candidate for `docs/UPSTREAM.md`"
+and that was wrong. Reading the two functions says so:
+
+```csharp
+// If it doesn't throw with `At(1)`, then 0 and 1 are valid indices.
+// We can therefore skip bounds checking
+if ((data.At(1) == 0xFE && data[0] == 0xFF) || ...
+```
+
+`At()`'s throw **is** the bounds check — deliberately, so the BOM comparisons that follow can
+use the unchecked indexer — and `YARGIniReader.ReadIniFile` wraps the whole dispatch in
+`catch (Exception ex) { YargLogger.LogException(ex, ex.Message); return new(); }`, returning an
+empty modifier set. A file too short to hold a BOM takes exactly the path its author built for
+it: no metadata, song skipped, and our scanner flags it `no_metadata_section` in agreement. The
+only thing arguably wrong is the log volume — an ordinary empty file produces a full stack
+trace — which is a hygiene nit and not worth a stranger's time.
+
+Worth recording because a stack trace in a log reads like a bug, and this one was two steps
+from a report to YARC that would have told them their own bounds check was a mistake. It also
+fires in the runs that *succeed*, which is independently what rules it out as the cause of the
+97-byte cache below.
+
+### The instrument failure: a launcher that produced a cache header and nothing else
+
+Two attempts before this one reported a **97-byte** `songcache.bin` and were written up as
+"the documented oracle method did not reproduce". The method was fine. Both attempts used a
+hand-rolled script that launched YARG via `Invoke-CimMethod Win32_Process.Create`, chosen to
+dodge a job-object quirk; `scripts/oracle.ps1` uses `Start-Process` and produced 8,726 bytes on
+the first try against the same corpus, the same game and the same case 18.
+
+So the finding was not about YARG at all, and the hypothesis built on top of it — that case 18
+blocked cache serialisation — was an explanation for an artefact of the measuring tool. It is
+the same shape as every entry in the instrument-failure table above, with one addition worth
+stating plainly: **this repo already had a tested tool for the job and it was not used.** An
+improvised substitute for a committed script does not inherit any of the script's guarantees,
+and in this case it silently dropped the one that mattered — `oracle.ps1` refuses to report a
+cache it did not watch being written, and would have failed loudly instead of returning 97
+bytes to be interpreted.
