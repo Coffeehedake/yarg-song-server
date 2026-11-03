@@ -2104,6 +2104,15 @@ the only reason it was caught in minutes rather than when the disk filled.
 Use `-persistent-data-path <dir>` to isolate a playtest. `-offline` is also honoured. Both are
 upstream's, in `CommandLineArgs`.
 
+**Trimmed back the same evening, on Jay's call.** The split was clean enough to act on without
+guessing: exactly **128** `.sng` files dated 2026-10-30 (the original sync, and the number this
+document already recorded) and exactly **250** dated 2026-11-02, plus the one `.sng.part`. The 251
+were listed to a file and counted BEFORE anything was deleted, then removed by literal path one at
+a time — not by a glob and not by `-Filter`, because this project has a measured incident where
+`Get-ChildItem -Filter "*.go.*"` matched `api.go` and deleted every `.go` file in a directory.
+Result: 128 files, 1.2 GB, all 2026-10-30, and the 10-30 `songcache.bin` still describes exactly
+them. Nothing else in the folder was touched.
+
 **`SyncOnStartup` defaults to ON and has no ceiling.** It does not ask, it does not cap, and the
 only sign is one line on a loading screen. Pointed at a large server on a fresh machine that is
 potentially hundreds of gigabytes before the player reaches a menu. The setting is doing exactly
