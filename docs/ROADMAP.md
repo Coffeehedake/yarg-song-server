@@ -2296,6 +2296,80 @@ assertion is sound, and the thing under test is simply not there. **A compile er
 result below it meaningless**, so the runner now says exactly that where the count used to be,
 and a green is only read after the error line says `none`.
 
+### A full probe sweep, and the harness was wrong six different ways — 2026-11-03
+
+Jay was at work and offered the machine for anything that could run silently, so every headless
+probe in the fork was run. **Ten of seventeen passed on the first attempt. Not one of the other
+seven turned out to be a defect in the code** — every one was the harness, the environment, or
+the way the result was read. That ratio is the finding; the probes themselves were fine.
+
+What the sweep got wrong, in the order it got it wrong:
+
+1. **Six probes live in namespace `Editor`, not `YARG.Editor`.** The sweep assumed one namespace,
+   Unity answered *"executeMethod class could not be found"*, and the harness reported
+   `NO RESULT LINE` — **indistinguishable from a probe that ran and printed nothing.** A missing
+   class should never read the same as a silent pass.
+2. **A bare-verdict regex of `^(PASS|FAIL)` matched `Failed to load:`**, because `FAIL` prefixes
+   `Failed`. Three probes were reported as having returned a Unity asset warning as their verdict.
+3. **The log parser mixed the killed sweep's logs with the re-run's.** The first sweep was stopped
+   mid-flight; its truncated logs sat beside the new ones, and `HostileServerProbe` was reported
+   `FAIL (7)` from a run that had been *killed*. The parser takes the newest log per probe now.
+4. **Two probes exited at log line 41 with return code 1** — Unity never started, because the
+   previous instance still held the project lock. The sweep moved on three seconds after seeing a
+   result line, which is not the same as the process having exited. Waiting for a result is not
+   waiting for a lock.
+5. **`ScanFolderProbe` wanted `YARG_SCAN_FOLDER` and said so**, in its own output, which nothing
+   was reading.
+6. **Two probes share one temp folder and want different things in it.** `HostileServerProbe`
+   needs `%TEMP%\yarg-song-server-smoketest` to hold MIRROR files — named for their chart hash —
+   and says so: *"run Editor.SongServerSyncSmokeTest.Run first"*. Yesterday's corpus work left it
+   full of `01-plain.sng`-style packs instead, so the three "known-good" hashes it takes from
+   filenames were not chart hashes at all.
+
+That last one is worth the arithmetic, because the failure was legible and nobody read it. The
+probe reported `rejected=9` where it expected 6: the six deliberately-bad names it serves, **plus
+the three it had derived from filenames.** `SongServerSync` refuses anything that is not
+`^[0-9a-f]{40}$`, correctly, so `01-plain` was refused exactly as a hostile server's garbage would
+be. Every downstream assertion then failed, including one that computed *"the client accepted -3
+of 6 names"* — a negative count, which is the kind of number that should stop a reader cold.
+
+**`SongServerSyncSmokeTest` was deliberately excluded from the sweep**, and that is why the folder
+was never repopulated. It calls `SongServerSync.Sync`, which mirrors an ENTIRE library; running it
+against vault2 would have pulled all 4,085 songs — the same mistake as the night before. It reads
+`YARG_SONG_SERVER`, a different variable from the single-song `YARG_SERVER_URL` the fetch probes
+use, and that distinction is the only thing that kept the sweep from downloading the library.
+
+**Every one of the seven resolved to a harness or environment problem, and the probes were
+right.** After fixing each cause:
+
+| Probe | Result |
+|---|---|
+| HostileServerProbe | **PASS**, once the folder held the mirror files it documents needing |
+| RemotePlaybackProbe | **PASS** — it had never started; Unity was still holding the project lock |
+| StartupReachabilityProbe | **PASS**, same cause; it gives up on an unreachable server in 5.1 s |
+| SelfUpdateSmokeTest | **PASS** (`[SMOKE] RESULT: PASS`) — the earlier "no output" was a log read while it was still being written |
+| HttpListenerProbe | **PASS** — a third output format, `[HttpListenerProbe] PASS: …` |
+| ScanFolderProbe | **INCONCLUSIVE, correctly** — no audio backend, so it refuses to claim a verdict rather than reporting the harness's own limits as YARG's |
+| RemoteQueueSecurityProbe | **informational by design** — it prints measurements, not a verdict. 403 on oversized and cross-origin bodies, 404 on traversal, board capped at 40, identity from the socket |
+
+**Final tally: 15 pass, 1 inconclusive by design, 1 informational by design. No defects.**
+
+Two of those deserve keeping as rules rather than anecdotes:
+
+- **`SelfUpdateSmokeTest` reports only through `Console.WriteLine`**, which goes to stdout and
+  not to `-logFile`. That was survivable while a console window existed; hiding the window —
+  necessary, because it was stealing focus — would have made its output vanish entirely. Its
+  verdict also lives in `EditorApplication.Exit`, which a WMI-created process does not hand back.
+  A runner for these has to capture **stdout and the exit code**, not just the log.
+- **Waiting for a result line is not waiting for the lock.** The sweep moved on three seconds
+  after a probe printed its verdict, and the next Unity then failed to open the project because
+  the previous one had not exited. Wait for the process.
+
+**What a clean sweep is worth, stated honestly:** it says the probes agree with the code. It says
+nothing about the twelve upstream commits merged on 11-02, which remain unplayed, and nothing
+about the cache budget in a real game — the budget cannot run headless at all, because
+`SettingsManager.Settings` needs an audio backend to exist.
+
 ## Blockers
 
 **None, and no open defects.**
