@@ -489,7 +489,32 @@ $r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{C
 ```
 
 WMI creates it from `WmiPrvSE`, so it is outside the bridge's tree entirely. The UPM child
-appears within 25 s and the run completes normally. This also replaces the older "register a
+appears within 25 s and the run completes normally.
+
+**And hide the window, or it steals focus every time — added 2026-11-03.** `Create` shows a
+console, and with the `cmd.exe` wrapper that carries the environment variables (it has to: the
+WMI service does not pass this shell's environment to the child) every launch pops a window and
+**takes keyboard focus**. One run is a flicker. A sweep of seventeen probes, while Jay was
+working at the machine, was seventeen interruptions mid-sentence — he asked for it to stop, and
+he was right to.
+
+`ProcessStartupInformation` takes a `Win32_ProcessStartup` whose `ShowWindow` is an `SW_*`
+constant; `0` is `SW_HIDE`. The job-object breakaway is unaffected, because the process is still
+created by the WMI service rather than by this shell:
+
+```powershell
+$startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{
+    ShowWindow = [uint16] 0          # SW_HIDE
+}
+Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+    CommandLine               = 'cmd.exe /c "<wrapper>.cmd"'
+    ProcessStartupInformation = [CimInstance] $startup
+}
+```
+
+**Use it for anything launched more than once**, and for anything launched at all while somebody
+is using the machine. "Headless" means no window as well as no graphics; `-batchmode -nographics`
+only covers Unity's own. This also replaces the older "register a
 scheduled task" advice for Unity specifically — same breakaway, far less ceremony — though a
 scheduled task is still right for anything that must outlive the whole session.
 
