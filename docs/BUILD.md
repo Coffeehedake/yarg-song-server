@@ -29,6 +29,54 @@ pointed at a healthy server showed **"Song server: not reachable (Insecure conne
 allowed)"** in the settings row, which reads like a network fault and is not one. A development
 build reaches it. What a *release* build should do is still the open question ADR-004 records.
 
+## A "development build" does NOT use the `dev` data folder — measured 2026-11-02
+
+**It uses `release`, the same folder a previous release build left its settings in.** This is the
+one that bites, because it is silent and it inherits configuration nobody set for this run.
+
+`YARG_BUILD_DEVELOPMENT=1` sets `BuildOptions.Development`, which is what makes `insecureHttpOption`
+allow plain http. It does **not** define `YARG_TEST_BUILD`, and `PathHelper.Init` chooses the
+folder on that symbol:
+
+```csharp
+#if UNITY_EDITOR || YARG_TEST_BUILD   // -> persistentDataPath/dev
+#elif YARG_NIGHTLY_BUILD              // -> persistentDataPath/nightly
+#else                                 // -> persistentDataPath/release
+```
+
+So the editor writes to `dev/` and every headless build writes to `release/`, development or not.
+
+**What that cost on 2026-11-02:** a playtest build was configured by writing settings into `dev/`.
+They were never read. The player read `release/settings.json` from the 10-30 session, which still
+had `SongServerUrl` pointing at vault2 and `SyncOnStartup` on, and began mirroring the server —
+**3794 songs** by then, not the 128 of October. It reached 251 files and about 7 GB before it was
+stopped. The only visible sign was one line on the loading screen: *"Downloading song 58 of 3794"*.
+
+**Isolate a playtest with upstream's own flags**, both in `CommandLineArgs`:
+
+```powershell
+# ENG-1, any directory. Start-Process for the GAME - the opposite of the rule for the EDITOR.
+Start-Process -FilePath "<build>\YARG.exe" -ArgumentList @(
+    '-screen-fullscreen','0','-screen-width','1280','-screen-height','720',
+    '-offline', '-persistent-data-path', '<a fresh empty directory>')
+```
+
+Then write `settings.json` into that directory and it will actually be read. Verify it took rather
+than assuming: `RemoteQueue` binding its port is a good tell, and so is the song count.
+
+**Two related traps met the same evening:**
+
+- **`SyncOnStartup` defaults to ON, has no ceiling and asks nothing.** With a URL set it mirrors
+  the whole server on every start. Fine for 128 songs, not fine for 3794. Set it false in any
+  configuration you do not want downloading.
+- **The first-run modals stop the song scan.** With `ShowExperimentalWarningDialog` or
+  `ShowEngineInconsistencyDialog` still true, the loading sequence waits in front of them and the
+  scan never starts; the log ends at *"Initialized phoneme dictionary"* and the game reads as hung.
+  Set all three `Show*Dialog` flags false for an unattended run.
+
+An interrupted sync is safe, which was measured rather than hoped: it left exactly one
+`<hash>.sng.part` and no truncated `.sng`, and the scanner ignored the partial.
+
 ## Can the fork even be built? — measured 2026-09-08
 
 **This matters more than it sounds.** The whole project's next gate is a public beta, and a beta

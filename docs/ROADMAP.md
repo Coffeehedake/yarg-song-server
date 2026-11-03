@@ -2059,7 +2059,8 @@ counts 2, and 742 + 6 + 2 = 750 adds up. Two of them (`Canonical20260801_*`) are
 counted in the total. Not investigated; noted so a later reader does not think the arithmetic is
 broken.
 
-**What is NOT verified.** None of this was played. The probe measures arithmetic and the contract
+**What is NOT verified** *(at the time this was written — it was played the same day, see the
+playtest entry below)*. None of this was played. The probe measures arithmetic and the contract
 test drives HTTP against a headless host with no songs; nobody has queued a song from a phone
 during a real setlist on the ported build, which is the only thing that would exercise the guard
 end to end. The 10-30 entry above is the precedent for why that matters: the rebased tree passed
@@ -2067,6 +2068,117 @@ every headless check and then crashed on the first click of the Song Server tab.
 upstream commits this merge brought in — editable vocal colors, vocal track fading, the solo and
 unison box fix, notification history, Clone Hero practice-section names, Sort by Date Added, the
 VLC update — are likewise unplayed.**
+
+### Played, 2026-11-02 — and the playtest paid for itself twice before a song started
+
+The 10-30 entry is the precedent: a tree that passed every headless check crashed on the first
+click of the Song Server tab. This one did not crash, and still found more than the headless work
+did — including one thing that started downloading a server.
+
+**The build.** 603 MB in 2.3 minutes, `PASS WITH 2 ERROR(S)`, both `RenderTexture.Create failed`
+from `-nographics` and both the class `BUILD.md` already documents. All ten of the ported symbols
+are present in `Assembly-CSharp.dll` (`CanEditWithinShow`, `CanMoveWithinShow`,
+`QueueWithSongNext`, `QueueInVoteOrder`, `ReplaceSongs`, `PlayingHashIndex`, `InsertNextInShow`,
+`WithServerBadge`, `BadgeMarkup`, `IsFromServer`), alongside upstream's new `ToastHistoryTab`,
+`PracticeSectionHelper` and `TryAdvance`. So this is a build of the merged tree, not a stock one.
+
+#### A "development build" does NOT use the `dev` data folder, and that started a 3794-song sync
+
+`YARG_BUILD_DEVELOPMENT=1` sets `BuildOptions.Development`, which is what makes `insecureHttpOption`
+allow plain http. It does **not** define `YARG_TEST_BUILD`, and `PathHelper.Init` reads:
+
+```
+#if UNITY_EDITOR || YARG_TEST_BUILD   -> persistentDataPath/dev
+#elif YARG_NIGHTLY_BUILD              -> persistentDataPath/nightly
+#else                                 -> persistentDataPath/release
+```
+
+So the headless build lands in `release/` — **the same folder a previous release build left its
+settings in.** Settings written into `dev/` for this playtest were never read. What the player
+read instead was the 2026-10-30 configuration: `SongServerUrl` pointing at vault2, and
+`SyncOnStartup` on. It began mirroring the server unattended, and the server now holds **3794**
+songs rather than the 128 it had in October. It reached 251 new files and about 7 GB before it was
+killed. The loading screen read *"Downloading song 58 of 3794"*; Jay saw it and said so, which is
+the only reason it was caught in minutes rather than when the disk filled.
+
+Use `-persistent-data-path <dir>` to isolate a playtest. `-offline` is also honoured. Both are
+upstream's, in `CommandLineArgs`.
+
+**`SyncOnStartup` defaults to ON and has no ceiling.** It does not ask, it does not cap, and the
+only sign is one line on a loading screen. Pointed at a large server on a fresh machine that is
+potentially hundreds of gigabytes before the player reaches a menu. The setting is doing exactly
+what it says; the question is whether "mirror everything, silently, on every start" is the right
+default, and it is a product decision rather than a bug. Worth settling before a public beta.
+
+**The sync is interrupt-safe, and that was measured rather than hoped.** Killing it mid-download
+left exactly one `10874c46….sng.part` and no truncated `.sng`. The scanner ignored the partial and
+read 378 of 378 real songs, which is also why the file count and the song count differ by one.
+
+#### Two things that are not the merge's doing
+
+- **Upstream's asset CDN does not exist.** `yarg-assets-release.ulna.net` is NXDOMAIN while the
+  rest of the internet resolves, so every launch logs two content-catalog exceptions. Identical in
+  the 2026-11-01 logs, so it predates this work entirely.
+- **The first-run modals block the song scan.** With `ShowExperimentalWarningDialog` or
+  `ShowEngineInconsistencyDialog` still true, the loading sequence stops in front of them and the
+  scan never starts. The log ends at *"Initialized phoneme dictionary"* and the game looks hung
+  while it is simply waiting for a click.
+
+#### The ported remote queue, measured against the real game
+
+378 songs scanned in **1.26 s**. The remote-queue listener binds in a real Mono player, which
+narrows the KNOWN GAP in `BUILD.md` that said the bind had only been measured in the editor.
+
+| What | Result |
+|---|---|
+| Songs queued from the main menu | `target: "pending"`, held |
+| Opening the music library | log: `flushed 3 pending song(s) into the setlist`, target → `setlist` |
+| Move up, twice | order changed both times |
+| Move up from the front | `409 "that song cannot be moved from where it is"`, order untouched |
+| Six adds then six removes, back to back | 12 × `200`, ~0.1 s each, setlist ends empty |
+
+And with a show actually running — the part no headless check could reach, because
+`Setlist.TryStart` needs resolvable songs and batchmode has no audio backend:
+
+| Guard | Result |
+|---|---|
+| Remove the song being played | `409`, still in the queue |
+| Move the next song up into the playing slot | `409`, still at its index |
+| Remove a song further ahead | `200`, gone |
+| A won "play next" vote | landed at index 1, **immediately after** the playing song; the songs behind it shifted right; the playing song and index unchanged |
+
+The play-next case is the one that matters most, because `QueueWithSongNext` and
+`Playlist.ReplaceSongs` were written for this merge and had only ever been exercised as pure
+functions by `SetlistGuardProbe`. Driving it needed three voters, and a voter is the request's
+remote address — so the three votes were sent from `127.0.0.1`, `127.0.0.2` and `127.0.0.3`,
+which is three distinct voters out of one machine and did not require reconfiguring the running
+game. The nomination promoted on the third vote and decided on the third choice.
+
+#### The instrument was broken twice, and neither was the game
+
+- **HTTP 000 from five of six removes**, with the songs still in the setlist. It looked exactly
+  like a defect in the ported remove path, and the next step was to go and find it. The timing
+  stopped that: the failures returned in **nineteen microseconds**. Nothing had been sent. A curl
+  process per request from a bash loop was failing to start. Re-run from a single process, all
+  twelve requests pass. *"A failing measurement is not automatically a failing system"* now has a
+  fourth instance, and the only reason it was caught is that the number was absurd rather than
+  merely bad.
+- **A wrong expectation printed next to a passing check.** The show-guard script announced it
+  expected a plain add to land immediately after the playing song. It landed at the end, which is
+  correct — `Add` appends, and landing next is the *play-next* behaviour. The check that actually
+  asserted anything was about the playing song not moving, so the run reported PASS with a false
+  sentence above it. A probe that prints its expectation must have that expectation checked by
+  something, or it is just a comment that can rot in place.
+
+#### Not covered
+
+Nobody played a note. No instrument was connected, no song was played through, and the twelve
+upstream commits this merge brought in — editable vocal colors, vocal track fading, the solo and
+unison box fix, notification history, Clone Hero practice-section names, Sort by Date Added, the
+VLC update — were not exercised beyond their code being present in the binary. The per-song server
+badge was not re-checked on screen either: the playtest library was pointed at as an ordinary song
+folder, so no song in it was mirrored for this build. The badge was measured headless twice the
+same day.
 
 ## Blockers
 
