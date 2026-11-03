@@ -89,7 +89,9 @@ Rules:
 
   **A SEVENTH failure appears intermittently, and the count is only stable if you know about it.**
   `PreviewContextTests.WaitForCompletionAsync_AllowsFadeOutAfterCancellation` failed on one of five
-  runs on 2026-11-02 — the one that shared the machine with other work. It is a wall-clock race
+  runs on 2026-11-02 — the one that shared the machine with other work. **Measured properly on
+  2026-11-03: the test alone, 20 consecutive runs on an idle machine, 19 pass and 1 fail — a 5.0%
+  failure rate with nothing else competing for the CPU.** It is a wall-clock race
   rather than a mystery: the test cancels a context with `fadeDuration: 0.05`, waits
   `Task.Delay(10)`, and asserts the wait task is *not* yet complete, so any scheduling hiccup over
   about 40 ms lets the 50 ms fade finish and flips it. Upstream's test, upstream's race. **Run the

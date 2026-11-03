@@ -165,6 +165,38 @@ and partial downloads are swept on the next run), so neither blocks us. They are
 they are small, real, and reproducible — and a first contribution that fixes a bug is a better
 introduction than one that asks for an API.
 
+### A third, smaller one: a unit test that races the wall clock
+
+**`PreviewContextTests.WaitForCompletionAsync_AllowsFadeOutAfterCancellation`**, in
+`YARG.Core.UnitTests/Audio/PreviewContextTests.cs`. Unlike the two above this is not a defect in
+shipped code — it is a test that fails on its own about one run in twenty, which is the kind of
+thing that erodes trust in a suite until people stop reading it.
+
+It is demonstrable from the test body alone, with no instrumentation:
+
+```csharp
+var context = await PreviewContext.Create(entry, volume: 1f, speed: 1f,
+    delaySeconds: 0, fadeDuration: 0.05, false, cts.Token);
+var waitTask = context!.WaitForCompletionAsync();
+cts.Cancel();
+await Task.Delay(10);
+Assert.That(waitTask.IsCompleted, Is.False);   // the 50 ms fade must still be running
+```
+
+A 10 ms wait asserts that a **50 ms** fade has not finished. Any scheduling hiccup longer than
+about 40 ms between those two lines lets the fade complete and the assertion flips. Nothing in
+the test controls that gap.
+
+**Measured on ENG-1, `YARG.Core` `6c0923e`, 2026-11-03:** the test run alone, 20 consecutive
+times, on an idle machine — **19 pass, 1 fail, a 5.0% failure rate.** It also failed on one of
+five full-suite runs the previous day, and that was the run sharing the machine with other work,
+which is consistent with a load-sensitive race rather than a mystery.
+
+Worth offering alongside the two above, and worth distinguishing from them when offering it: the
+others are bugs in code players run, this one costs only confidence in the suite. A fix is
+somebody's judgement call — waiting on a signal rather than a duration, or widening the margin —
+so it is better raised as an observation with a number than as a patch.
+
 ### The patch, and the measurement that says it works
 
 `docs/patches/0001-sngfile-release-file-and-survive-dispose-on-rejected-load.patch` — two lines
