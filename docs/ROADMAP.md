@@ -2240,6 +2240,62 @@ starts using no disk and grows with what is played. The description now says so.
 budget or eviction policy is not built**, and with browsing now reachable against a 4,085-song
 server that is the obvious next thing to want.
 
+### The fetch cache got a ceiling — 2026-11-03 (`yarg` `7551cac2`)
+
+Making browsing reachable the previous evening exposed its own gap: every song played from the
+server was kept and nothing removed it, so the cache grew one song at a time toward the size of
+the whole server. That is the outcome browsing exists to avoid, reached slowly.
+
+`ServerCacheBudgetGb` bounds it — **10 GB by default, 0 for no limit** — evicting the songs played
+longest ago first.
+
+**Why this deletes when `SongServerSync` deliberately never does.** That refusal is about the
+MIRROR: a library somebody chose to download, possibly the only copy, whose comment says getting
+it wrong *"costs somebody their library"*. The cache is a different folder holding whatever
+happened to get played, each item fetchable again. The sweep touches only `ServerCache` — never
+`ServerLibrary`, never a folder the player added.
+
+**The honest difference from the server's own pack cache, which this otherwise copies.** There,
+eviction costs CPU and never data, because an evicted archive is re-packed from a folder still on
+the same disk. Here the source is another machine: if the server has dropped the song, an evicted
+copy was the last one. Hence a generous default rather than a tight one, and hence two explicit
+protections — the song being played, and the song just fetched. The second is the hazard the pack
+cache had to add a `Vanished` counter for after measuring it happen.
+
+**Access order is tracked rather than read off the filesystem, and the reason is ours not
+Windows'.** Last-access updates are enabled on ENG-1 and were measured moving. It would not matter
+if they were not: `SongContainer` adds the cache to the scanned directories, so a library refresh
+**reads every `.sng` in it and resets every atime to the same instant**. Our own scanner destroys
+the ordering signal on every scan. `RecordPlayed` keeps the order in one line-per-song file at the
+cache root, outside the song folders so no scanner meets it, and a lost index costs eviction
+quality rather than data — unrecorded songs sort oldest, which is also the right answer for a song
+fetched and never played.
+
+**Red three ways, prediction written down before each run, all three matched.**
+
+| Break | Predicted | Measured |
+|---|---|---|
+| evict newest first (`OrderByDescending`) | 5 | FAIL (5), the ordering and size checks |
+| ignore the protected set | 3 | FAIL (3), both protection checks and the give-up case |
+| never decrement the running total | 6 | FAIL (6), every "stops when it fits" check |
+
+The decision lives in `ChooseEvictions`, pure and public, so it can be measured with no disk, no
+server and no game — the same shape the setlist guard took the day before. The probe then drives
+the **real sweep against the real cache folder** on planted songs, because a correct chooser and a
+sweep that deletes the wrong folder would both pass every check above it.
+
+#### A probe reported PASS while its own file would not compile
+
+Mid-edit, `ServerCacheBudgetProbe.cs` called a method that did not exist yet. Unity kept the
+**previously compiled assembly**, the probe ran against that, and it printed `PROBE RESULT: PASS`
+— for code that was not in the build. The runner printed `COUNT 3` above it, in a section nobody
+had any reason to read on a passing run.
+
+This is a false green of a kind none of the existing rules catch: the probe is honest, the
+assertion is sound, and the thing under test is simply not there. **A compile error makes every
+result below it meaningless**, so the runner now says exactly that where the count used to be,
+and a green is only read after the error line says `none`.
+
 ## Blockers
 
 **None, and no open defects.**
