@@ -68,8 +68,8 @@ Rules:
   **Upstream PRs target `dev`, never `master`** — upstream will refuse `master` PRs outright.
 - **`yarg/` IS now cloned** (2026-09-07), at `dev`, with `upstream` pointing at
   `YARC-Official/YARG`, submodules initialised and LFS pulled — 4,815 files, 0.25 GB. The
-  `YARG.Core` submodule sits at upstream `8ae7718` (it was `028969a` until the 2026-10-30
-  rebase, which put `dev` on top of `upstream/dev` — see the ROADMAP).
+  `YARG.Core` submodule sits at upstream `6c0923e` (`028969a` until the 2026-10-30 rebase,
+  `8ae7718` until the 2026-11-02 merge that brought the fork current — see the ROADMAP).
 
   **YARG.Core builds and tests without Unity.** It is `netstandard2.1` with a plain
   `Microsoft.NET.Sdk` csproj, so `dotnet build YARG.Core.sln` and
@@ -78,16 +78,31 @@ Rules:
   SDK**: the unit-test and benchmark projects target `net10.0`, and ENG-1 had only 8.0.424.
   10.0.400 is now installed side by side in `C:\Program Files\dotnet`.
 
-  **Baseline, measured 2026-10-30 at `8ae7718`: 745 tests, 737 pass, 6 fail, 2 skipped.** The six
+  **Baseline, measured 2026-11-02 at `6c0923e`: 750 tests, 742 pass, 6 fail, 2 skipped.** The six
   are lip-sync phoneme tests (`AY_MapsToEatThenIf`, `ER_MapsToEarth`, `EY_MapsToOxThenIf`,
   `NG_MapsToNew`, `OW_MapsToOxHeld`, `OY_MapsToOxThenEat`) and they are **upstream's**, not ours —
   inferred, not re-run against a pristine upstream checkout: none of our commits touch YARG.Core
-  and the submodule pointer equals `upstream/dev`'s. (At `028969a` the baseline was 547 tests
-  with the one failure `PossibleInstrumentsForSong_SixFretIncludesFiveFretInstruments`; that one
-  no longer fails.) The two skips were `FullScan()` and `QuickScan()`, which want a real
-  song library, and were not re-checked at `8ae7718`; they are worth revisiting, since this
-  project has one. Do not report "YARG.Core
-  is green" as a baseline; it is not, and a new failure would hide in that assumption.
+  and the submodule pointer equals `upstream/dev`'s. (At `8ae7718` it was 745 tests, 737 pass —
+  five tests were added by the two commits the 11-02 merge brought in, and all five pass. At
+  `028969a` it was 547 tests with the one failure
+  `PossibleInstrumentsForSong_SixFretIncludesFiveFretInstruments`; that one no longer fails.)
+
+  **A SEVENTH failure appears intermittently, and the count is only stable if you know about it.**
+  `PreviewContextTests.WaitForCompletionAsync_AllowsFadeOutAfterCancellation` failed on one of five
+  runs on 2026-11-02 — the one that shared the machine with other work. It is a wall-clock race
+  rather than a mystery: the test cancels a context with `fadeDuration: 0.05`, waits
+  `Task.Delay(10)`, and asserts the wait task is *not* yet complete, so any scheduling hiccup over
+  about 40 ms lets the 50 ms fade finish and flips it. Upstream's test, upstream's race. **Run the
+  suite more than once before calling a seventh failure a regression**, and do not quietly record
+  7 as the baseline.
+
+  The two counted skips are `FullScan()` and `QuickScan()`, which want a real song library and are
+  worth revisiting since this project has one. Two further tests (`Canonical20260801_*`) *print* as
+  skipped without being counted, so four skip lines and a total of 2 both appear; 742 + 6 + 2 = 750
+  adds up. Not investigated.
+
+  Do not report "YARG.Core is green" as a baseline; it is not, and a new failure would hide in that
+  assumption.
 
   **The Unity Editor IS now installed** at `C:\Program Files\Unity\Hub\Editor\6000.3.5f2`,
   matching the pin in `ProjectSettings/ProjectVersion.txt`. *(This paragraph used to say it was

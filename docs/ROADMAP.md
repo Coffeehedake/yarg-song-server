@@ -1530,7 +1530,7 @@ votes.
 |---|---|
 | A queue | `Playlist` — `AddSong`, `RemoveSong`, `MoveSongUp`, `MoveSongDown` |
 | A setlist being built | `MusicLibraryMenu.ShowPlaylist` (ephemeral), with Add/Start already in the UI |
-| A queue during play | `GlobalVariables.State.ShowSongs` + `ShowIndex`, advanced by the pause menu |
+| A queue during play | `GlobalVariables.State.ShowSongs` + `ShowIndex`, advanced by the pause menu *(replaced upstream — see the 11-02 note below)* |
 | Search | `SortString.SearchStr`, the same normalised text the library matches on |
 | A background network service | `DataStreamController`'s thread + cancellation pattern |
 | Main-thread marshalling | `UnityMainThreadCallback.QueueEvent`, already trusted by the audio callbacks |
@@ -1553,6 +1553,18 @@ and the song never plays. Adds are routed by what is actually happening, and whe
 reachable the song is held and flushed into the setlist as soon as the menu exists again. Edits to
 a running show refuse to touch the current song or anything behind it, because reordering those
 would leave `ShowIndex` pointing at a different song.
+
+> **Superseded upstream, 2026-11-02 — there is ONE queue now.** Upstream's
+> [#1758](https://github.com/YARC-Official/YARG/pull/1758) moved the live setlist behind a static
+> `Setlist` owner and deleted `State.ShowSongs`, `ShowIndex` and `PlayingAShow`.
+> `MusicLibraryMenu.ShowPlaylist` **is** `Setlist.Playlist`, so the two-queues hazard described
+> above no longer exists and the routing that avoided it is gone. **The guard above is still
+> right**, and for the reason given: the playing position is a position, so editing behind it
+> repoints the show. The paragraph is left as written because it is why the feature was built the
+> way it was, and because the hazard was real — it is the kind of claim that should be marked
+> superseded rather than quietly edited into agreement with today's code. The port, and the 87
+> compile errors that forced it, are further down under *The fork was brought current on upstream
+> `dev` by MERGE*.
 
 **Security follows this project's own `config_writes` shape**: off by default; three values rather
 than a bool, because "on" would have had to mean *anybody on the wifi*; `Local` binds loopback so
@@ -1878,6 +1890,183 @@ HTTP stack, the cleartext exceptions, touch and layout on a real screen are all 
 own setlist *shows* (only that it says it is non-empty); playing a queued song, and so PlayNext while one is
 playing; the `voting is off` 404 (needs the setting flipped); and votes from real separate devices rather
 than loopback aliases.
+
+## The fork was brought current on upstream `dev` by MERGE, 2026-11-02
+
+`yarg`'s `dev` was 12 commits behind `YARC-Official/YARG` and 41 ahead. It was **merged**, not
+rebased — `dev` is now `b8329d70`, the merge commit itself `301ccc0e`, **0 behind** — and pushed
+to GitLab with no force.
+
+**Why a merge, when 2026-10-30 was a rebase.** That rebase was right at 110 behind: the drift was
+large enough that replaying our work onto upstream's tip was the only honest way to see it. At 12
+the arithmetic flips. A rebase rewrites all 41 of our hashes, and those hashes are quoted all over
+these docs, so the cost is not the replay but remapping the written record by subject afterwards —
+and a hash in a doc that silently names nothing is worse than a merge commit in a fork's history.
+The upstreaming argument does not apply either: the documented PR flow creates a branch on GitLab
+and opens the PR from the mirror, so a PR gets its clean base when it is made.
+
+`dev-pre-merge-2026-11-02` holds the pre-merge tip. A merge needs no such branch; it is kept for
+symmetry with `dev-pre-rebase-2026-10-30`.
+
+### `git merge-tree` said "no conflicts" and the build was broken in 87 places
+
+Checked before merging, with `git merge-tree --write-tree --name-only HEAD upstream/dev`: clean,
+no conflicts. That was true, and it was about TEXT. The merged tree then failed to compile with
+**87 `error CS`**.
+
+Upstream's **#1758, "Move the live setlist into a single Setlist owner"**, deleted
+`PersistentState.ShowSongs`, `ShowIndex` and `PlayingAShow` and put the live setlist behind a
+static `Setlist`. Our remote queue (#860) was built on all three: 78 of the errors are in
+`RemoteQueueBridge.cs` and 9 in `ScoreScreenMenu.cs`. **`RemoteQueueBridge.cs` was not in the
+conflict surface at all** — git had nothing to report, because neither side edited that file;
+upstream changed the *type it depends on*. Seven files were touched by both sides and every one of
+them merged cleanly.
+
+So: a clean merge is a statement about text, and the thing worth measuring is a build. The
+compile is what found this, and it found it in 60 seconds.
+
+### What the port had to decide, not just rename
+
+The three deleted members do not map one-to-one onto the new owner, and two of the differences
+change behaviour rather than spelling:
+
+- **`ShowSongs` was a mutable list; `Setlist.ResolveSongs()` allocates a NEW one each call.**
+  Translating `ShowSongs.Add(song)` to `ResolveSongs().Add(song)` compiles, runs, and does
+  nothing — the add lands on a temporary. Mutations go through `Setlist.Playlist` instead, whose
+  `AddSong`/`RemoveSong`/`MoveSongUp`/`MoveSongDown` raise `Edited`; `Setlist` subscribes to that
+  and re-raises it as `Changed`, which `MusicLibraryMenu` now listens to. Upstream documents the
+  trap in the class itself: *"Writes straight to `SongHashes` don't raise it."*
+- **`ShowIndex` counted positions in the snapshot; `Setlist.Index` counts positions in
+  `ResolveSongs()`, which SKIPS hashes the library cannot resolve.** So `Index` and a position in
+  `Playlist.SongHashes` disagree by one for every unresolvable hash ahead of the playing song.
+  Guarding with one and editing with the other is how an edit lands on the wrong side of the
+  playing position — and it would do so only on a library where a queued song had gone missing,
+  which is to say never on the machine it was written on. The whole show path is in hash space
+  now, via a `PlayingHashIndex()` that maps across once.
+- **`Playlist` has no insert-at-position and no partial sort**, which "play next" and a settled
+  vote both need. Doing those as `Clear()` plus a run of `AddSong` is what the menu helpers
+  already did, and it is fine on a setlist nobody is playing: during a show it empties the list
+  the playback position points into and raises an `Edited` per song. `Playlist.ReplaceSongs`
+  was added for that — one step, one event, no intermediate state.
+
+**The feature's central hazard is gone.** `RemoteQueueBridge`'s own summary used to open with
+*"THERE ARE TWO QUEUES"*, and the section above in this document says the same. Upstream's #1758
+removed the duality: `MusicLibraryMenu.ShowPlaylist` **is** `Setlist.Playlist` now. What survives
+is the guard, which was never an artefact of having two queues — the playing position is a
+position, so editing behind it silently repoints the show.
+
+**`_pending` is now a choice rather than a necessity**, and was kept deliberately. It existed
+because reaching the setlist needed a `MusicLibraryMenu` instance; `Setlist.Playlist` is static
+and reachable with no menu at all, so a song never has to be held. It stays because `pending` is
+part of the HTTP contract `yarg-remote/src/types.ts` transcribes, and widening a currency merge
+into a behaviour change is a different change. **The HTTP surface did not move**: no string
+literal the phone app reads was touched, so the app needs no update.
+
+### A compile cannot tell a correct offset from one that is out by one
+
+The port rewrote the rule that protects a running show from the phones, in a different index
+space, and nothing tested it. `RemoteQueueSmokeTest` covers the HTTP surface and the voting, not
+the setlist mutation paths, because those need a show — and a show cannot be started headless:
+`Setlist.TryStart` needs songs that resolve, and batchmode has no audio backend, so most of the
+corpus will not scan. Asking for a real show would have meant this went unmeasured.
+
+So the arithmetic became the unit. `RemoteQueueBridge` exposes `CanEditWithinShow`,
+`CanMoveWithinShow`, `QueueWithSongNext` and `QueueInVoteOrder` as pure functions over plain
+numbers, and `Assets/Editor/SetlistGuardProbe.cs` measures them — 26 checks, no library, no scene,
+no show. Same shape as the library badge, which became measurable the same way.
+
+**They are `public`, not `internal`, and that was measured rather than chosen.** `Assets/Editor`
+is a separate assembly, so `internal` does not reach the probe: the first run died with **81
+`error CS0117`** naming every one of them. "Make it internal so the test can see it" is simply
+false in a Unity project.
+
+### A second break the compiler could not see, found by reading the overlap
+
+Seven files were changed by both sides. All seven merged cleanly, and the build is green, so
+nothing in the tooling had anything left to say about them. Reading one of them anyway turned up a
+real defect in **our** code:
+
+Our remote helpers on `MusicLibraryMenu` end with `if (ShowPlaylist.Count == 1)
+SetNavigationScheme(true);` — rebuild the green button's navigation scheme when the setlist stops
+being empty. Upstream now does that itself, in `OnSetlistChanged`, subscribed to `Setlist.Changed`
+— **and it checks `IsNavigationSchemeBlocked()` first**, deferring the rebuild through
+`_needsNavigationSchemeRefresh` when a popup menu or a dialog is showing.
+
+Ours did not check. A phone can queue a song at any moment, including while the player has a popup
+or a dialog open on the TV, so the remote path could rebuild the navigation scheme out from under
+an open popup — which is precisely what upstream's guard exists to prevent. Our calls were removed
+rather than guarded: the subscriber already handles the transition, and correctly.
+
+Not found by the compiler, not found by the probe, and not reported by `git`. Found by asking what
+the other side had changed in a file that merged without complaint.
+
+**Proved able to go red before its green was believed**, once per function. The prediction was
+written down before each run and compared with the measurement; all three matched.
+
+| Break | Predicted | Measured |
+|---|---|---|
+| `CanEditWithinShow` as `at >= floor` | 1 failure: *the song being played cannot be removed* | FAIL (1), that check |
+| `QueueWithSongNext` without `RemoveAt(existing)` | 1 failure: *and is not left in its old place as well* | FAIL (1), that check, reporting `[0,1,4,2,3,4]` |
+| `QueueInVoteOrder` without the put-back loop | 2 failures: the partial sort and the unknown-song sort | FAIL (2), those two |
+
+**Trying to make the probe catch a fourth break is what found dead code.** The first plan for
+break 2 was to delete an `if (existing < at) at--;` that adjusted the insertion point for the
+position a moved song vacates. Working out which check would notice showed that **none could**:
+the branch is reached only when `CanEditWithinShow` says yes, so `existing >= floor + 1`, while
+`at` is at most `floor + 1` — the song being moved is never before the slot it moves to, so the
+removal never shifts that slot. The arithmetic could not execute. It was removed rather than
+commented, because code that cannot run still has to be read, and it claims a case exists.
+
+That is the second time on this project that an attempt to verify something found the instrument
+or the subject to be the problem rather than the thing under test. It is cheaper than the first.
+
+### Measured on the merged and ported tree
+
+- **The fork compiles under Unity 6000.3.5f2 headless — 0 `error CS`, exit 0.** The same command
+  reported 87 before the port, which is the only reason anyone knew there was a port to do.
+- **`SetlistGuardProbe`: 25 of 25.** Red three ways first, as above.
+- **`YARG.Core`: 750 tests, 742 passed, 6 failed, 2 skipped**, the stable result on four of five
+  runs. The submodule pointer moved `8ae7718` → `6c0923e`, so the baseline written down in
+  `WORKSPACE.md` had to be re-measured rather than carried forward: a changed pointer means the
+  old numbers describe different code. Detail, including the intermittent seventh failure, below.
+- **The yarg-remote live contract test: 13 of 13**, against a headless `RemoteQueueHost` built from
+  the ported fork. This is what covers the HTTP paths the probe does not: the probe measures the
+  show-guard arithmetic with no game, this drives the real endpoints.
+
+### The YARG.Core baseline moved, and one of its tests is a wall-clock race
+
+The submodule pointer moved `8ae7718` → `6c0923e` (upstream's #478, expose chart file modified
+time, and #471, editable vocal colors), so the baseline in `WORKSPACE.md` describes different code
+and was re-measured. **New baseline: 750 tests, 742 passed, 6 failed, 2 skipped.** Previously 745 /
+737 / 6 / 2, so five tests were added and all five pass; the six failures are the same lip-sync
+phoneme tests, and still upstream's — our submodule pointer equals `upstream/dev`'s exactly and
+none of our commits touch `YARG.Core`.
+
+**A seventh failure appeared once in five runs** and is worth writing down rather than averaging
+away: `PreviewContextTests.WaitForCompletionAsync_AllowsFadeOutAfterCancellation`. It is a race
+against the wall clock, not a flake of unknown cause — the test creates a context with
+`fadeDuration: 0.05`, cancels, `await Task.Delay(10)`, and then asserts the wait task is **not**
+complete. Any scheduling hiccup longer than about 40 ms between those two lines lets the 50 ms fade
+finish and the assertion flips. It failed on the one run that shared the machine with other work
+and passed on the four that did not.
+
+It is upstream's test and upstream's race, and it is a candidate for `UPSTREAM.md`: unlike the
+`song.ini` bounds check looked at on 2026-11-02, where our own reading was wrong, this one is
+demonstrable from the test body alone.
+
+**An oddity, recorded rather than explained:** four tests print as `Skipped` while the summary
+counts 2, and 742 + 6 + 2 = 750 adds up. Two of them (`Canonical20260801_*`) are evidently not
+counted in the total. Not investigated; noted so a later reader does not think the arithmetic is
+broken.
+
+**What is NOT verified.** None of this was played. The probe measures arithmetic and the contract
+test drives HTTP against a headless host with no songs; nobody has queued a song from a phone
+during a real setlist on the ported build, which is the only thing that would exercise the guard
+end to end. The 10-30 entry above is the precedent for why that matters: the rebased tree passed
+every headless check and then crashed on the first click of the Song Server tab. **The twelve
+upstream commits this merge brought in — editable vocal colors, vocal track fading, the solo and
+unison box fix, notification history, Clone Hero practice-section names, Sort by Date Added, the
+VLC update — are likewise unplayed.**
 
 ## Blockers
 
