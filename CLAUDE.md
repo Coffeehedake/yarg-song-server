@@ -39,6 +39,15 @@ Then, by subject:
 
 ## Rules
 
+- **A status line in `docs/ROADMAP.md` is a SUMMARY, never the authority.** Before acting on one
+  — above all on "still open", "not implemented" or "awaiting a decision" — check the thing that
+  owns the fact: the ADR's own `**Status:**` line, the code, and `git log`. **Twice on 2026-11-02
+  a stale line sent work at something already finished.** The per-song badge was offered to Jay
+  from a paragraph three days out of date, contradicted by the commit message of the work that
+  closed it; and `ADR-008` was picked up as an open defect when it was implemented, deployed, and
+  measured at 0.977s of downtime in production. Both took under a minute to disprove, and both
+  were disproved by reading the authority rather than by thinking harder about the summary. The
+  cost is not the minute — it is that a confident wrong status survives being read.
 - **Push to `origin` only** (`gitlab.badassium.com/fatalexception/yarg-song-server`). GitHub is a
   downstream force-overwritten mirror — never push there.
 - **Never implement CON / mogg decryption**, and never generate `songcache.bin`. Both are hard

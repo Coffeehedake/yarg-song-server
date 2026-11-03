@@ -2191,9 +2191,28 @@ same day.
 
 ## Blockers
 
-**None.** One open DEFECT, designed but not implemented, awaiting Jay's decision:
+**None, and no open defects.**
 
-**The start-up index is a data-loss risk, not just an outage.** The listener binds only after
+> **This section said otherwise until 2026-11-02, and it was wrong.** It described the start-up
+> index as *"designed but not implemented, awaiting Jay's decision"* when the fix had been
+> implemented, deployed and measured in production. Asked what to work on next, this document
+> was read, that line was believed, and the work was picked up — on a defect that no longer
+> existed. The ADR's own status line (*"Accepted and implemented"*) is what caught it, within a
+> minute, by contradicting this page.
+>
+> **It was the second time in one day.** The per-song server badge was offered to Jay the same
+> afternoon from a ROADMAP paragraph that was three days stale, contradicted by the commit
+> message of the work that closed it. Two misfires from the same cause is a pattern, not a slip,
+> and the cause is that a status sentence here duplicates a fact that lives somewhere else —
+> so it can only ever rot. The rule that follows from it is now in this repo's `CLAUDE.md`:
+> **a status line in this document is a summary, never the authority. Check the ADR's status
+> line and the code before acting on it.**
+
+**The defect this section used to describe is FIXED, DEPLOYED and MEASURED.** Kept here rather
+than deleted, because the problem is worth understanding and because "there are no blockers" is
+a claim that should show its work:
+
+**The start-up index WAS a data-loss risk, not just an outage.** The listener binds only after
 the whole library is indexed, so a deploy is hard down for the duration — measured on the
 `0c6fa84` deploy as **10m47s** at 3,067 songs, `/healthz` connection-refused rather than 503,
 against 3m39s at 1,369. Per-song cost ROSE over that range (0.160 s → 0.209 s), so linear
@@ -2202,10 +2221,17 @@ whether that is superlinear in count or a shift toward loose folders. The danger
 wait: `POST /api/v1/have` answering `200` with an incomplete index would tell a sync client
 it has songs the server does not, and a pruning client would delete a player's library. The
 shipped client already fails closed on any non-200 (`postHave` runs first in `Run` and returns
-on a non-200 before downloading or pruning), so **only the server half has to ship** — and the
-distinction between "indexing" and "genuinely empty" has to live in the STATUS CODE, because an
-empty `200` is a legitimate instruction to prune everything. Design, measurements and the
-corrected instrument are in [`ADR-008`](ADR-008-serve-while-indexing.md).
+on a non-200 before downloading or pruning), so **only the server half had to ship** — and the
+distinction between "indexing" and "genuinely empty" lives in the STATUS CODE, because an empty
+`200` is a legitimate instruction to prune everything.
+
+**What shipped**, in `b38df86` *"This change retires 'the port is open' as a readiness signal"*:
+the listener binds before indexing, `/healthz` answers `indexing`, and every library endpoint
+answers **503 with `Retry-After: 5`** until the index is published. Deployed in `6cbea44` and
+carried by every build since, including the live `01e0503`. **The outage went from 16m53s to
+0.977s** — recorded in `2129210`. Design, measurements and the corrected instrument are in
+[`ADR-008`](ADR-008-serve-while-indexing.md), whose first out-of-scope follow-up (hashing every
+file twice) is also now done, at 1.83× with `package_hash` unmoved across all 4,085 songs.
 
 *(A "the Unity editor will not start on ENG-1" blocker was filed here on 2026-09-10 and withdrawn
 the same hour. It was real in the sense that five launches failed, and wrong in every other sense:
