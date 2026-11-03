@@ -811,6 +811,66 @@ Measured while doing it, and worth knowing before designing any other batchmode 
 **only 5 of the 23 corpus songs scan in batchmode at all.** The other 18 are refused for reasons
 that are the harness's, not theirs.
 
+### The badge missed the one song that is most obviously the server's — 2026-11-02
+
+Both the badge and the `server:` filter decided via `MirroredSongs.IsMirrored`, which asks
+whether the song's bytes sit under the mirror folder. Both shipped **before**
+`RemoteSongEntry` existed, and *Browse and play server songs without mirroring the library*
+(`yarg` `36ca1f2a`) touched neither file — so a song the player can see and has not downloaded
+was the one song treated as local. Its `ActualLocation` is the synthetic
+`server://<chart hash>`, which is under no folder at all.
+
+Measured against a real 6-song catalogue from vault2, entries built by `RemoteCatalog.FromJson`
+— production's own mapping, because a hand-made entry would only prove a string comparison
+works:
+
+| | Before | After |
+|---|---|---|
+| browsed songs carrying the badge | **0 of 6** | 6 of 6 |
+| `server:yes` keeps them | **0 of 6** | 6 of 6 |
+| `server:no` excludes them | not asserted | 6 of 6 |
+| mirrored songs badged / local songs clean | 2 of 2 / 2 of 2 | unchanged |
+
+**The filter half is the worse of the two.** A missing badge is cosmetic; a player who types
+`server:yes` to see what the server has, and is shown only what they already downloaded, has
+been answered the opposite of what they asked.
+
+`MirroredSongs.IsFromServer` is now what both call — `entry is RemoteSongEntry ||
+IsMirrored(entry)`. `IsMirrored` keeps its narrower meaning, because the settings row that
+counts what this machine holds genuinely wants "bytes on this disk".
+
+**The type test is not a retreat from "the signal is the path".** For a song with no bytes here
+there is no path to read, so the entry's type is the whole of the available evidence — and it is
+conclusive, because a `RemoteSongEntry` exists only because the server published it. Once such
+a song is fetched the path test answers too, and the two agree. Recorded as the one judgement
+call in the change, so it can be argued with rather than discovered.
+
+### Two launcher quirks that are exact opposites, and one probe that skipped instead of failing
+
+The new assertion's first run reported
+`PROBE SKIP: no catalogue at YARG_CATALOG_JSON, so browsed-song behaviour was NOT measured`.
+`Invoke-CimMethod Win32_Process.Create` spawns through the WMI service rather than forking the
+calling shell, so **it does not inherit that shell's environment** and the `$env:` set beside it
+never arrived. The fix is a `.cmd` wrapper that sets the variable and launches Unity as its own
+child.
+
+That is worth writing down twice over. First because the assertion did not fail — it did not
+*run*, and only reported so because whoever wrote the skip path made it say
+`NOT measured` out loud instead of passing quietly. A default-to-pass would have had the
+defect written up as absent.
+
+Second because it is the **opposite** of the launcher lesson from the same day's oracle run,
+where `Win32_Process.Create` produced a 97-byte `songcache.bin` and `Start-Process` was correct
+(`docs/TEST-CORPUS.md`, eleventh run). Unity needs `Create` because a bridge-spawned process
+inherits a job object that kills its Package Manager child; YARG.exe needs `Start-Process`.
+Same two functions, opposite right answers, unrelated reasons — so neither generalises, and
+"use the launcher this document names for THIS program" is the only safe rule.
+
+And a third, smaller: in PowerShell `@('a', 'b' + $x + '"')` does **not** build two strings.
+The comma binds tighter than `+`, so it builds `@('a','b')` and then appends `$x` and `"` as
+further elements. The generated `.cmd` had `set "VAR=`, the path, and a lone quote on three
+separate lines, and Unity never launched. Parenthesise each element.
+
 **The last unchecked server string: `package_hash`, both clients, 2026-09-08.** Closing the
 file-write defect above left one server-supplied string still used without looking at it. When a
 chart hash exists in two packages the server answers **300** with the candidates, and the client
@@ -946,9 +1006,12 @@ comparer; adding one for something that can never *be* a sort order would put a 
 that half the code must remember to ignore. `server:` is lifted out of the query before the
 pipeline runs and applied as one pass over the already-narrowed result.
 
-**Still open: the per-song badge.** Marking mirrored songs visually in the library rows needs
-UI work whose result cannot be verified from a headless session. The filter is the verifiable
-half, and it is the half that answers "show me what came from the server".
+**The per-song badge shipped after this was written, `yarg` `5865c24f`** — and the paragraph
+that used to stand here said it could not be verified headless, which stayed on the page as an
+open item for three days after it was done. Pulling the decision into a static
+(`SongViewType.WithServerBadge`) is what made it measurable; see below. The claim "this needs
+UI work that cannot be checked" was true of the *prettier* version only, and it was load-bearing
+enough to be worth re-testing rather than inheriting.
 
 **A Song Server tab came first, `yarg` `011d688f`.** The feature now has its own settings tab rather than
 three rows wedged under a header on Song Manager: URL, reachability, what this machine holds,
