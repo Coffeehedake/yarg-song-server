@@ -1,8 +1,25 @@
 # ADR-004: how a YARG client reaches a remote library
 
-**Status:** increment 1 **built, verified and finished** (`yarg` `7590443` through `5865c24f`
-on `dev`). Increments 2 and 3 are proposals, and **no longer blocked on anybody's answer** —
-see the scope note immediately below.
+**Status**, corrected 2026-11-02 — this line said *"increments 2 and 3 are proposals"* long
+after increment 2 shipped:
+
+- **Increment 1 — built, verified and finished** (`yarg` `7590443` through `5865c24f` on `dev`).
+- **Increment 2 — built** (`yarg` `36ca1f2a`), **and reachable by a player since `yarg`
+  `55eda66d`**, which replaced a `YARG_REMOTE_CATALOG=1` environment variable with a
+  *Browse Server Library* setting. It had been complete and switched off for the whole time in
+  between, behind a variable no player could set and nothing documented. Verified against the
+  live 4,085-song server on 2026-11-02 rather than by reading: three songs known only from the
+  catalogue downloaded, were scanned by the real scanner and returned charts —
+  `Editor/RemotePlaybackProbe.cs`, cold 131–1208 ms, warm 4–9 ms.
+- **Increment 3 — NOT built as specified below, and the specification is the part that aged.**
+  What shipped gets increment 3's *browsing* benefit by a different route: entries are built from
+  the server's JSON as `RemoteSongEntry`, so browsing 4,085 songs scans nothing. That sidesteps
+  finding 6 entirely — no `songcache.bin` format to speak, no YARG.Core addition to ask for —
+  which is why it could ship while the route below could not. What remains unbuilt is the part
+  below that this does not cover: **playing** a song still downloads it and scans that one file.
+
+Increments 2 and 3 are also **no longer blocked on anybody's answer** — see the scope note
+immediately below.
 
 ## Scope, restated 2026-09-08
 

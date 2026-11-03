@@ -2189,6 +2189,57 @@ badge was not re-checked on screen either: the playtest library was pointed at a
 folder, so no song in it was mirrored for this build. The badge was measured headless twice the
 same day.
 
+### A finished feature nobody could switch on — 2026-11-02 (`yarg` `55eda66d`)
+
+Asked to build ADR-004 increment 2, *fetch a song when it is played*. It had been built since
+`36ca1f2a`. **The third stale status line in one day**, and the first one caught by the rule the
+other two produced: check the ADR's status line and the code before acting on a summary. ADR-004
+said *"increments 2 and 3 are proposals"*; `GameManager.Loading.cs:174` has materialised a
+`RemoteSongEntry` before every load since that commit.
+
+**But it was unreachable**, which is the part worth having gone looking for. The catalogue merge
+sat behind `YARG_REMOTE_CATALOG=1` — an environment variable with no setting, no documentation,
+and exactly one occurrence across both repositories: the check itself. A player could not switch
+it on from inside the game, and nothing told them it existed.
+
+**The gate's stated reason was made false by its own commit.** Its remarks read *"it is not
+finished: the entries browse, but they cannot yet be PLAYED — `RemoteSongEntry` returns null from
+every loader"*. True when drafted; false by the time it landed, because `36ca1f2a` is also the
+commit that added the fetch-on-play step. A gate justified by a limitation its own commit removed
+is not a feature flag, it is code shipped switched off and then forgotten. That is a distinct
+failure from the three stale status lines — here the stale sentence was *inside the code it
+described*, where nobody thinks to distrust it.
+
+**Measured before the gate came off, not argued.** `Editor/RemotePlaybackProbe.cs` against the
+live 4,085-song server: three songs known only from the catalogue downloaded, were scanned by the
+real scanner, and returned real charts.
+
+| Song | Cold | Chart | Warm |
+|---|---|---|---|
+| Fredrik Thordendal's Special Defects — "Solo" Niger Within | 1208 ms | 158 ms, res 192, 40 sections | 9 ms |
+| Sportfreunde Stiller — '54, '74, '90, 2010 | 131 ms | 28 ms, res 480, 9 sections | 5 ms |
+| Sportfreunde Stiller — '54,'74,'90,2010 | 598 ms | 68 ms, res 480, 9 sections | 4 ms |
+
+The probe's decisive check is `LoadChart() != null`, and that choice is the reason the result
+means anything: *"a file downloaded"* and *"a scan returned something"* both pass for a song that
+cannot be played.
+
+So the variable became a `ToggleSetting`, **Browse Server Library**, off by default, under *Sync
+On Startup* in the Song Server tab. The two are alternatives rather than steps — mirroring trades
+disk for certainty, browsing trades certainty for a library the size of the server's.
+
+`SettingsRowProbe` was watched going red first: with the `en-US.json` strings removed it reported
+exactly two failures, both naming the new row's missing `Name` and `Description`, and nothing
+else. That probe exists because **a setting with no entry in `en-US.json` fails nowhere else** —
+the menu simply renders a blank label.
+
+**A correction to the first draft of the setting's own description, caught by reading the code it
+describes.** It said the feature *"uses almost no disk"*. `RemoteSongFetcher` has no eviction and
+nothing else prunes `ServerCache`, so every song ever played from the server is kept for good: it
+starts using no disk and grows with what is played. The description now says so. **An actual
+budget or eviction policy is not built**, and with browsing now reachable against a 4,085-song
+server that is the obvious next thing to want.
+
 ## Blockers
 
 **None, and no open defects.**
