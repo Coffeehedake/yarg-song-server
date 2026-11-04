@@ -114,6 +114,12 @@ Rules:
   **`ProjectSettings/ProjectSettings.asset` must be `git checkout --` reverted after EVERY
   editor run**, including ones that die: Unity re-adds a VisionOS icon block whether or not the
   run got anywhere.
+
+  **`ProjectSettings/QualitySettings.asset` too, and that one is NOT in the note below.** A
+  batchmode run on 2026-11-03 flipped `vSyncCount: 0` to `1` in it. One line, no content, and
+  nothing announces it — so `git add -A` after a probe sweep commits a rendering setting change
+  to a fork intended for upstreaming. Check `git status` after an editor run rather than
+  reverting only the file this file used to name.
 - **You do not need a GitHub credential for either repo, and should not go looking for one.**
   GitLab owns the mirror credential and pushes for us. Measured 2026-09-06: mirror 10 on
   project 53 last succeeded at `20:42:42`, the same minute as that push to origin, with an

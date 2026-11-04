@@ -2472,51 +2472,164 @@ the thing anyone actually cares about.
 
 ### OPEN: search does not work with the server library — reported 2026-11-03
 
-Jay, testing the browse feature: *"the search does not work with the server connection"*.
-**Not diagnosed.** Recorded here with what has already been ruled out, so whoever picks it up
-does not repeat the elimination.
+Jay, testing the browse feature: *"the search does not work with the server connection"*, and when
+asked what came back, *"Only local songs"*.
 
-**Ruled out: the sort strings.** The obvious suspect was that a `RemoteSongEntry` carries
-metadata without the `SortString`s that `SongSearching` actually matches on — every filter in
-`Assets/Script/Song/SongSearching.cs:357+` reads `entry.Name.SearchStr`, `entry.Artist.SearchStr`
-and so on, and those come from private fields that are **not** derived from `_metadata`
-automatically. But `RemoteSongEntry.Create` does call `SetSortStrings()`, and that sets all ten
-of them — name, artist, album, genre, subgenre, charter, source, playlist. There is even a
-comment there recording that removing the call was a probe's negative control: 609 entries
-constructed, merged and sorted correctly, with every row in the library blank.
+**Still open. But every mechanism reachable without the running game has now been eliminated by
+measurement rather than by reading, and two unrelated defects were found while doing it.** The
+elimination is written out below so nobody repeats it.
 
-**The leading hypothesis is a stale search cache.** `SongSearching` holds state across queries —
-it has a `Reset()` and a `searches.Clear()` — and nothing was found linking a library refresh to
-either. If the cache survives the catalogue merge, every search would be filtering the library as
-it stood *before* the merge, which is exactly the reported symptom. Unconfirmed: the game was
-closed before this could be measured.
+Two headless probes do the work, both in `yarg/Assets/Editor/`, both driven against the live
+server's whole catalogue (4,085 rows) built by production's own `RemoteCatalog.FromJson`:
 
-**Jay answered that: "only local songs".** Which is the same observation as "the library as it
-stood before the merge", since every song he had locally came from the mirror.
+**`SearchRemoteProbe`** reflects the catalogue into `_sortTitles` / `_sortArtists` and runs the
+real `SongSearching`:
 
-**The mechanism that fits, read but not yet confirmed by running.** `SongSearching.Search`
-(`Assets/Script/Song/SongSearching.cs:86`) takes its starting set from a cached `_baseList`, and
-the only place that is refilled is the `else` branch taken when **the requested sort differs from
-the last one**:
-
-```csharp
-else { searches.Clear(); _sort = sort; _baseList = SongContainer.GetSortedCategory(sort); }
+```
+PROBE INFO: 4085 remote entries built from 4085 catalogue rows
+PROBE INFO: an empty query returns 4085
+PROBE INFO: a nonsense query returns 0
+PROBE INFO: "nirvana" (unqualified) returns 155, catalogue has 151
+PROBE INFO: "artist:nirvana" returns 153, catalogue has 151
+PROBE INFO: "server:yes" returns 4085
+PROBE INFO: "server:no" returns 0
 ```
 
-So a library that changes underneath a stable sort order is never picked up. `Reset()` exists and
-nulls `_baseList`, and `MusicLibraryMenu.Refresh()` calls it — so the question is narrowed to
-**whether the catalogue merge reaches a menu `Refresh()`**, not to anything about the entries
-themselves.
+It carries a `YARG_PROBE_SELFTEST=1` switch that inverts one expectation, and the first run was
+made **with that switch on** so the failure channel was watched working before any green from it
+was believed: exactly one FAIL, the deliberate one.
 
-**Also still open and NOT eliminated:** whether `GetSortedCategory` — which returns `_sortTitles`,
-`_sortArtists` and friends, filled by `FillContainers` — contains the remote entries at all. The
-browse list shows 4,080, which suggests it does, but that was not verified against the same
-containers search reads.
+**`LibraryPipelineProbe`** goes further and drives the real `SongSorting.SortEntries` and the real
+`SongContainer.FillContainers`, under **Jay's own `settings.json`** rather than defaults — it says
+which it got, so a result is never read as being about settings it was not run with:
 
-**The decisive measurement** is one run: start the game with browse on, confirm the library reads
-4,080, then `GET /api/library?query=<an artist only the server has>`. If it returns nothing while
-the same query for a local artist works, the entries are missing from the search containers; if
-changing the sort order first makes the search start working, it is the cached `_baseList`.
+```
+PROBE INFO: settings come from Jay's own settings.json
+PROBE INFO: LibrarySort=Name MaxSongRating=None UnratedSongRating=None
+            CensorMatureContent=False AllowDuplicateSongs=True BrowseServerLibrary=False
+PROBE INFO: SongContainer.Count = 4085
+PROBE INFO: sort Name holds 4085          ... and Artist, Album, Genre, Charter, Source,
+PROBE INFO: sort Subgenre holds 4085          Year, SongLength, DateAdded, Artist_Album,
+PROBE INFO: searching "nirvana" at sort Name returns 155   Folder — all twelve, all 4085
+```
+
+What that eliminates, every one of which was a leading hypothesis at some point:
+
+- **The search predicate.** `UnspecifiedSearch` reads `Name.SearchStr` and `Artist.SearchStr` and
+  ranks inside a `Parallel.ForEach`; given remote entries it returns them, 155 of them.
+- **The sort strings.** `RemoteSongEntry.Create` calls `SetSortStrings()`, which fills all ten.
+  A comment there already recorded removing it as a probe's negative control.
+- **The `server:` mirror filter.** Correct in both directions: `server:yes` 4085, `server:no` 0.
+  With no `server:` term `ExtractWant` returns `Want.Either` and `ApplyMirrorFilter` returns the
+  list untouched.
+- **A stray `server:` term stuck in the static `_fullSearchQuery`.** This one would have produced
+  the exact reported symptom — `server:no` means "only local songs" — and the query field is
+  `static`, so it survives leaving the menu. Nothing in the codebase writes such a term; it can
+  only be typed.
+- **The stale `_baseList`**, which the previous version of this entry called the mechanism that
+  fits. It is dead on reading: `MusicLibraryMenu.SortFilter.cs:142` builds the **unsearched** list
+  through the very same `_searchField.Search(...)` call, so the 4,080 Jay saw came *out of*
+  `_baseList` and the remote entries were in it.
+- **`SortEntries` and `FillContainers`**, which is where the previous defect of this exact shape
+  lived. They keep all 4,085 and never throw.
+- **Ratings.** `DisallowedByRating` drops a song from every sort container, so a wrong rating was
+  a plausible cause. It is not this: Jay's `MaxSongRating` is `None`, which admits everything.
+  (It *was* wrong, though — see the rating entry below.)
+
+Also measured and worth knowing: **no YARG log from 2026-11-03 exists anywhere on ENG-1**, in
+`LocalLow/YARC/YARG/release/logs`, in the playtest data folder, or anywhere under `AppData`. The
+session cannot be reconstructed after the fact, which is why the next attempt should keep its log.
+
+**What is left is the two things a headless probe cannot build:** a library holding local *and*
+remote entries at once, and the runtime toggle — `RescanForBrowse` calls `RunRefresh` and then
+`MusicLibraryMenu.SetReload(Full)`, and whether that reload is consumed while the library screen is
+already open has never been measured. Commit `4fa71518` is still unverified by use.
+
+**The decisive measurement, now much narrower than before.** Start the game with browse on and the
+library at 4,080, then search for an **artist the server has and this disk does not** — the
+catalogue's own top three are Nirvana (151), Dragonforce (93 of 91 rows) and Brand New (84). Report
+the **result count**, not whether it "worked":
+
+- a count in the dozens or hundreds → search is fine and the report was about something else
+- a count at or under the 128-song local library → the containers really are local-only at that
+  moment, and the only remaining suspect is the mixed-library or toggle path
+- nothing at all → an exception during search, which the log will name
+
+### CLOSED: the five songs that were never missing
+
+An earlier entry recorded that 3,952 merged plus 133 already-local made 4,085 while the library
+showed 4,080, and listed five unaccounted songs. **Nothing was missing, and the arithmetic now
+closes end to end:**
+
+```
+4,085 catalogue rows
+4,080 distinct chart hashes        (the server publishes five charts twice)
+  128 of those already on disk     (the local mirror)
+3,952 merged                       ✓ matches the log
+4,080 in the library               ✓ matches what Jay saw  (128 + 3,952)
+```
+
+`RemoteCatalog.MergeInto` admits one row per hash and skips the rest, including a hash it added
+earlier in the same loop, so the five duplicate rows collapse harmlessly.
+
+**The log line is what sent the hunt off, and it has been fixed.** It read
+`"{0} entries merged, {1} already local"` with the second number computed as
+`remote.Count - added` — so five duplicate *rows* were reported as songs this machine already
+had, and "133 already local" against a 128-song library reads as five songs lost somewhere. It now
+reports rows, distinct charts, duplicate rows, merged and already-on-disk as five separate numbers.
+
+`RemoteEntryProbe`'s `location-collision` check was failing on the same duplicates and calling them
+a client defect. Its reasoning was self-contradictory — it held that two entries sharing a chart
+hash is legal while two sharing a *location* is a defect, but `SortBasedLocation` for a
+`RemoteSongEntry` **is** `server://` + the chart hash, so for this type they are one condition. It
+now reports the duplicate rows as an observation about the server and asserts the thing that
+actually makes them harmless: that `MergeInto` leaves exactly one entry per chart.
+
+### FIXED: every server song's content rating was wrong
+
+Found while eliminating ratings as a cause of the search problem. `RemoteCatalog` cast the wire
+value straight into `SongRating`:
+
+```csharp
+m.SongRating = (SongRating) (uint) ((int?) n["rating"] ?? 0);     // wrong
+m.SongRating = RatingHelper.ParseSongRating((uint) ((int?) n["rating"] ?? 0));   // right
+```
+
+The wire carries the **raw `song.ini` number** — 1 = Family Friendly through 5 = Sensitive Content,
+per the wiki and per this repo's own `internal/songini/keys.go` — and `SongRating` is 0-based in a
+**different order**. YARG.Core has a public converter, `YARG.Core.IO.RatingHelper.ParseSongRating`,
+which is what both the ini and the DTA scanners call. The cast skipped it and was wrong twice over:
+
+- every **rated** song moved one position up the enum: Family Friendly read as Supervision
+  Recommended, Mature read as Sensitive Content
+- an **absent** rating became `0`, which is `Family_Friendly` rather than `Unspecified` — so
+  `UnratedSongRating`, which decides what an unrated *local* song counts as, could never apply to
+  a server song
+
+The second half was the whole library: **3,604 of the live catalogue's 4,085 rows publish no rating
+at all**, so every one of them asserted Family Friendly. A player who capped their library at
+Family Friendly got all 4,085 songs.
+
+Measured both ways rather than asserted. The defect was **reintroduced on purpose** and the check
+watched going red — 4,085 rating failures, named per song (`raw 0 should be Unspecified, entry says
+Family_Friendly`) — then the fix restored and the run came back with the ratings distribution the
+catalogue actually describes:
+
+```
+before:  failures: 4090   (4085 rating + 5 location-collision)
+after:   failures: 5      (the location-collision false finding, since removed)
+         ratings seen: 0x336, 1x90, 2x55, 4x3604
+```
+
+That is 336 Family Friendly, 90 Supervision Recommended, 55 Mature and 3,604 Unspecified — 4,085,
+and 481 rated, which is exactly what the catalogue JSON carries.
+
+One thing the red run exposed in the instrument rather than the product: the probe's `ratings`
+dictionary had been **declared, passed into `CheckOne` and printed in the report while nothing ever
+populated it** — a tally that could not produce a finding. Filling it from the raw wire value then
+double-counted against the existing enum-keyed tally, which is this repo's *"a lossy key makes a
+table that adds up and is wrong"* in miniature, and was invisible while the cast made the two
+values equal. It counts the resulting enum only.
 
 ## Blockers
 
