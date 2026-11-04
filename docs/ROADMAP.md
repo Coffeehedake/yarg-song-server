@@ -2491,10 +2491,32 @@ either. If the cache survives the catalogue merge, every search would be filteri
 it stood *before* the merge, which is exactly the reported symptom. Unconfirmed: the game was
 closed before this could be measured.
 
-**What to measure first**, because the three readings point different ways: does the search box
-return nothing at all, only local songs, or stale results from before the toggle? Driving
-`GET /api/library?query=<text>` against a running game with browse on answers it without touching
-the UI, and that endpoint was already used this session for the queue work.
+**Jay answered that: "only local songs".** Which is the same observation as "the library as it
+stood before the merge", since every song he had locally came from the mirror.
+
+**The mechanism that fits, read but not yet confirmed by running.** `SongSearching.Search`
+(`Assets/Script/Song/SongSearching.cs:86`) takes its starting set from a cached `_baseList`, and
+the only place that is refilled is the `else` branch taken when **the requested sort differs from
+the last one**:
+
+```csharp
+else { searches.Clear(); _sort = sort; _baseList = SongContainer.GetSortedCategory(sort); }
+```
+
+So a library that changes underneath a stable sort order is never picked up. `Reset()` exists and
+nulls `_baseList`, and `MusicLibraryMenu.Refresh()` calls it — so the question is narrowed to
+**whether the catalogue merge reaches a menu `Refresh()`**, not to anything about the entries
+themselves.
+
+**Also still open and NOT eliminated:** whether `GetSortedCategory` — which returns `_sortTitles`,
+`_sortArtists` and friends, filled by `FillContainers` — contains the remote entries at all. The
+browse list shows 4,080, which suggests it does, but that was not verified against the same
+containers search reads.
+
+**The decisive measurement** is one run: start the game with browse on, confirm the library reads
+4,080, then `GET /api/library?query=<an artist only the server has>`. If it returns nothing while
+the same query for a local artist works, the entries are missing from the search containers; if
+changing the sort order first makes the search start working, it is the cached `_baseList`.
 
 ## Blockers
 
