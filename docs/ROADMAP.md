@@ -2470,7 +2470,58 @@ the metadata either way — the same shape as the property trap recorded in `BUI
 afternoon. The evidence is the library going from 128 to 4,080 with the exception gone, which is
 the thing anyone actually cares about.
 
-### OPEN: search does not work with the server library — reported 2026-11-03
+### CLOSED: search was never broken — it was the toggle, measured 2026-11-03
+
+**The search works. It always did.** Jay's own game log settles it, from the build that carries
+the `SEARCH DIAG` instrument:
+
+```
+21:20:30  typed "green day" ... == 1 result  (1 local, 0 from the server);  library holds 129
+21:20:56  Song server catalogue: 4085 rows, 4080 distinct charts (5 duplicate rows),
+          3951 merged, 129 already on this disk
+21:21:07  typed "green day" ... == 59 results (1 local, 58 from the server); library holds 4080
+21:21:56  typed "artist:"green day";green day;" == 51 results (1 local, 50 from the server)
+```
+
+At 21:20:30 the library held **129 songs** and the search returned every match in it. Twenty-six
+seconds later the catalogue merged and the same query returned 59 results, 58 of them the
+server's. Search was answering correctly about the library it actually had.
+
+So "the search does not work with the server connection" was the **Browse Server Library toggle
+not taking effect** — item #1 of the original five-point report — wearing item #2's clothes.
+Fixed by `4fa71518` (which had never been pushed) and `d32ea9dc`, and this is the first evidence
+either of them works in a running game.
+
+**Six mechanisms were eliminated before the right question was asked**, each by measurement and
+each looking right at the time: the sort strings, the `server:` mirror filter, the cached
+`_baseList`, `SortEntries`/`FillContainers`, the ratings path, and the filters menu. Three probes
+came out of it and they are worth keeping — `SearchRemoteProbe`, `LibraryPipelineProbe` and
+`MixedLibraryProbe`, the last reproducing the reported library exactly at 4,080 songs with 133
+local and 3,947 remote.
+
+**The lesson is not "the probes were wasted".** It is that every one of them asked *"is the search
+broken?"* when the answer needed was *"what was in the library when he searched?"* — and no amount
+of probing the search could produce that. One log line with the library size in it closed what six
+eliminations could not, and the instrument that produced it took ten minutes to write:
+
+```csharp
+YargLogger.LogFormatInfo("SEARCH DIAG: typed \\"{0}\\" -> query \\"{1}\\", sort {2}, mirror {3} == "
+    + "{4} results ({5} local, {6} from the server); library holds {7}", ...)
+```
+
+The breakdown into local and server is what made it conclusive rather than suggestive. A total
+would have read "1 result" and "59 results" and left the cause open, because a library with 129
+local songs returns a plausible number for a search that found only those. **Count the thing that
+distinguishes the hypotheses, not the thing that is easy to count.**
+
+`SEARCH DIAG` is a temporary instrument and is marked as such in the source. It **stays in the
+current playtest build**, which is the build in use and the one that proved both fixes, and it
+**must come out before this branch is proposed upstream**: it logs a line per keystroke in
+`SongSearching.Search`, which is fine for an instrument and not something to send to YARC.
+
+### The search investigation, kept for what it eliminated — reported 2026-11-03
+
+*Closed by the entry above. Everything below was written while it was open and is left as the record of six eliminations and the three probes they produced; the status line it used to carry has gone.*
 
 Jay, testing the browse feature: *"the search does not work with the server connection"*, and when
 asked what came back, *"Only local songs"*.
