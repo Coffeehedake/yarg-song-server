@@ -310,8 +310,9 @@ bytes, so re-zipping a library does not change what a client downloads.
 A short clip of the song's own audio, so a client can preview a song it does not hold. Roughly
 545 KB where the stem it came from is 47 MB.
 
-**Nothing here decodes audio.** The clip is whole Ogg pages copied out of a stem, which is why
-the server needs no ffmpeg and the image stays distroless-static. The reasoning, the measurement
+**Nothing here decodes audio.** The clip is whole Ogg pages — or whole MP3 frames — copied out
+of a stem, which is why the server needs no ffmpeg and the image stays distroless-static. The
+`Content-Type` follows the bytes (`audio/ogg` or `audio/mpeg`), not the `.ogg` in the path. The reasoning, the measurement
 that forced it and the independent verification are in `docs/ADR-009-preview-clips.md`.
 
 - **The window** comes from `song.ini`: `preview_start_ms`, and `preview_end_ms` when it gives a
@@ -330,9 +331,10 @@ that forced it and the independent verification are in `docs/ADR-009-preview-cli
   is decided after the header has to be sent, and any stem changing changes the package hash
   anyway. The output is deterministic, so the tag is honest: two requests return identical bytes.
 - `Range` is supported, because the clip is buffered and served with a length.
-- **415** when the song's audio is a format this does not cut yet. MP3 frames and WAV offsets are
-  cuttable by the same reasoning and are not written; that is 449 of the library's 22,091 stem
-  files, and the response names the format rather than failing vaguely.
+- **415** when the song's audio is a format this does not cut. Ogg, Opus and MP3 are all cut;
+  WAV is not, and deliberately so — there are **no `.wav` stems in the live library at all**, so
+  a WAV cutter would be code nobody runs. The response names the format rather than failing
+  vaguely.
 - **404** when the hash is unknown, when the song has no audio at all, or when the catalogue
   lists a stem the package does not hold — the last one says to rescan, because that is the fix.
 - **300 Multiple Choices** when the chart hash is shared by several packages, exactly as

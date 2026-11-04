@@ -171,6 +171,15 @@ func findInArchive(a *sng.Archive, base string) (string, bool) {
 	return found, found != ""
 }
 
+// cuttableExt reports whether a stem can be cut without decoding it.
+//
+// Ogg and Opus are pages, MP3 is frames; all three are containers that can be sliced on their own
+// boundaries. There are no .wav stems in the live library at all - 0 of 22,091 - so a WAV cutter
+// would be code nobody runs, and it is left unwritten on purpose rather than forgotten.
+func cuttableExt(ext string) bool {
+	return ext == ".ogg" || ext == ".opus" || ext == ".mp3"
+}
+
 // previewWindow is the clip's start and length in milliseconds, from song.ini where it is usable.
 func previewWindow(song *catalog.Song) (startMS, durMS int64) {
 	startMS = song.PreviewStartMS
@@ -269,12 +278,13 @@ func (s *Server) previewFile(w http.ResponseWriter, r *http.Request) {
 	var (
 		clip     bytes.Buffer
 		cutFrom  string
+		cutExt   string
 		lastErr  error
 		cuttable int
 	)
 	for _, cand := range candidates {
 		ext := strings.ToLower(path.Ext(cand.Name))
-		if !cand.ReadyMade && ext != ".ogg" && ext != ".opus" {
+		if !cand.ReadyMade && !cuttableExt(ext) {
 			continue
 		}
 		cuttable++
@@ -297,7 +307,11 @@ func (s *Server) previewFile(w http.ResponseWriter, r *http.Request) {
 		if cand.ReadyMade {
 			_, err = io.Copy(&clip, io.LimitReader(h, 8<<20))
 		} else {
-			err = preview.CutOgg(h, startMS, durMS, &clip)
+			if ext == ".mp3" {
+				err = preview.CutMP3(h, startMS, durMS, &clip)
+			} else {
+				err = preview.CutOgg(h, startMS, durMS, &clip)
+			}
 			if err != nil && preview.IsShortStream(err) {
 				// A clip shorter than asked for is still a clip. Logged, because a library
 				// full of these means the preview windows are wrong, not the cutter.
@@ -320,6 +334,7 @@ func (s *Server) previewFile(w http.ResponseWriter, r *http.Request) {
 		}
 
 		cutFrom = inner
+		cutExt = ext
 		break
 	}
 
@@ -330,7 +345,7 @@ func (s *Server) previewFile(w http.ResponseWriter, r *http.Request) {
 			// yet - 449 of the library's 22,091 stem files, a 2% hole that says so.
 			writeError(w, http.StatusUnsupportedMediaType,
 				"this song's audio is "+strings.ToLower(path.Ext(candidates[0].Name))+
-					"; only Ogg and Opus previews are cut so far")
+					"; Ogg, Opus and MP3 previews are cut, nothing else is")
 			return
 		}
 		s.logError("no usable preview source", lastErr, "chart_hash", hash)
@@ -338,6 +353,13 @@ func (s *Server) previewFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "audio/ogg")
-	http.ServeContent(w, r, hash+"-preview.ogg", time.Time{}, bytes.NewReader(clip.Bytes()))
+	// The type follows the BYTES, not the URL. A clip cut from an mp3 stem is mpeg however the
+	// caller spelled the path, and a client told "audio/ogg" about mpeg data is being lied to
+	// even if its decoder sniffs the content and copes.
+	contentType := "audio/ogg"
+	if cutExt == ".mp3" {
+		contentType = "audio/mpeg"
+	}
+	w.Header().Set("Content-Type", contentType)
+	http.ServeContent(w, r, hash+"-preview"+cutExt, time.Time{}, bytes.NewReader(clip.Bytes()))
 }

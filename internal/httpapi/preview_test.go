@@ -166,14 +166,29 @@ func TestPreviewCutsAClipFromTheStem(t *testing.T) {
 	}
 }
 
-func TestPreviewRefusesFormatsItCannotCut(t *testing.T) {
-	// noAudio, or the harness's default song.ogg would be tried first and this would be
-	// measuring an uncuttable Ogg rather than an unsupported format.
+// One MPEG1 Layer III frame at 128 kbit/s, 44.1 kHz: 417 bytes, 26.12 ms. The payload is
+// filler; the endpoint never decodes it, it only copies whole frames.
+func mp3Frames(n int) string {
+	var b []byte
+	for i := 0; i < n; i++ {
+		f := make([]byte, 417)
+		f[0], f[1], f[2], f[3] = 0xFF, 0xFB, 0x90, 0x00
+		for j := 4; j < len(f); j++ {
+			f[j] = byte(i + 1)
+		}
+		b = append(b, f...)
+	}
+	return string(b)
+}
+
+// 150 of the live library's 4,085 songs carry ONLY .mp3 stems - Metallica, Foo Fighters,
+// Queens of the Stone Age - and every one of them used to answer 415 and play nothing.
+func TestPreviewCutsMP3Stems(t *testing.T) {
 	srv, ix := newTestServer(t, []spec{{
-		dir:     "mp3-song",
-		seed:    "mp3-song",
-		ini:     map[string]string{"name": "m", "artist": "A", "preview_start_time": "5000"},
-		extra:   map[string]string{"song.mp3": "ID3\x03\x00\x00\x00\x00\x00\x00not really an mp3"},
+		dir:     "mp3-only",
+		seed:    "mp3-only",
+		ini:     map[string]string{"name": "m", "artist": "A", "preview_start_time": "1000"},
+		extra:   map[string]string{"song.mp3": mp3Frames(2000)},
 		noAudio: true,
 	}})
 	defer srv.Close()
@@ -186,12 +201,47 @@ func TestPreviewRefusesFormatsItCannotCut(t *testing.T) {
 	defer r.Body.Close()
 	body, _ := io.ReadAll(r.Body)
 
-	// 415 and not 500: the server understood the request and cannot satisfy it yet. MP3 is 449
-	// of the live library's 22,091 stem files, so this path is real and must say what it means.
+	if r.StatusCode != http.StatusOK {
+		t.Fatalf("status %d (%s)", r.StatusCode, body)
+	}
+	// The type follows the bytes, not the URL the caller spelled.
+	if ct := r.Header.Get("Content-Type"); ct != "audio/mpeg" {
+		t.Fatalf("content type %q, expected audio/mpeg", ct)
+	}
+	if !bytes.HasPrefix(body, []byte{0xFF, 0xFB}) {
+		t.Fatalf("clip does not start with an MP3 frame header: % x", body[:4])
+	}
+	source := len(mp3Frames(2000))
+	if len(body) >= source {
+		t.Fatalf("clip is %d bytes and the stem is %d - nothing was cut", len(body), source)
+	}
+}
+
+// What is left that genuinely cannot be cut. There are no .wav stems in the live library at all,
+// which is why no WAV cutter exists - but the refusal path still has to say what it means.
+func TestPreviewRefusesFormatsItCannotCut(t *testing.T) {
+	srv, ix := newTestServer(t, []spec{{
+		dir:     "wav-song",
+		seed:    "wav-song",
+		ini:     map[string]string{"name": "w", "artist": "A", "preview_start_time": "5000"},
+		extra:   map[string]string{"song.wav": "RIFF....WAVEfmt not really a wav"},
+		noAudio: true,
+	}})
+	defer srv.Close()
+
+	hash := ix.Missing(nil)[0]
+	r, err := http.Get(srv.URL + "/song/" + hash + "/preview.ogg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Body.Close()
+	body, _ := io.ReadAll(r.Body)
+
+	// 415 and not 500: the server understood the request and cannot satisfy it.
 	if r.StatusCode != http.StatusUnsupportedMediaType {
 		t.Fatalf("status %d (%s), expected 415", r.StatusCode, body)
 	}
-	if !strings.Contains(string(body), ".mp3") {
+	if !strings.Contains(string(body), ".wav") {
 		t.Fatalf("the refusal does not name the format: %s", body)
 	}
 }

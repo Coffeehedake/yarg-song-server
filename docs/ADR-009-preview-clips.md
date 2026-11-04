@@ -3,8 +3,9 @@
 **Status:** Accepted, implemented and **playing in the client** as of 2026-11-04.
 `internal/preview` cuts Ogg and Opus, `GET /song/{chart_hash}/preview.ogg` serves it, deployed on
 vault2 as `3a9bf3c`, and `RemoteSongEntry.LoadPreviewAudio` fetches it — verified by VLC and then
-by **BASS, the game's own decoder** (both below). MP3 and WAV are not cut yet — 449 of 22,091
-stem files, answered 415 rather than fudged — and clips are still not cached on disk.
+by **BASS, the game's own decoder** (both below). **MP3 is cut too as of 2026-11-04**, which was not cosmetic: 150 of the 4,085 songs carry
+*only* `.mp3` stems and every one of them answered 415 and played nothing. Clips are still not
+cached on disk.
 
 **Context:** Jay, playing the fork with the server library browsing: *"the song preview does not
 load"*. Correct, and by design — `RemoteSongEntry.LoadPreviewAudio` returns `null`, because a song
@@ -69,8 +70,8 @@ The same shape holds for the other two formats, which is why one approach covers
 |---|---|---|
 | Ogg Vorbis | page | `granule_position`, in samples at the rate in the identification header |
 | Ogg Opus | page | `granule_position`, always in 48 kHz units regardless of input rate |
-| MP3 | frame | fixed duration per frame, found by the sync word in each frame header |
-| WAV | byte | raw samples; pure arithmetic |
+| MP3 | frame | duration from the header's bitrate and sample rate, found by the sync word |
+| WAV | byte | raw samples; pure arithmetic — **not implemented, see below** |
 
 So the algorithm, for the 98% case:
 
@@ -212,3 +213,39 @@ the whole of it against somebody's ears.
 - **The disk cache is not built.** Clips are cut per request that the ETag does not satisfy. A
   performance gap, not a correctness one, and recorded here rather than left to be discovered
   from a slow endpoint.
+
+## MP3, added 2026-11-04
+
+Same idea, different container: an MP3 is a row of self-contained frames, so a clip is a run of
+whole frames copied out. Frame length comes from the header's bitrate and sample rate, which is
+also why it has to be parsed per frame rather than assumed — VBR files change bitrate as they go.
+
+Two things that are easy to get wrong and silent when you do:
+
+- **MPEG2 and 2.5 use different constants.** 576 samples per frame rather than 1152, and `72`
+  rather than `144` in the length formula. Using the MPEG1 numbers on an MPEG2 file yields frames
+  of twice the right length and a clip of noise.
+- **An ID3v2 tag's size field is syncsafe** — seven significant bits per byte. Read it as plain
+  big-endian and you overshoot into the audio. The resync would recover, but by discarding real
+  audio, so the clip would start late for no visible reason.
+
+**Verified against a real encoder's file, and the first version of the check did not discriminate.**
+The test walks the `.mp3` stem of a song pulled from the live server and asserts the frames *tile*
+it:
+
+```
+guitar.mp3: 2,641,504 bytes, 6,320 frames, 100.0% covered, 0 bytes skipped
+```
+
+The control that matters: changing `144` to `143` in the length formula still covered **99.3%**
+and **passed** the original 95% threshold, because resync recovers within a few bytes of each
+frame. The assertion is now on *skipped bytes*, where correct is zero and the corrupted formula
+skips 12,639:
+
+```
+corrupted: 99.5% covered, 12639 bytes skipped  -> FAIL
+restored : 100.0% covered,     0 bytes skipped -> pass
+```
+
+That is the whole lesson of the entry: **coverage was a plausible metric that could not see the
+defect**, and only putting the bug back revealed it.
