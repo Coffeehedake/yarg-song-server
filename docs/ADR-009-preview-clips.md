@@ -1,8 +1,10 @@
 # ADR-009: Preview clips, cut without a decoder
 
-**Status:** Accepted and implemented 2026-11-03. `internal/preview` cuts Ogg and Opus;
-`GET /song/{chart_hash}/preview.ogg` serves it. **Verified by an independent decoder** (below).
-MP3 and WAV are not cut yet — 449 of 22,091 stem files, answered 415 rather than fudged.
+**Status:** Accepted, implemented and **playing in the client** as of 2026-11-04.
+`internal/preview` cuts Ogg and Opus, `GET /song/{chart_hash}/preview.ogg` serves it, deployed on
+vault2 as `3a9bf3c`, and `RemoteSongEntry.LoadPreviewAudio` fetches it — verified by VLC and then
+by **BASS, the game's own decoder** (both below). MP3 and WAV are not cut yet — 449 of 22,091
+stem files, answered 415 rather than fudged — and clips are still not cached on disk.
 
 **Context:** Jay, playing the fork with the server library browsing: *"the song preview does not
 load"*. Correct, and by design — `RemoteSongEntry.LoadPreviewAudio` returns `null`, because a song
@@ -171,8 +173,27 @@ Four things in that list are there because each would have passed without the ot
 The clip is byte-identical across a rebuild and a handler rewrite, which is the determinism the
 strong ETag depends on.
 
-**Still the oracle's call.** VLC is an independent decoder and it is not YARG; BASS is what the
-game uses, and ADR-009's standard is the real client. This is strong evidence, not the final word.
+**And it has now met BASS — 2026-11-04.** This paragraph used to say the oracle had not had its
+say, and that VLC was strong evidence rather than the final word. It has had its say.
+`RemotePreviewProbe` calls `RemoteSongEntry.LoadPreviewAudio` — the production path, the one the
+music library calls when a song is highlighted — against the live server, and hands what comes
+back to the game's own decoder:
+
+```
+PROBE INFO: Fredrik Thordendal's Special Defects - "Solo" Niger Within
+PROBE PASS: the song has no bytes on this disk, so this is the remote path
+PROBE INFO: BASS decoded it in 619 ms, length 30.06s, 1 channel set(s)
+PROBE PASS: the clip has real length, not zero
+PROBE PASS: and it is about the preview window rather than the whole song
+PROBE PASS: a song the server does not have yields no preview
+```
+
+619 ms covers the fetch **and** the decode, against a 47 MB stem that was never downloaded.
+
+The length assertions are not padding: a decoder handed rubbish can still return an empty
+stream, and that would satisfy "returned a mixer" perfectly well. The last line is the negative
+control — without it, a loader that returned some cached or default audio for any hash would
+pass everything above it.
 
 ## What the implementation does that this document originally did not say
 
