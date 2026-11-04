@@ -39,6 +39,11 @@ type spec struct {
 	dir, seed string
 	ini       map[string]string
 	extra     map[string]string
+	// noAudio suppresses the default song.ogg. Every spec gets one otherwise, which makes a
+	// song whose only audio is some OTHER format impossible to express - and that case is
+	// real: 449 of the live library's 22,091 stem files are .mp3. Additive and opt-in, so no
+	// existing test changes behaviour.
+	noAudio bool
 }
 
 func newTestServer(t *testing.T, specs []spec) (*httptest.Server, *library.Index) {
@@ -68,7 +73,9 @@ func newTestServerWithPacks(t *testing.T, specs []spec) (*httptest.Server, *libr
 		}
 		mustWrite(t, filepath.Join(dir, "song.ini"), b.String())
 		mustWrite(t, filepath.Join(dir, "notes.chart"), chartFor(sp.seed))
-		mustWrite(t, filepath.Join(dir, "song.ogg"), "audio-"+sp.seed)
+		if !sp.noAudio {
+			mustWrite(t, filepath.Join(dir, "song.ogg"), "audio-"+sp.seed)
+		}
 		for name, body := range sp.extra {
 			mustWrite(t, filepath.Join(dir, name), body)
 		}

@@ -1,6 +1,8 @@
 # ADR-009: Preview clips, cut without a decoder
 
-**Status:** Accepted 2026-11-03. Not yet implemented.
+**Status:** Accepted and implemented 2026-11-03. `internal/preview` cuts Ogg and Opus;
+`GET /song/{chart_hash}/preview.ogg` serves it. **Verified by an independent decoder** (below).
+MP3 and WAV are not cut yet — 449 of 22,091 stem files, answered 415 rather than fudged.
 
 **Context:** Jay, playing the fork with the server library browsing: *"the song preview does not
 load"*. Correct, and by design — `RemoteSongEntry.LoadPreviewAudio` returns `null`, because a song
@@ -136,3 +138,49 @@ choice is a correctness question for the oracle, not a guess to be made here.
   three already.
 - **Generating previews at ingest.** On-demand plus a cache gets the same result without a
   migration or a rescan of 4,085 songs.
+
+## Verified, and by what
+
+A clip cut from the live library's own packages, served by the real endpoint, then decoded by
+**VLC's libvorbis** — not this project's code:
+
+```
+GET /song/a56c61f1…/preview.ogg   ->  200, 557,663 bytes in 10 ms   (the stem is 47 MB)
+ETag: "7cde27f2…-preview-30000-30000"
+Content-Type: audio/ogg
+
+independent Ogg walk:  130 pages, 0 CRC mismatches, BOS on first, EOS on last,
+                       granules rebased 0..1331144, sequence contiguous, 2 header pages
+VLC decode:            30.16 s, 44.1 kHz stereo 16-bit
+audio content:         peak 0.0 dBFS, rms -12.4 dBFS, audible in the first AND last second
+```
+
+Four things in that list are there because each would have passed without the others:
+
+- **the CRC was checked by a second implementation**, in Python, written against the spec rather
+  than by reusing the Go code under test
+- **the header packets were checked for spill.** If Vorbis's setup packet had run past the
+  granule-zero pages, the clip would have lost its codebooks and been undecodable while passing
+  every structural assertion. Page 1's last segment is 145, not 255, so the packet ends there and
+  page 2 starts fresh.
+- **it was decoded, not just parsed.** A cutter and a parser written in the same afternoon agree
+  with each other about a malformed page.
+- **the decoded audio was measured for silence.** Thirty seconds of silence decodes perfectly and
+  is not a preview.
+
+The clip is byte-identical across a rebuild and a handler rewrite, which is the determinism the
+strong ETag depends on.
+
+**Still the oracle's call.** VLC is an independent decoder and it is not YARG; BASS is what the
+game uses, and ADR-009's standard is the real client. This is strong evidence, not the final word.
+
+## What the implementation does that this document originally did not say
+
+- **Candidates are tried in order, not picked once.** A test caught a song whose full mix could
+  not be cut returning 500 while a usable guitar stem sat beside it in the same package. Each
+  skip is logged with its reason, and when every candidate fails the request still fails.
+- **The ETag is over the PACKAGE hash**, not the chosen stem's, because which candidate wins is
+  decided after the tag has to be sent — and any stem changing changes the package hash anyway.
+- **The disk cache is not built.** Clips are cut per request that the ETag does not satisfy. A
+  performance gap, not a correctness one, and recorded here rather than left to be discovered
+  from a slow endpoint.

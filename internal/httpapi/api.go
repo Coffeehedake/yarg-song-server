@@ -120,6 +120,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/unpack", s.unpackStatusHandler)
 	mux.HandleFunc("POST /api/v1/unpack", s.unpackHandler)
 	mux.HandleFunc("GET /song/{file}", s.songFile)
+	mux.HandleFunc("GET /song/{hash}/preview.ogg", s.previewFile)
 
 	return mux
 }
@@ -425,38 +426,9 @@ func (s *Server) songFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var entry *library.Entry
-	if pkg := r.URL.Query().Get("package"); pkg != "" {
-		entry = ix.ByPackageHash(pkg)
-		if entry == nil || entry.Song.ChartHash != hash {
-			writeError(w, http.StatusNotFound, "no package with that package hash for this chart")
-			return
-		}
-	} else {
-		entries := ix.ByChartHash(hash)
-		switch len(entries) {
-		case 0:
-			writeError(w, http.StatusNotFound, "no song with that chart hash")
-			return
-		case 1:
-			entry = entries[0]
-		default:
-			choices := make([]map[string]string, 0, len(entries))
-			for _, e := range entries {
-				choices = append(choices, map[string]string{
-					"package_hash": e.Song.PackageHash,
-					"name":         e.Song.Name,
-					"artist":       e.Song.Artist,
-					"charter":      e.Song.Charter,
-				})
-			}
-			writeJSON(w, http.StatusMultipleChoices, map[string]any{
-				"error":      "this chart hash is shared by several packages; pass ?package=<package_hash>",
-				"chart_hash": hash,
-				"packages":   choices,
-			})
-			return
-		}
+	entry, ok := s.resolveChart(w, r, ix, hash)
+	if !ok {
+		return
 	}
 
 	// A packed song is opened BY the cache, not opened from a path the cache
