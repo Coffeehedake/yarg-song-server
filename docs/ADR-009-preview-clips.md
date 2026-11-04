@@ -195,6 +195,13 @@ stream, and that would satisfy "returned a mixer" perfectly well. The last line 
 control — without it, a loader that returned some cached or default audio for any hash would
 pass everything above it.
 
+**And Jay heard one, in the game, on a song this machine does not hold** — `playtest-2026-11-04`,
+the same evening. That is a different claim from the probe's and it is the one that finishes the
+feature: a probe can only say BASS accepted the bytes, not that a person highlighting a song in
+the music library hears the right music at the right moment. Every link now has evidence of its
+own — the cutter against real encoders' CRCs, the clip against VLC, the client against BASS, and
+the whole of it against somebody's ears.
+
 ## What the implementation does that this document originally did not say
 
 - **Candidates are tried in order, not picked once.** A test caught a song whose full mix could
