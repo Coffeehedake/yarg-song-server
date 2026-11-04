@@ -2370,6 +2370,106 @@ nothing about the twelve upstream commits merged on 11-02, which remain unplayed
 about the cache budget in a real game — the budget cannot run headless at all, because
 `SettingsManager.Settings` needs an audio backend to exist.
 
+### The merge's real defect, found by playing: a sort that touches the filesystem — 2026-11-03
+
+Jay turned on *Browse Server Library* and reported four things, which looked like four problems:
+the song list did not change; he therefore could not play a server song; the badge seemed to
+appear only on "overlaps"; and the cache limit "doesn't seem to do anything". **All four were one
+bug, and it is the first real defect the 11-02 merge introduced.**
+
+The log from the run that was supposed to work says both halves of it, four lines apart:
+
+```
+SongContainer.cs:MergeRemoteCatalog:211] Song server catalogue: 3952 entries merged, 133 already local
+IOException: The filename, directory name, or volume label syntax is incorrect :
+  'C:\dev\YARG - Open Source Contributions\yarg\server:\c9c1b767a223...'
+  at System.IO.File.GetLastWriteTime (System.String fullPath)
+  at YARG.Core.Song.SongEntry.GetLastModifiedTime ()
+  at YARG.Menu.MusicLibrary.SongSorting.SortByDateAdded (SongCache, SortedSongs)
+  at ...Parallel+<>c__DisplayClass19_0`1[TLocal].<ForWorker>b__1
+Rethrow as AggregateException: One or more errors occurred.
+```
+
+**The merge worked perfectly and the library still showed 128 songs.** `RemoteSongEntry` exists
+precisely so a song can be browsed with no bytes on this disk, so its `ActualLocation` is the
+synthetic `server://<chart hash>`. `SongEntry.GetLastModifiedTime()` is
+`File.GetLastWriteTime(ActualLocation)`; Windows resolved `server://…` against the working
+directory, got `…\yarg\server:\c9c1b…`, and threw. Inside a `Parallel.For` that became an
+`AggregateException`, which killed `SongSorting.SortEntries`, so `FillContainers` never ran and
+the browse list was silently discarded.
+
+**Neither side is at fault on its own, which is what makes it a merge defect.** Our
+`RemoteSongEntry` had overridden `GetLastWriteTime` since it was written. It had no reason to
+override `GetLastModifiedTime`, because until 11-02 **nothing called it**. Upstream's
+[#1721](https://github.com/YARC-Official/YARG/pull/1721) added *Sort by Date Added*, which calls
+it for every entry in the library. Two correct changes, merged cleanly, compiled green, and the
+feature stopped working.
+
+Fixed in `yarg` by overriding it the way the sibling is already overridden:
+
+```csharp
+public override DateTime GetLastModifiedTime() => _materialised?.GetLastModifiedTime() ?? _lastWrite;
+```
+
+#### Why nothing caught it
+
+- **The compile could not.** Both sides are type-correct; the base method is `virtual` and has a
+  working default for every entry that has a file.
+- **No probe could, as the probes are written.** `RemoteEntryProbe` and `RemotePlaybackProbe`
+  build `RemoteSongEntry` objects and ask whether they browse and play. Neither **sorts a merged
+  library**, which is the only thing that calls the method. `SetlistGuardProbe` and
+  `ServerCacheBudgetProbe` are further away still.
+- **The 17-probe sweep on the same day was 15 pass, 1 inconclusive, 1 informational.** A clean
+  sweep says the probes agree with the code; it does not say the probes ask the right questions.
+  This is the concrete instance of the caveat that entry already carried.
+- **The headless build could not**, because `SettingsManager.Settings` needs an audio backend, so
+  `BrowseServerLibrary` can never even be read in batchmode.
+
+#### Three smaller things the same session turned up
+
+- **A toggle that only takes effect on a rescan.** `MergeRemoteCatalog` runs inside
+  `SongContainer.RunRefresh`, so turning *Browse Server Library* on does nothing until the next
+  library scan — a restart, or Settings → Song Manager → refresh. Jay's first report, "doesn't
+  change the quickplay song list", was partly this and partly the crash above. The setting needs
+  an `onChange` that triggers a real scan; note that `RefreshSongs()`, which the other
+  library-affecting settings use, is NOT enough — it calls `RequestContainerRefresh`, which only
+  re-sorts what is already scanned and never reaches the merge.
+- **The cache limit appearing to do nothing was a consequence, not a bug.** With no remote entry
+  ever reaching the library, nothing is fetched into `ServerCache`, so there is nothing for the
+  budget to evict. It governs fetched songs only — never the mirror.
+- **The badge looked wrong and was right.** With `SongFolders` empty, every song on the machine
+  came from the server, so every song was badged and the badge distinguished nothing. It is only
+  meaningful in a mixed library.
+
+#### Fixed and measured
+
+`yarg` `5d9b2251`, one line, mirroring the override that was already beside it:
+
+```csharp
+public override DateTime GetLastModifiedTime() => _materialised?.GetLastModifiedTime() ?? _lastWrite;
+```
+
+Rebuilt and run against the live 4,085-song server:
+
+| | before | after |
+|---|---|---|
+| catalogue merged | `3952 entries merged, 133 already local` | same |
+| **library the game shows** | **128** | **4,080** |
+| `IOException` / `AggregateException` | present, killed the sort | **gone** |
+| scan time | 0.12 s | 2.81 s (the catalogue fetch and merge) |
+| game survives startup | exited | runs |
+
+**A gap of five is not explained.** 3,952 merged plus 133 already local is 4,085, and the library
+reports 4,080. No `badsongs.txt` was written, so the scanner refused nothing. It may be duplicate
+chart hashes collapsing, or a filter; it has not been measured and is recorded here as open
+rather than guessed at. It is 0.12% and did not block anything.
+
+**What this costs to believe.** The fix is verified by behaviour, not by inspection: a symbol
+search cannot tell an override from an inherited method, because the base class puts the name in
+the metadata either way — the same shape as the property trap recorded in `BUILD.md` the same
+afternoon. The evidence is the library going from 128 to 4,080 with the exception gone, which is
+the thing anyone actually cares about.
+
 ## Blockers
 
 **None, and no open defects.**
