@@ -280,3 +280,169 @@ restored : 100.0% covered,     0 bytes skipped -> pass
 
 That is the whole lesson of the entry: **coverage was a plausible metric that could not see the
 defect**, and only putting the bug back revealed it.
+
+## Silence, and the stem that was never the full mix — 2026-11-04
+
+**Status:** diagnosed and measured. **The fix first written for it was wrong and has been
+reverted** — see *"The threshold died on the bench"* below. The remedy is to stop choosing a
+stem at all; that is unbuilt.
+
+Sampling clip sizes across the library turned up three clips at 4,407 / 7,225 / 8,623 bytes
+against a median of **814,901**. The first read was "the cutter is broken". It is not. Parsing the
+7,272-byte one page by page:
+
+```
+8 pages, one serial, EOS set on the last, last granule 1,419,298 = 32.18 s at 44.1 kHz
+```
+
+A correct cut, the right length, structurally valid — of silence. Six audio pages of 537 bytes
+carrying 261,120 samples each is about **1.9 kbit/s**.
+
+### The cause, measured rather than reasoned
+
+A throwaway probe cut **every** stem of that package at the same window, so the byte counts are
+directly comparable without decoding anything:
+
+```
+=== Metallica - ...And Justice for All  [rb1dlc]
+    window 156300 ms + 30000 ms, package 78,584,308 bytes, 7 cuttable stems
+    drums_3.ogg   987552 bytes   263.3 kbit/s
+    guitar.ogg    866874 bytes   231.2 kbit/s
+    vocals.ogg    798391 bytes   212.9 kbit/s
+    drums_2.ogg   795509 bytes   212.1 kbit/s
+    rhythm.ogg    497266 bytes   132.6 kbit/s
+    drums_1.ogg   438875 bytes   117.0 kbit/s
+    song.ogg        7272 bytes     1.9 kbit/s   <-- what the endpoint served
+```
+
+### "Silence" was a word the byte count could not earn, so it was decoded
+
+Jay asked the right question of the table above: *are we sure it's silence and not very low
+volume?* **Bytes cannot tell those apart** — low-level audio compresses well too — so the clips
+were decoded with VLC's libvorbis to s16 PCM and measured with numpy:
+
+```
+stem             secs  peak dBFS  RMS dBFS  nonzero %  max |s|
+drums_1         30.12      -5.35    -23.10     99.774    17694
+drums_2         30.02      -5.49    -28.46     99.912    17420
+drums_3         30.03      -4.70    -29.11     99.932    19070
+guitar          29.99      -6.41    -19.22     99.988    15657
+rhythm          30.00      -7.33    -17.11     99.937    14092
+song            32.16       -inf      -inf      0.000        0
+vocals          30.05      -6.46    -22.83     99.898    15580
+```
+
+`song.ogg`'s clip is **all 2,836,512 samples equal to zero**: peak `-inf` dBFS, 0.000% nonzero.
+Not quiet — empty. Vorbis still spends 1.9 kbit/s on it because page headers are not free.
+
+**The lesson is about the instrument, not the stem.** Clip size is a sound proxy for *picking a
+better candidate at request time*, which is all the production fix needs, and it is the only
+thing available without a decoder. It is not evidence about amplitude, and "silent" was being
+asserted on it. Amplitude needed a decoder, and a decoder was available — out of band, in a
+probe, which is exactly where ADR-009 permits one.
+
+### Back to the mechanism
+
+`stemPreference` picks `song` — **the only silent stem of the seven**, at 1/136th the bytes of the
+loudest. In a Rock Band-derived package `song.ogg` is the *"everything else"* backing track, and
+once every instrument has its own stem there is nothing left in it. The preference is still right
+for the other 94.5% of the library, where `song.ogg` **is** the full mix.
+
+### The threshold died on the bench, and the measurement that killed it is the point
+
+The first remedy was a decoder-free audibility test: reject a clip whose own bit rate is under
+`minAudibleKbps` (16) and try the next candidate, keeping the loudest rejected clip as a
+fallback. It was implemented, it had a test that failed before it and passed after, the suite was
+green under `-race`, and **it was wrong.**
+
+Two measurements took it apart.
+
+**First, the byte-space "gap" that justified 16 was duration, not loudness.** Taking the real
+clip length from the last Ogg granule instead of assuming 30 s:
+
+```
+clips under 10 s : 556 of 1,022     <- GH-derived songs set preview_end_time ~5 s after start
+clips 25-35 s    : 310
+```
+
+Over half the small clips are small because the *window* is short. In rate space the tidy gap
+between 20 KB and 50 KB vanishes.
+
+**Second, decoding a sample stratified by true bit rate showed the bands overlap:**
+
+```
+  kbit/s   secs  peak dB   RMS dB  nonzero%  stems  song
+    1.84  31.30     -inf     -inf     0.000      8  Whitesnake - Still of the Night
+    6.74   5.37     -inf     -inf     0.000      9  Blue Oyster Cult - Godzilla
+    2.94  30.63   -30.92   -68.39     0.585      8  Bon Jovi - Lay Your Hands on Me
+   11.14  30.02    -7.72   -33.92     4.194      7  Motorhead - (We Are) The Road Crew '08
+   13.35  33.43    -8.87   -36.67     6.901      8  The Offspring - Pretty Fly (For a White Guy)
+  248.67  30.02    -7.23   -26.38    99.917      8  Billy Currington - That's How Country Boys Roll
+
+highest ALL-ZERO   : 6.74 kbit/s
+lowest WITH SIGNAL : 2.94 kbit/s
+```
+
+Seven of 32 sampled clips below the floor carry **real signal**, two peaking near -8 dBFS. They
+are **sparse, not quiet** - around 4% of samples nonzero, loud hits separated by silence - and
+sparse audio compresses like silence while sounding nothing like it. The floor would have
+discarded audible previews, and no number rescues it: lower it and the all-zero 6.7 kbit/s GH
+clips get served, raise it and The Offspring gets dropped.
+
+**So clip size answers "which of these two is louder" and not "is this audible".** It was sound
+for the probe that found the mechanism, where both clips came from one package and one window,
+and unsound the moment it was asked to judge a clip on its own. The same number, honest in one
+use and misleading in the other.
+
+### The real remedy: stop choosing a stem
+
+Jay's question when shown the client code - *why don't we just use their preview instead of
+making our own?* - is the answer. `stemPreference` is **this server's invention**. Upstream has
+no such thing: `LoadPreviewAudio` prefers a shipped preview file and otherwise calls
+`CreateAudioMixer`, which adds **every** stem to one mixer. The game never picks a stem, so a
+server that picks one is guessing at a question the client already answers.
+
+And the client can still answer it: `GlobalAudioHandler.CreateMixer` plus one
+`mixer.AddChannel(stream, stemEnum)` per stem is the same path `SngEntry` uses locally, fed HTTP
+streams instead of `.sng` streams. So the server cuts **every** stem at the window - code that
+already exists and needs no decoder - and the client mixes them exactly as it does for a local
+song. No preference order, no audibility threshold, no heuristic to calibrate, and parity with
+the game by construction rather than by approximation.
+
+**What it costs, measured:** the median clip is 713 KB, so a 7-stem song is about 5 MB and an
+8-stem song 5.7 MB against today's single 713 KB. At the 3.3 MB/s measured over the tailnet that
+is roughly 1.7 s per preview. Only multi-stem packages pay it - the 3,861 songs whose `song.ogg`
+is the whole mix stay one clip - and the 215 songs shipping their own preview stay one file. It
+also makes the absent disk cache matter considerably more.
+
+**Unbuilt, and it spans both repos**: a per-stem endpoint on the server and a mixer-building
+`LoadPreviewAudio` in the fork.
+
+### While it existed, the threshold rerouted two tests and they stayed green
+
+Kept even though that code is gone, because the trap is not specific to it. `syntheticVorbis`
+emitted 256 bytes a second — 2 kbit/s, *below the floor that had just been added*. So
+`TestPreviewCutsAClipFromTheStem` and `TestPreviewFallsBackWhenThereIsNoFullMix` both kept
+passing while going through the new silent-stem fallback instead of the accept path they are
+named for. Green, and no longer measuring what they claim. It was noticed by asking which branch
+they now take, not by anything going red.
+
+**A threshold added in one place can reroute tests somewhere else.** When you add one, check
+which branch each passing test now takes — it is not enough that they still pass.
+
+### What a one-stem preview approximates, and what it can never be
+
+Worth stating plainly, because the fix above could be read as making the server agree with the
+game. It does not. `SongEntry.UnpackedIni.LoadPreviewAudio` in YARG.Core prefers a shipped
+preview file and otherwise calls `LoadAudio(speed, 0, enableCensoring, SongStem.Crowd)` — which
+adds **every supported stem except Crowd** to the mixer. The game's preview is the full
+multi-stem mix.
+
+This server serves ONE stem, because mixing needs a decoder and that is the decision this ADR
+exists to record. For the 3,861 songs whose `song.ogg` is the whole mix the two agree. For a
+multi-stem package they cannot: the game plays guitar, drums, bass, vocals and rhythm together
+and the server can only pick one of them.
+
+So the fix does not achieve parity — it moves the server from *the one silent stem* to *the
+loudest single stem*, which is closer to what the game plays and audibly better than nothing.
+Anything claiming preview parity with the client for multi-stem packages is wrong.
