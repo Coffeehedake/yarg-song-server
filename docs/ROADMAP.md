@@ -2536,9 +2536,11 @@ What that eliminates, every one of which was a leading hypothesis at some point:
   a plausible cause. It is not this: Jay's `MaxSongRating` is `None`, which admits everything.
   (It *was* wrong, though — see the rating entry below.)
 
-Also measured and worth knowing: **no YARG log from 2026-11-03 exists anywhere on ENG-1**, in
-`LocalLow/YARC/YARG/release/logs`, in the playtest data folder, or anywhere under `AppData`. The
-session cannot be reconstructed after the fact, which is why the next attempt should keep its log.
+~~Also measured and worth knowing: **no YARG log from 2026-11-03 exists anywhere on ENG-1**.~~
+**That was wrong — five logs exist, and they are what cracked the toggle defect.** They are under
+company `FatalException`, product `YARG-FE`, not under `YARC\YARG` where the search looked. See
+the CORRECTION entry below; the claim is struck here rather than deleted because it is the reason
+the next paragraphs were written as "unmeasurable" when they were not.
 
 **What is left is the two things a headless probe cannot build:** a library holding local *and*
 remote entries at once, and the runtime toggle — `RescanForBrowse` calls `RunRefresh` and then
@@ -2630,6 +2632,166 @@ populated it** — a tally that could not produce a finding. Filling it from the
 double-counted against the existing enum-keyed tally, which is this repo's *"a lossy key makes a
 table that adds up and is wrong"* in miniature, and was invisible while the cast made the two
 values equal. It counts the resulting enum only.
+
+### CORRECTION: the log did exist, and two claims above were wrong
+
+Both of these were written earlier the same day, in this file and in a commit message, and both
+were wrong in the same way — asserting something from an instrument that was never checked.
+
+**"No YARG log from 2026-11-03 exists anywhere on ENG-1" is false.** Five do:
+
+```
+C:\Users\ENG2\AppData\LocalLow\FatalException\YARG-FE\release\logs\2026-11-03*.log
+```
+
+The fork's player writes under **company `FatalException`, product `YARG-FE`** — not under
+`YARC\YARG`, which is where the installed release oracle writes and where the search went. A
+`find` over `AppData` was run, returned nothing, and the absence was published without anyone
+asking why a game that had demonstrably just run had left no trace. That is the same shape as
+`ls -la <dir> | head -3` "proving" a directory was empty, which this project already has written
+down twice. **Two YARG data folders exist on this machine; say which one.**
+
+**The second claim was mine, and it was wrong too — but in the other direction.** While writing
+this entry I reported that `LibraryPipelineProbe`'s "settings come from Jay's own settings.json"
+was false, on the grounds that no `dev/settings.json` existed. It does exist. I had looked under
+`YARC\YARG\dev`, the same wrong folder as the log search above, for the same reason. The probe now
+prints the path it loaded, and only claims a file when `File.Exists` says so:
+
+```
+PROBE INFO: settings come from the settings.json at
+            C:\Users\ENG2\AppData\LocalLow\FatalException\YARG-FE\dev\settings.json
+```
+
+So the probe's original claim was right in substance and unverified in method; the retraction was
+simply wrong. Both mistakes have one cause, and it is the thing worth writing down: **two YARG
+data trees exist on this machine.** `YARC\YARG` belongs to the installed v0.15.0 oracle;
+`FatalException\YARG-FE` belongs to the fork, editor under `dev\` and player under `release\`.
+Searching the wrong one returns an empty, confident answer twice over.
+
+**And the two settings files do not agree, which matters.** The editor is on `LibrarySort = 1`
+(`Name`); the playtest build that reported the search bug is on `LibrarySort = 4`
+(`Artist_Album`). Both carry `MaxSongRating = 6`, which is `None` and admits every rating, so
+ratings stay eliminated — but a probe that measures the editor's sort and a report that comes
+from the player's are not the same experiment, and `LibraryPipelineProbe` now searches at every
+sort rather than at the one this process happens to be configured for.
+
+### FIXED: the Browse Server Library toggle rescanned the library during startup, and threw
+
+Found in `2026-11-03_4.log`, which is the log the claim above said did not exist.
+
+```
+[Info]  20:05:36 BASS Successfully Initialized
+[Info]  20:05:40 SongContainer.cs:RunRefresh:308  Scan time: 2.8415845s
+--------------- EXCEPTION ---------------
+at SettingsManager.Settings.cs:RescanForBrowse:442
+Could not rescan after changing Browse Server Library
+System.NullReferenceException
+  at YARG.Song.SongSources.LoadSprites        SongSources.cs:164
+  at YARG.Song.SongContainer.RunRefresh       SongContainer.cs:312
+  at SettingsManager+SettingContainer.RescanForBrowse  SettingsManager.Settings.cs:435
+-----------------------------------------
+[Info]  20:05:46 LoadingScreen.cs:Start:97    Initialized phoneme dictionary
+[Info]  20:05:46 SongContainer.cs:RunRefresh:308  Scan time: 0.0343639s
+```
+
+`RescanForBrowse` was added by `4fa71518` so that turning the setting on takes effect, because
+`RefreshSongs()` — what every other library setting calls — only re-sorts what is already in
+memory and never reaches `MergeRemoteCatalog`. That part is right. The guard was not:
+`IsInitialized` is true as soon as the settings container exists, which is **long before**
+`SongSources` has been read, so the callback fired four seconds into startup and ahead of
+`LoadingScreen`'s own load. Line 164 is `_default.LoadSprite()` and `_default` was null.
+
+Cost per launch: one full 2.84-second rescan nobody asked for, a logged exception, and then the
+loading screen scanning again six seconds later — two full scans for a setting that had not
+changed. It fires whether the setting went on or off, because a callback sees that it changed and
+not what to.
+
+What the throw did **not** cost, contrary to a first reading of the stack: the library reload.
+`RunRefresh` calls `MusicLibraryMenu.SetReload(Full)` itself on the line *before* `LoadSprites`,
+so it had already happened — and the `SetReload` in `RescanForBrowse` was therefore redundant and
+has gone. What the throw actually cost is
+`CustomContentManager.Careers.RefreshSongEntries()`, the line after `LoadSprites`.
+
+Fixed with `SongContainer.HasCompletedInitialLoad`, set where the library demonstrably exists and
+deliberately before `LoadSprites`, so a throw down there cannot leave it false for the session.
+`SongContainer.Count > 0` would not do: a player with an empty library reads the same as a game
+that has not loaded one, and they are the player most likely to turn this setting on.
+
+**This is not the search bug.** The browse-on run is `2026-11-03_3.log` and it is clean —
+`3952 entries merged`, `Scan time: 2.81s`, no exception anywhere, and at 19:59:39
+`RemoteSongFetcher.Materialise` fetched 49.6 MB for "21 Guns - Green Day" and played it. A server
+song was visible and playable in the same session the search was reported in.
+
+### The search bug: what the log adds, and a hypothesis the settings file killed
+
+`2026-11-03_3.log` is the browse-on session the search was reported in, and it is **clean**:
+`3952 entries merged`, `Scan time: 2.81s`, no exception anywhere, and at 19:59:39
+`RemoteSongFetcher.Materialise` fetched 49.6 MB for "21 Guns - Green Day" and played it. A server
+song was visible and playable in the same session. Whatever happens to the search, happens
+silently.
+
+The log does record this at 19:57:46, a minute and a half before that:
+
+```
+[Warning] Localize.cs:Key:25  No translation found for key `Settings.PresetSetting.Filters.SortBy.Name`
+[Warning] Localize.cs:Key:25  No translation found for key `Settings.PresetSetting.Filters.ShowRecommendations.Name`
+[Warning] Localize.cs:Key:25  No translation found for key `Settings.PresetSetting.Filters.OnlyShowPlayableSongs.Name`
+```
+
+Jay was in the **Filters** menu. (Those three missing keys are a small defect of their own: the
+Filters preset settings have no translations, so that menu shows raw key names.)
+
+That looked like the answer, because of how `MusicLibraryMenu.UpdateSearch` counts:
+
+```csharp
+if (shouldApplyFilters) _sortedSongs = ApplyFilterPredicate(_sortedSongs, predicate);
+if (shouldShowFilteredCounts) {
+    var baseList = SongContainer.GetSortedCategory(SettingsManager.Settings.LibrarySort);
+    _totalSongCountUnfiltered = CountSongs(baseList);   // the UNFILTERED container
+}
+```
+
+With a filter active the **header total comes from the unfiltered container while the list comes
+from the filtered one**, which is the only mechanism found in this whole investigation that
+produces the reported pair — a library that *reads* 4,080 and a list and search that show only
+local songs — and it needs no exception, which matches the clean log.
+
+**It is not what happened.** The playtest build's own `settings.json`, written at 20:07 that
+evening, says so:
+
+```
+OnlyShowPlayableSongs = False
+RememberFilters       = False
+RememberedFilters     = {}
+MaxSongRating         = 6      (None - admits every rating)
+LibrarySort           = 4      (Artist_Album)
+```
+
+No filter was active, none was remembered, and no rating was excluded. Recorded here with the
+reasoning intact rather than deleted, because the counting asymmetry above is real and will
+produce exactly this report the first time somebody does have a filter on.
+
+So the position, honestly stated: **in the configuration Jay's own settings file records, every
+mechanism this project can reach has been eliminated by measurement.** The containers hold all
+4,085; search finds 155 Nirvana at every one of the twelve sorts including `Artist_Album`, which
+is the sort that build was on; the merge logged no error; a server song played.
+
+**What is genuinely still untested**, and it is now a short list:
+
+- **The mixed library.** Both probes run a server-only catalogue. The real library is 128 local
+  entries and 3,952 remote ones in one container, and `SetAllSongs` de-duplicates across them.
+  Nothing yet measures a search over both at once. This is the first thing to build next: a
+  probe that scans the real `ServerLibrary` folder and then merges, rather than merging alone.
+- **The exact query.** Every measurement here used an artist with 151 songs on the server. A
+  query that behaves differently — short, punctuated, diacritic-bearing, or one of the qualified
+  `artist:` / `source:` forms — has not been tried against a mixed library.
+
+**What to do next, in order.** First the mixed-library probe, because it needs nobody's time but
+a machine's. If that comes back green too, then one reproduction with the specifics written down:
+the query exactly as typed, the count the header showed, the count the list showed, and the log
+kept — from `%LOCALAPPDATA%Low\FatalException\YARG-FE\release\logs`, which is the folder this
+entry's correction exists because nobody knew about.
+
 
 ## Blockers
 
