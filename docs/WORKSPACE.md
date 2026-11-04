@@ -120,6 +120,11 @@ Rules:
   nothing announces it — so `git add -A` after a probe sweep commits a rendering setting change
   to a fork intended for upstreaming. Check `git status` after an editor run rather than
   reverting only the file this file used to name.
+
+  **A PLAYER build leaves a third thing, and it is UNTRACKED rather than modified:**
+  `Assets/Settings/AddressableAssetsData/link.xml` and its `.meta`. Addressables generates them
+  during the build and `.gitignore` does not cover them, so they sit in `git status` under
+  "untracked" where a `git add -A` sweeps them up. They are build output; leave them alone.
 - **You do not need a GitHub credential for either repo, and should not go looking for one.**
   GitLab owns the mirror credential and pushes for us. Measured 2026-09-06: mirror 10 on
   project 53 last succeeded at `20:42:42`, the same minute as that push to origin, with an

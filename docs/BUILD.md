@@ -198,6 +198,32 @@ strings -a "$DLL" | grep -c get_SyncOnStartup          # a setting that has exis
 
 The second number is the whole point: if it is zero, the search is broken, not the build.
 
+**And a STRING LITERAL needs a different encoding again — measured 2026-11-03, the same day.**
+Metadata names (classes, methods, properties, backing fields) live in the UTF-8 `#Strings` heap,
+so a plain `strings -a` finds them. A literal from the source lives in the `#US` heap and is
+**UTF-16**, so an ASCII scan never sees it as a contiguous run and reports ABSENT from a build
+that contains it:
+
+```bash
+DLL=build/<name>/YARG_Data/Managed/Assembly-CSharp.dll
+strings -a      "$DLL" | grep -qF HasCompletedInitialLoad   # a NAME        -> found
+strings -a      "$DLL" | grep -qF 'SEARCH DIAG'             # a LITERAL     -> NOT found
+strings -a -e l "$DLL" | grep -qF 'SEARCH DIAG'             # same literal  -> found
+```
+
+This was two tool calls from being written up as "the diagnostic did not make it into the build",
+with a rebuild to follow. `-e l` is 16-bit little-endian. Control it the other way round from the
+property case — with a literal that **cannot** be there:
+
+```bash
+strings -a -e l "$DLL" | grep -qF 'ZZQQ never written' && echo 'INSTRUMENT BROKEN'
+```
+
+Three symbol checks on one day, three different silent failure modes, all of the same shape: the
+instrument answered a slightly different question than the one asked, and answered it
+confidently. **Never report a symbol as absent without a control that is known to be present and,
+where the claim is an absence, one that is known to be missing.**
+
 ### The naming problem — settled 2026-09-08
 
 The player used to identify itself as `companyName: YARC`, `productName: YARG` — upstream's
