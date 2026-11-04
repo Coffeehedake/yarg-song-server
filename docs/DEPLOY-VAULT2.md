@@ -10,7 +10,7 @@ and following it today breaks the service.
 
 ## Run it today — every argument read off the running container, 2026-11-01
 
-> **Live build as of 2026-11-04: `5e9f255` on digest `sha256:bfc47bc8…`** — the tenth
+> **Live build as of 2026-11-04: `c9edba5` on digest `sha256:17058211…`** — the eleventh
 > deployment, immediately below. The arguments in this section are still the ones in use; the
 > ninth and tenth deployments both reproduced them from `docker inspect` of the running
 > container rather than from this document, and they matched both times.
@@ -58,6 +58,75 @@ docker run -d --name yarg-song-server \
 `/usr/local/bin/yarg-song-server`, both from the image; neither needs stating on
 the command line. `Labels` is empty, which is the "not Unraid-managed" note
 further down, still true.
+
+### Eleventh deployment, 2026-11-04 — `c9edba5`, per-stem previews. DEPLOYED, invariants held
+
+**Live now:** `c9edba5` on digest
+`sha256:17058211ceb2e7cf782821602a533d144cf00cb5d018824a15397ecc8eb43a19`, 4,085 songs,
+`problems` null. Previous container kept as `yarg-song-server-prev-5e9f255`; rollback is
+`docker rm -f yarg-song-server && docker rename yarg-song-server-prev-5e9f255 yarg-song-server && docker start yarg-song-server`.
+
+```
+DEPLOY    :c9edba53  sha256:17058211ceb2e7cf782821602a533d144cf00cb5d018824a15397ecc8eb43a19
+ROLLBACK  :5e9f255c  sha256:bfc47bc816be304443b18e9bf5ff6cfeca64f9c08a5c67783f16e65f564d2fdb
+```
+
+**Purely additive**: 292 insertions, 0 deletions, one new route (`GET /song/{hash}/preview/{stem}`)
+and one new handler. No existing endpoint changed, which is why this one needed no byte-for-byte
+A/B of the old behaviour the way the tenth did.
+
+#### The control was registered BEFORE the swap, and it is the whole verification
+
+The old build must 404 on the new path, and the new build must not. Measured on the running
+`5e9f255` minutes before the swap:
+
+```
+old build /preview/song -> 404
+```
+
+| Pre-registered | Observed | |
+|---|---|---|
+| hard-down ≈ 1 s | **0.948 s** — prev finished `13:26:48.786Z`, `listening` at `13:26:49.734Z` | ✅ |
+| `/healthz` 503 `indexing`, `/version` 200 throughout | **503** then ready; **200** at every poll | ✅ |
+| 4,085 songs, 4,080 distinct, `problems` null | **4,085 / 4,080 / 0**, null | ✅ |
+| index near the previous 507.9 s | **490.6 s** (`8m10.564s`), −3.4% | ✅ |
+| `/preview/{stem}` 200 per stem, each its own bytes | **200** for song / guitar / drums_3 / vocals, four different sizes | ✅ |
+| an unknown stem is 404, never a substitution | **404** `application/json` | ✅ |
+| `ETag` differs per stem | three distinct tags, each naming its stem | ✅ |
+| `preview.ogg` untouched | **200**, 7,272 bytes, same as before the swap | ✅ |
+
+```
+song      -> 200  audio/ogg    7272 bytes
+guitar    -> 200  audio/ogg  866874 bytes
+drums_3   -> 200  audio/ogg  987552 bytes
+vocals    -> 200  audio/ogg  798391 bytes
+```
+
+**Those byte counts are identical to the throwaway probe's**, which cut the same stems from a
+downloaded `.sng` with the same code on a different machine — two independent paths agreeing to
+the byte, which is a better check than either alone.
+
+#### The client half, and why channel count is the only honest assertion
+
+The fork (`ee32ee32`) builds a multi-channel mixer from these clips. Through BASS, via the
+production `LoadPreviewAudio`:
+
+```
+Metallica - ...And Justice for All   7 stems, own preview False  -> 7 channels, 32.18s, 754 ms
+Fredrik Thordendal's - "Solo" Niger Within   1 stem             -> 1 channel,  30.06s, 452 ms
+Motorhead - (We Are) The Road Crew   3 stems, ships preview     -> 1 channel,  30.07s, 122 ms
+```
+
+A mixer that merely decodes proves nothing here: the single-clip path also returns a perfectly
+good one-channel mixer and passes every assertion about length. The two one-channel rows are
+controls — without them, "channels > 1" would also be satisfied by a change that made every song
+mix, spending 5 MB on previews that need 713 KB.
+
+#### Housekeeping
+
+`yarg-song-server-prev-3a9bf3c` was removed during this swap, being two deployments old. The
+fallback chain is now one deep (`prev-5e9f255`), plus three older stopped containers that are
+somebody else's decision.
 
 ### Tenth deployment, 2026-11-04 — `5e9f255`, MP3 previews. DEPLOYED, and the reason for it was wrong
 

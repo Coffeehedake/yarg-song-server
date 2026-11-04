@@ -283,9 +283,10 @@ defect**, and only putting the bug back revealed it.
 
 ## Silence, and the stem that was never the full mix — 2026-11-04
 
-**Status:** diagnosed and measured. **The fix first written for it was wrong and has been
-reverted** — see *"The threshold died on the bench"* below. The remedy is to stop choosing a
-stem at all; that is unbuilt.
+**Status:** **fixed and measured end to end, 2026-11-04.** The server stopped choosing a stem
+(`GET /song/{hash}/preview/{stem}`, live on vault2 as `c9edba5`) and the client mixes them
+(`yarg` `ee32ee32`). The audibility threshold first written for this was wrong and was reverted
+— see *"The threshold died on the bench"* below, which is the more useful half of the entry.
 
 Sampling clip sizes across the library turned up three clips at 4,407 / 7,225 / 8,623 bytes
 against a median of **814,901**. The first read was "the cutter is broken". It is not. Parsing the
@@ -415,8 +416,50 @@ is roughly 1.7 s per preview. Only multi-stem packages pay it - the 3,861 songs 
 is the whole mix stay one clip - and the 215 songs shipping their own preview stay one file. It
 also makes the absent disk cache matter considerably more.
 
-**Unbuilt, and it spans both repos**: a per-stem endpoint on the server and a mixer-building
-`LoadPreviewAudio` in the fork.
+### Built, and measured by counting channels
+
+Server `c9edba5`, client `ee32ee32`. The deployed endpoint, checked per stem against the song
+this entry is about:
+
+```
+song      -> 200  audio/ogg    7272 bytes      <- the empty backing stem, still served if asked
+guitar    -> 200  audio/ogg  866874 bytes
+drums_3   -> 200  audio/ogg  987552 bytes
+vocals    -> 200  audio/ogg  798391 bytes
+nope      -> 404  application/json
+```
+
+Those byte counts are **identical to the throwaway probe's**, which cut the same stems from a
+downloaded `.sng` with the same code on a different machine. Two independent paths agreeing to
+the byte.
+
+Then the real client, through BASS, via `RemoteSongEntry.LoadPreviewAudio`:
+
+```
+Metallica - ...And Justice for All   7 stems, own preview False, expect MIXED
+  BASS decoded in 754 ms, length 32.18s, 7 channel(s)      -> mixed 7 of 7
+Fredrik Thordendal's - "Solo" Niger Within   1 stem, expect single clip
+  BASS decoded in 452 ms, length 30.06s, 1 channel(s)      -> control holds
+Motorhead - (We Are) The Road Crew   3 stems, ships preview, expect single clip
+  BASS decoded in 122 ms, length 30.07s, 1 channel(s)      -> control holds
+```
+
+**Counting channels is what makes this a measurement.** A mixer that merely decodes proves
+nothing: the old single-clip path also returns a perfectly good one-channel mixer and satisfies
+every assertion about length. And the two one-channel rows are controls rather than decoration —
+without them "channels > 1" could be satisfied by a change that made *everything* mix, which
+would spend 5 MB on previews that need 713 KB.
+
+The routing that keeps that from happening:
+
+| Song | Path |
+|---|---|
+| ships its own preview (215) | one clip, `preview.ogg`, unchanged |
+| one stem (3,861) | one clip, `preview.ogg`, unchanged |
+| two or more stems, no shipped preview | one clip per stem, mixed by the client |
+
+What is still not done: **no disk cache**, which this change makes matter considerably more,
+since a multi-stem preview is now several cuts per request rather than one.
 
 ### While it existed, the threshold rerouted two tests and they stayed green
 
