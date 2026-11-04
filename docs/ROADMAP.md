@@ -2470,6 +2470,32 @@ the metadata either way — the same shape as the property trap recorded in `BUI
 afternoon. The evidence is the library going from 128 to 4,080 with the exception gone, which is
 the thing anyone actually cares about.
 
+### OPEN: search does not work with the server library — reported 2026-11-03
+
+Jay, testing the browse feature: *"the search does not work with the server connection"*.
+**Not diagnosed.** Recorded here with what has already been ruled out, so whoever picks it up
+does not repeat the elimination.
+
+**Ruled out: the sort strings.** The obvious suspect was that a `RemoteSongEntry` carries
+metadata without the `SortString`s that `SongSearching` actually matches on — every filter in
+`Assets/Script/Song/SongSearching.cs:357+` reads `entry.Name.SearchStr`, `entry.Artist.SearchStr`
+and so on, and those come from private fields that are **not** derived from `_metadata`
+automatically. But `RemoteSongEntry.Create` does call `SetSortStrings()`, and that sets all ten
+of them — name, artist, album, genre, subgenre, charter, source, playlist. There is even a
+comment there recording that removing the call was a probe's negative control: 609 entries
+constructed, merged and sorted correctly, with every row in the library blank.
+
+**The leading hypothesis is a stale search cache.** `SongSearching` holds state across queries —
+it has a `Reset()` and a `searches.Clear()` — and nothing was found linking a library refresh to
+either. If the cache survives the catalogue merge, every search would be filtering the library as
+it stood *before* the merge, which is exactly the reported symptom. Unconfirmed: the game was
+closed before this could be measured.
+
+**What to measure first**, because the three readings point different ways: does the search box
+return nothing at all, only local songs, or stale results from before the toggle? Driving
+`GET /api/library?query=<text>` against a running game with browse on answers it without touching
+the UI, and that endpoint was already used this session for the queue work.
+
 ## Blockers
 
 **None, and no open defects.**
