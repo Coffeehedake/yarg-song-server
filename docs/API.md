@@ -345,6 +345,37 @@ that forced it and the independent verification are in `docs/ADR-009-preview-cli
 performance gap rather than a correctness one, and recorded here so it is not discovered from a
 slow endpoint.
 
+**Prefer `/preview/{stem}` below for a multi-stem song.** The preference order above is this
+server's own invention and it picks badly for Rock Band and Guitar Hero packages — the full
+account is in ADR-009, and the short version is that `song.ogg` in those packages is an empty
+backing track, so **908 of the 3,860 songs that get cut previewed digital silence**.
+
+## `GET /song/{chart_hash}/preview/{stem}`
+
+One named stem's clip, so **the client can mix instead of the server choosing**.
+
+`{stem}` is a label from `assets.stems[].stem` in the catalogue (`song`, `guitar`, `drums_1`, …);
+the stem file's base name is accepted too. There is deliberately **no extension in the path** —
+`preview.ogg` above spent a day serving mpeg bytes under an `.ogg` name, so the type lives in
+`Content-Type` (`audio/ogg` or `audio/mpeg`) and nowhere else.
+
+**Why it exists.** YARG previews a song by adding *every* stem to one mixer
+(`YARG.Core`'s `CreateAudioMixer`); it never picks a stem. A server that picks one is answering a
+question the client answers better, and an audibility test built to make the server choose well
+was measured and **could not distinguish sparse audio from silence** — all-zero clips ran
+1.66–6.74 kbit/s while clips carrying real signal started at 2.94. So the server stopped choosing.
+
+- Same window, same cutters, same `Range` support and same 300/404/415 behaviour as
+  `preview.ogg`, and the same shared chart resolution.
+- **404** when the song has no stem of that name. It is never another stem substituted: a client
+  mixing four stems would otherwise play one of them four times and nothing would say so.
+- `ETag` **includes the stem**. Without that every stem of a song shares one tag and a cache
+  hands out whichever it saw first for all of them — silently, and per client.
+- **Cost.** A clip per stem: the median clip is 713 KB, so an 8-stem song is about 5.7 MB against
+  one 713 KB request. Only multi-stem packages pay it. The 215 songs that ship their own preview
+  and the 3,861 with a single stem should keep using `preview.ogg`, which already serves exactly
+  the right thing for both.
+
 ## `POST /api/v1/check`
 
 Scans an uploaded archive and answers with the verdict. **Keeps nothing.**

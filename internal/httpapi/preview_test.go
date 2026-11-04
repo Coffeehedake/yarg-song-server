@@ -93,6 +93,32 @@ func syntheticVorbis(seconds int) []byte {
 	return buf.Bytes()
 }
 
+// syntheticVorbisAt is syntheticVorbis with a chosen payload size per second, so a test can make
+// one stem busy and another nearly empty and then tell their clips apart by size.
+//
+// It does NOT make a test able to judge audibility: ADR-009 records that clip size separates two
+// clips cut from one window and cannot say whether one clip on its own can be heard. Sparse audio
+// compresses like silence.
+func syntheticVorbisAt(seconds, bytesPerSecond int) []byte {
+	ident := make([]byte, 30)
+	ident[0] = 1
+	copy(ident[1:], "vorbis")
+	ident[11] = 2
+	binary.LittleEndian.PutUint32(ident[12:], 44100)
+
+	comment := append([]byte{3}, "vorbis"...)
+	setup := append([]byte{5}, "vorbis"...)
+
+	var buf bytes.Buffer
+	buf.Write(oggPage(0x02, 0, 0, ident))
+	buf.Write(oggPage(0x00, 0, 1, append(comment, setup...)))
+	for i := 1; i <= seconds; i++ {
+		buf.Write(oggPage(0x00, int64(i)*44100, uint32(i+1),
+			bytes.Repeat([]byte{byte(i)}, bytesPerSecond)))
+	}
+	return buf.Bytes()
+}
+
 func previewSpec(name string, audio map[string]string) []spec {
 	return []spec{{
 		dir:   name,
@@ -284,5 +310,118 @@ func TestPreviewFallsBackWhenThereIsNoFullMix(t *testing.T) {
 	}
 	if !bytes.HasPrefix(body, []byte("OggS")) {
 		t.Fatal("fallback clip is not an Ogg stream")
+	}
+}
+
+// The per-stem endpoint, which exists so the CLIENT can mix rather than the server choosing.
+//
+// Upstream's LoadPreviewAudio adds every stem to one mixer (YARG.Core's CreateAudioMixer), so a
+// server that picks one stem is answering a question the client already answers - and picking
+// badly, as ADR-009 records at length. This serves each stem's clip separately.
+func TestPreviewPerStem(t *testing.T) {
+	srv, ix := newTestServer(t, previewSpec("multi-stem", map[string]string{
+		"song.ogg":    string(syntheticVorbisAt(60, 64)),   // the near-empty backing stem
+		"guitar.ogg":  string(syntheticVorbisAt(60, 8192)), // where the music is
+		"drums_1.ogg": string(syntheticVorbisAt(60, 4096)),
+	}))
+	defer srv.Close()
+
+	hash := ix.Missing(nil)[0]
+
+	fetch := func(stem string) (*http.Response, []byte) {
+		t.Helper()
+		r, err := http.Get(srv.URL + "/song/" + hash + "/preview/" + stem)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(r.Body)
+		r.Body.Close()
+		return r, body
+	}
+
+	rGuitar, guitar := fetch("guitar")
+	if rGuitar.StatusCode != http.StatusOK {
+		t.Fatalf("guitar: status %d (%s)", rGuitar.StatusCode, guitar)
+	}
+	if ct := rGuitar.Header.Get("Content-Type"); ct != "audio/ogg" {
+		t.Fatalf("guitar: content type %q", ct)
+	}
+	if !bytes.HasPrefix(guitar, []byte("OggS")) {
+		t.Fatal("guitar: not an Ogg stream")
+	}
+
+	rSong, song := fetch("song")
+	if rSong.StatusCode != http.StatusOK {
+		t.Fatalf("song: status %d (%s)", rSong.StatusCode, song)
+	}
+
+	// Each stem must give its OWN bytes. If the handler ignored the stem and served whatever
+	// previewCandidates picked, these would be equal and the client would mix one stem N times.
+	if bytes.Equal(guitar, song) {
+		t.Fatal("guitar and song returned identical bytes; the stem parameter is being ignored")
+	}
+
+	// And the ETags must differ, or a cache keyed on them serves one stem's bytes for another -
+	// which is worse than no caching, because it is silent and it is per-viewer.
+	if a, b := rGuitar.Header.Get("ETag"), rSong.Header.Get("ETag"); a == "" || a == b {
+		t.Fatalf("ETags are %q and %q; each stem needs its own or a cache will cross them", a, b)
+	}
+
+	rDrums, drums := fetch("drums_1")
+	if rDrums.StatusCode != http.StatusOK {
+		t.Fatalf("drums_1: status %d (%s)", rDrums.StatusCode, drums)
+	}
+
+	// A stem the song does not have is a 404, not the server quietly substituting another.
+	rMissing, missing := fetch("keys")
+	if rMissing.StatusCode != http.StatusNotFound {
+		t.Fatalf("keys: status %d (%s), expected 404", rMissing.StatusCode, missing)
+	}
+
+	// An unknown chart is still a 404 here, same as the single-clip endpoint.
+	rBadHash, _ := fetch2(t, srv.URL+"/song/"+strings.Repeat("b", 40)+"/preview/song")
+	if rBadHash != http.StatusNotFound {
+		t.Fatalf("unknown hash: status %d, expected 404", rBadHash)
+	}
+}
+
+func fetch2(t *testing.T, url string) (int, []byte) {
+	t.Helper()
+	r, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Body.Close()
+	b, _ := io.ReadAll(r.Body)
+	return r.StatusCode, b
+}
+
+// MP3 stems go through the same endpoint, and the type must follow the bytes here too.
+func TestPreviewPerStemMP3(t *testing.T) {
+	srv, ix := newTestServer(t, []spec{{
+		dir:     "mp3-stems",
+		seed:    "mp3-stems",
+		ini:     map[string]string{"name": "m", "artist": "A", "preview_start_time": "1000"},
+		extra:   map[string]string{"song.mp3": mp3Frames(2000), "guitar.mp3": mp3Frames(2000)},
+		noAudio: true,
+	}})
+	defer srv.Close()
+
+	hash := ix.Missing(nil)[0]
+	r, err := http.Get(srv.URL + "/song/" + hash + "/preview/guitar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Body.Close()
+	body, _ := io.ReadAll(r.Body)
+
+	if r.StatusCode != http.StatusOK {
+		t.Fatalf("status %d (%s)", r.StatusCode, body)
+	}
+	if ct := r.Header.Get("Content-Type"); ct != "audio/mpeg" {
+		t.Fatalf("content type %q, expected audio/mpeg", ct)
+	}
+	if !bytes.HasPrefix(body, []byte{0xFF, 0xFB}) {
+		t.Fatalf("not an MP3 frame: % x", body[:4])
 	}
 }

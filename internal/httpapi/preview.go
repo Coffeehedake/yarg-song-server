@@ -370,3 +370,155 @@ func (s *Server) previewFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	http.ServeContent(w, r, hash+"-preview"+cutExt, time.Time{}, bytes.NewReader(clip.Bytes()))
 }
+
+// previewStem serves ONE named stem's clip, so the client can mix several of them.
+//
+// GET /song/{chart_hash}/preview/{stem}
+//
+// **Why this exists at all is the important part.** `previewFile` has to choose a stem, and
+// `stemPreference` is this server's own invention: upstream's `LoadPreviewAudio` prefers a
+// shipped preview file and otherwise calls `CreateAudioMixer`, which adds EVERY stem to one
+// mixer. The game never picks a stem. A server that picks one is guessing at a question the
+// client already answers, and ADR-009 records how badly it guessed - 908 of 3,860 songs got a
+// near-empty Rock Band backing stem, and the decoder-free audibility test written to fix that
+// could not distinguish sparse audio from silence.
+//
+// So the server stops choosing. It cuts whichever stem it is asked for, and the client builds
+// the same multi-channel mixer it builds for a local song.
+//
+// Note there is no extension in the path. `preview.ogg` already lies when the bytes are mpeg -
+// that was a real defect, fixed by making the type follow the bytes - so this does not invite
+// the same mistake. Content-Type is the answer to "what is this".
+func (s *Server) previewStem(w http.ResponseWriter, r *http.Request) {
+	hash := strings.ToLower(r.PathValue("hash"))
+	want := strings.ToLower(strings.TrimSpace(r.PathValue("stem")))
+
+	// Tolerate an extension if a caller adds one out of habit; the stem is the name, not the file.
+	if ext := strings.ToLower(path.Ext(want)); cuttableExt(ext) {
+		want = strings.TrimSuffix(want, ext)
+	}
+	if want == "" {
+		writeError(w, http.StatusBadRequest, "a stem name is required")
+		return
+	}
+
+	ix, ok := s.index(w)
+	if !ok {
+		return
+	}
+	entry, ok := s.resolveChart(w, r, ix, hash)
+	if !ok {
+		return
+	}
+
+	// Match on the catalogue's own stem label, and fall back to the file's base name so a
+	// caller that read `assets.stems[].name` rather than `.stem` is not punished for it.
+	var chosen string
+	for _, st := range entry.Song.Assets.Stems {
+		if st.Name == "" {
+			continue
+		}
+		base := strings.ToLower(strings.TrimSuffix(path.Base(st.Name),
+			path.Ext(st.Name)))
+		if strings.ToLower(st.Stem) == want || base == want {
+			chosen = st.Name
+			break
+		}
+	}
+	if chosen == "" {
+		// 404 and NOT a substitution. Quietly serving a different stem would make a client
+		// mixing four stems play one of them four times, and nothing would say so.
+		writeError(w, http.StatusNotFound, "this song has no stem called "+want)
+		return
+	}
+
+	ext := strings.ToLower(path.Ext(chosen))
+	if !cuttableExt(ext) {
+		writeError(w, http.StatusUnsupportedMediaType,
+			"this stem is "+ext+"; Ogg, Opus and MP3 previews are cut, nothing else is")
+		return
+	}
+
+	startMS, durMS := previewWindow(entry.Song)
+
+	// The stem is IN the tag. Without it every stem of a song shares one ETag and a cache
+	// hands out whichever it saw first for all of them - silently, and per client.
+	tag := `"` + entry.Song.PackageHash + "-preview-" + strings.ToLower(chosen) + "-" +
+		strconv.FormatInt(startMS, 10) + "-" + strconv.FormatInt(durMS, 10) + `"`
+	w.Header().Set("ETag", tag)
+	if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, tag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	f, err := s.openPackage(entry)
+	if err != nil {
+		s.logError("open song for stem preview", err, "chart_hash", hash, "stem", chosen)
+		if entry.Kind.NeedsPacking() {
+			writeError(w, http.StatusInternalServerError, "could not pack this song")
+		} else {
+			writeError(w, http.StatusNotFound,
+				"this song is no longer where the index says it is; rescan")
+		}
+		return
+	}
+	defer f.Close()
+
+	st, err := f.Stat()
+	if err != nil {
+		s.logError("stat song for stem preview", err, "chart_hash", hash)
+		writeError(w, http.StatusInternalServerError, "could not read this song")
+		return
+	}
+
+	a, err := sng.Open(f, st.Size())
+	if err != nil {
+		s.logError("open sng for stem preview", err, "chart_hash", hash)
+		writeError(w, http.StatusInternalServerError, "could not read this package")
+		return
+	}
+
+	inner, found := findInArchive(a, path.Base(chosen))
+	if !found {
+		writeError(w, http.StatusNotFound,
+			"the catalogue lists "+chosen+" and the package does not hold it")
+		return
+	}
+
+	h, err := a.Open(inner)
+	if err != nil {
+		s.logError("open stem for preview", err, "chart_hash", hash, "stem", inner)
+		writeError(w, http.StatusInternalServerError, "could not read this stem")
+		return
+	}
+	defer h.Close()
+
+	var clip bytes.Buffer
+	if ext == ".mp3" {
+		err = preview.CutMP3(h, startMS, durMS, &clip)
+	} else {
+		err = preview.CutOgg(h, startMS, durMS, &clip)
+	}
+	if err != nil && preview.IsShortStream(err) {
+		// Shorter than asked for is still a clip, and the mixer will cope with channels of
+		// unequal length. Logged because a library full of these means the windows are wrong.
+		s.logError("short stem preview", err, "chart_hash", hash, "stem", inner)
+		err = nil
+	}
+	if err != nil {
+		s.logError("cut stem preview", err, "chart_hash", hash, "stem", inner)
+		writeError(w, http.StatusInternalServerError, "could not cut a preview from this stem")
+		return
+	}
+	if clip.Len() == 0 {
+		writeError(w, http.StatusInternalServerError, "the clip came out empty")
+		return
+	}
+
+	contentType := "audio/ogg"
+	if ext == ".mp3" {
+		contentType = "audio/mpeg"
+	}
+	w.Header().Set("Content-Type", contentType)
+	http.ServeContent(w, r, hash+"-"+path.Base(chosen), time.Time{}, bytes.NewReader(clip.Bytes()))
+}

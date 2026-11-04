@@ -121,6 +121,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/unpack", s.unpackHandler)
 	mux.HandleFunc("GET /song/{file}", s.songFile)
 	mux.HandleFunc("GET /song/{hash}/preview.ogg", s.previewFile)
+	mux.HandleFunc("GET /song/{hash}/preview/{stem}", s.previewStem)
 
 	return mux
 }
