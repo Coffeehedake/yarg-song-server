@@ -177,6 +177,27 @@ Verified rather than assumed — the fork's own code is present in `Assembly-CSh
 (2.1 MB): `SongServerSync`, `MirroredSongs`, `SongServerTab`, `WithServerBadge`, `BadgeMarkup`.
 So this is a build of *our* client, not a stock one that happened to compile.
 
+**A PROPERTY will not be found this way, and the check fails silently — measured 2026-11-03.**
+Every name above is a class or a method, and those appear in the metadata string heap verbatim,
+so `strings | grep -x` finds them. A C# auto-property does not: it is stored as
+`get_<Name>` and `<Name>k__BackingField`, never as the bare name. So an exact-match search for a
+SETTING returns zero from a build that contains it.
+
+That was used as evidence that a build lacked `BrowseServerLibrary` and `ServerCacheBudgetGb`.
+The conclusion happened to be right — the build predated both — but the test would have returned
+zero either way, and the control chosen to validate it (three *methods* that were present) could
+not have caught the error, because methods are not what was in doubt.
+
+Search for the accessor, and control with a property that is known to be present:
+
+```bash
+DLL=build/<name>/YARG_Data/Managed/Assembly-CSharp.dll
+strings -a "$DLL" | grep -c get_BrowseServerLibrary    # the one under test
+strings -a "$DLL" | grep -c get_SyncOnStartup          # a setting that has existed for months
+```
+
+The second number is the whole point: if it is zero, the search is broken, not the build.
+
 ### The naming problem — settled 2026-09-08
 
 The player used to identify itself as `companyName: YARC`, `productName: YARG` — upstream's
