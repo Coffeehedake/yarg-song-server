@@ -10,6 +10,11 @@ and following it today breaks the service.
 
 ## Run it today — every argument read off the running container, 2026-11-01
 
+> **Live build as of 2026-11-03: `3a9bf3c` on digest `sha256:4b07c333…`** — the ninth
+> deployment, immediately below. The arguments in this section are still the ones in use; the
+> ninth deployment reproduced them from `docker inspect` of the running container rather than
+> from this document, and they matched.
+
 **The `docker run` further down is the 2026-09-05 original and it no longer
 reproduces this service.** Three of its arguments are now wrong, and two of them
 fail in ways that do not look like a deployment mistake:
@@ -46,6 +51,68 @@ docker run -d --name yarg-song-server \
 `/usr/local/bin/yarg-song-server`, both from the image; neither needs stating on
 the command line. `Labels` is empty, which is the "not Unraid-managed" note
 further down, still true.
+
+### Ninth deployment, 2026-11-03 — `3a9bf3c`, preview clips. DEPLOYED, invariants held
+
+**Live now:** `3a9bf3c` on digest `sha256:4b07c333…`, 4,085 songs, `problems` null. Previous
+container kept as `yarg-song-server-prev-01e0503`; rollback is
+`docker rm -f yarg-song-server && docker rename yarg-song-server-prev-01e0503 yarg-song-server && docker start yarg-song-server`.
+
+Predictions were registered before the image was pulled, not after the swap.
+
+| Pre-registered | Observed | |
+|---|---|---|
+| hard-down ≈ 1 s | **1.200 s** | ✅ |
+| `/healthz` 503 `indexing` + `Retry-After` | **503**, `Retry-After: 5` | ✅ |
+| `POST /api/v1/have` 503, never 200 | **503** | ✅ |
+| `/version` 200 throughout | **200 `3a9bf3c`** | ✅ |
+| 4,085 songs, `problems` null | **4,085**, 4,080 distinct charts, null | ✅ |
+| **0 chart hashes moved, 0 package hashes moved** | **0 absent, 0 new, 0 moved** across 4,085 rows | ✅ |
+| `/song/{hash}.sng` still 200, `ETag` = package hash | **200**, ETag `8d4f9a30…`; `Range` still **206** | ✅ |
+| **NEW:** `/song/{hash}/preview.ogg` 200 `audio/ogg`, decodes | **200**, 942,048 bytes, 282 ms over the tailnet; VLC decoded **30.01 s** 44.1 kHz stereo, peak 0 dBFS, audible | ✅ |
+| index ≈ 638 s | **431 s** | ❌ |
+
+The size prediction said "≈545 KB" from a local test on a different song; the live figure is
+942,048 bytes because the first catalogue song is a Marathon Hero chart whose
+`preview_start_ms` is **684,770** — eleven minutes in. That exercised the skip-ahead path far
+harder than anything local did, which is a better test than the one that was predicted.
+
+`/song/{hash}.sng` is listed because `songFile` was edited in this change — its chart-hash
+resolution moved into a shared `resolveChart` so the two endpoints cannot drift into different
+answers for the same library. It was the prediction most likely to be wrong and it held.
+
+#### The miss is the eighth deployment's baseline, not this build — and the rehearsal called it exactly
+
+```
+eighth deployment, measured     638.744 s
+this deployment, predicted      ~638 s      (from that figure)
+rehearsal container, measured   431 s
+production, measured            431 s       prediction -32%, REHEARSAL 0%
+```
+
+**The rehearsal predicted production to the second**, at the 10-second polling granularity used
+for both. That is the method fix from the eighth deployment working as intended: that deployment's
+probe was a local cross-compile and came in 9.4% optimistic, and the recorded conclusion was that
+a probe must run **the artifact that will be deployed**. Run that way — the CI image, the real
+`/songs` bind, a spare port — the error went to zero.
+
+So the ❌ is against a stale baseline rather than against this build. **Why 638 s became 431 s is
+not established.** A warm page cache on `/mnt/user/YARG/songs` after the rehearsal had just walked
+it is the obvious candidate and would be a mechanism, not a measurement; the rehearsal ran first
+and would have warmed exactly that. Recorded as unexplained rather than attributed, because the
+eighth deployment's own lesson was that a plausible mechanism is not a cause.
+
+**Do not carry 638 s forward as the baseline.** Two runs tonight on the same box and library both
+said 431 s.
+
+#### What this deployment does not establish
+
+- **The clip has never met BASS.** VLC decoded it and Jay listened to one; the game's own decoder
+  is still untested, and ADR-009's standard is the real client. The client side is unwritten, so
+  nothing in YARG requests a preview yet.
+- **No disk cache.** Every request the `ETag` does not satisfy cuts the clip again — 282 ms over
+  the tailnet here, and ADR-009 records it as a gap.
+- **MP3 and WAV are not cut**: 449 of 22,091 stem files answer 415.
 
 ### Eighth deployment, 2026-11-02 — `6cbea44`, hash-once. DEPLOYED, invariants held
 
@@ -116,6 +183,29 @@ the readiness-signal change by itself, rather than needing a warning.
 
 The build difference is a hypothesis with a mechanism, not a measurement, and is
 not recorded as the established cause.
+
+#### Following that method fix, 2026-11-03: two walls, neither of which looks like its cause
+
+The ninth deployment ran the rehearsal as prescribed — the CI image, the real `/songs` bind, its
+own `/data`, a spare port, live service untouched — and hit two things worth knowing first.
+
+**The container exits 1 with `packcache: mkdir /data/packs: permission denied`.** The image runs
+as `nonroot:nonroot`, so a `--data` directory created by `root` (which is what `mkdir /tmp/...`
+over SSH gives you) is not writable by the process. It reads as a broken build or a bad image.
+`chmod 777` the throwaway directory; the live `/data` under appdata is already owned correctly,
+which is exactly why this never bites the real deployment.
+
+**Pick the port by looking, not by assuming.** On this box `8090`, `8092`, `8093`, `8098` and
+`8099` were all listening. A conflict leaves the container in `Created` with **no logs at all**
+and a stray `docker-proxy` holding the port, which looks like a container that failed to start
+for its own reasons:
+
+```bash
+ss -ltn | awk '{print $4}' | grep -oE ':809[0-9]$' | sort -u
+```
+
+And run the `docker run` so its stderr is visible. Wrapping it in a pipeline under `set -e`
+swallowed the message both times, which is how a plain permission error cost two round trips.
 
 **The real win on this library is therefore 1.468×**, which is also a floor: the
 baseline ran essentially alone while this run followed a probe.
