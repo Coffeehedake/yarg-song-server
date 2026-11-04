@@ -116,9 +116,16 @@ type previewSource struct {
 func previewCandidates(song *catalog.Song) []previewSource {
 	var out []previewSource
 
-	// A package that ships its own preview needs no cutting at all. Nothing in the live library
-	// does - 0 of 4,085 - but the field exists in the catalogue and serving it is both cheaper
-	// and more faithful than anything this code could cut.
+	// A package that ships its own preview needs no cutting at all, and serving it is both
+	// cheaper and more faithful than anything this code could cut.
+	//
+	// 215 of the live library's 4,085 songs do ship one - 150 mp3, 63 ogg, 2 opus - and that
+	// number matters more than it looks, because this branch is FIRST and `ReadyMade` skips the
+	// extension filter below. All 150 of the songs whose stems are mp3-only are in here, so they
+	// were already being served before CutMP3 existed. This comment used to say "0 of 4,085",
+	// which was true when written and was then read as a current measurement; the false claim
+	// that those 150 songs answered 415 and played nothing came straight out of it. See the
+	// correction in docs/ADR-009-preview-clips.md.
 	if p := song.Assets.PreviewAudio; p != nil && p.Name != "" {
 		out = append(out, previewSource{Name: p.Name, ReadyMade: true})
 	}

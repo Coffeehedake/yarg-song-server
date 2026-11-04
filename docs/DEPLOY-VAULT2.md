@@ -10,10 +10,17 @@ and following it today breaks the service.
 
 ## Run it today — every argument read off the running container, 2026-11-01
 
-> **Live build as of 2026-11-03: `3a9bf3c` on digest `sha256:4b07c333…`** — the ninth
+> **Live build as of 2026-11-04: `5e9f255` on digest `sha256:bfc47bc8…`** — the tenth
 > deployment, immediately below. The arguments in this section are still the ones in use; the
-> ninth deployment reproduced them from `docker inspect` of the running container rather than
-> from this document, and they matched.
+> ninth and tenth deployments both reproduced them from `docker inspect` of the running
+> container rather than from this document, and they matched both times.
+>
+> **The image TAG is 8 characters and `/version` reports 7.** The tag is
+> `CI_COMMIT_SHORT_SHA` (`:5e9f255c`); `/version` comes from `git describe --always`
+> (`5e9f255`). On 2026-11-04 a `docker manifest inspect` of the 7-character form answered
+> *"no such manifest"* four hours after the pipeline had succeeded, which reads exactly like a
+> build that never published. Pin by digest and take the tag from the registry, not from
+> `/version`.
 
 **The `docker run` further down is the 2026-09-05 original and it no longer
 reproduces this service.** Three of its arguments are now wrong, and two of them
@@ -51,6 +58,110 @@ docker run -d --name yarg-song-server \
 `/usr/local/bin/yarg-song-server`, both from the image; neither needs stating on
 the command line. `Labels` is empty, which is the "not Unraid-managed" note
 further down, still true.
+
+### Tenth deployment, 2026-11-04 — `5e9f255`, MP3 previews. DEPLOYED, and the reason for it was wrong
+
+**Live now:** `5e9f255` on digest `sha256:bfc47bc816be304443b18e9bf5ff6cfeca64f9c08a5c67783f16e65f564d2fdb`,
+4,085 songs, `problems` null. Previous container kept as `yarg-song-server-prev-3a9bf3c`;
+rollback is
+`docker rm -f yarg-song-server && docker rename yarg-song-server-prev-3a9bf3c yarg-song-server && docker start yarg-song-server`.
+
+```
+DEPLOY    :5e9f255c  sha256:bfc47bc816be304443b18e9bf5ff6cfeca64f9c08a5c67783f16e65f564d2fdb
+ROLLBACK  :3a9bf3c   sha256:4b07c333f58c4646d4aff3cfc7d43b1ebbc5b347cfd21d9010957f384146c1db
+```
+
+#### The deployment was justified by a claim that production disproves
+
+The commit message says *"150 songs had no preview at all"*. **They all had one.** Measured
+against the live `3a9bf3c` before the swap:
+
+```
+200  ct=audio/ogg  len=482304  magic=ff fb 94 64   Motorhead - (We Are) The Road Crew
+200  ct=audio/ogg  len=398735  magic=ff fb 90 64   Queens of the Stone Age - 3's & 7's
+200  ct=audio/ogg  len=338549  magic=ff fb 90 64   Foo Fighters - All My Life
+```
+
+Every one of the 150 ships a ready-made `preview.mp3`; `previewCandidates` puts a ready-made
+preview first and `ReadyMade` skips the extension filter, so the 415 that the whole change was
+built to remove never occurred. The premise came from a comment in that function reading
+*"Nothing in the live library does - 0 of 4,085"* — true when written, read as current. **215 of
+4,085 ship their own preview today** (150 mp3, 63 ogg, 2 opus). The correction is in ADR-009 and
+the comment has been rewritten.
+
+So this deployment delivers one header on 150 songs, and `CutMP3` runs on **zero** songs in this
+library. That last part was an assumption until it was counted after the swap, because there is a
+case where it would not hold: `stemPreference` prefers `song`, so a song carrying `song.mp3`
+*beside* a `guitar.ogg` would put the mp3 first, and `5e9f255` would cut it where `3a9bf3c`
+skipped past it to the ogg. That is the one shape in which this change alters bytes rather than a
+label. Measured:
+
+```
+stem files : 22,091 total, 449 of them .mp3
+songs with >=1 mp3 stem       : 150
+  of those, ALSO carrying ogg : 0
+  of those, no ready-made prev: 0
+```
+
+All 449 mp3 stems live in those same 150 songs, every one of which has a ready-made preview that
+wins first. The cutter is correct and verified; it is insurance, not a fix.
+
+#### The rehearsal was a full A/B, which is more than the method asked for
+
+The eighth deployment's method fix was "run the artifact that will be deployed". Run on a spare
+port against the same `/songs` bind, the rehearsal is also the *old* build's live twin — so every
+invariant could be checked **before** the swap rather than after:
+
+| Checked on the rehearsal, before any production change | Result |
+|---|---|
+| 4,085 songs, 4,080 distinct, 0 duplicate, `problems` null | identical to production |
+| 0 package hashes absent, 0 new, 0 chart hashes moved, 4,085 rows | **0 / 0 / 0** |
+| `sort_attributes` identical | yes |
+| `/healthz` 503 `indexing` + `Retry-After: 5` | yes |
+| `POST /api/v1/have` 503 while indexing, never 200 | yes |
+| 150 mp3 songs: `audio/ogg` → `audio/mpeg` | **150 of 150** |
+| 150 mp3 songs: clip bytes **byte-identical** (sha256 each) | **150 of 150** |
+| 60 ogg songs: still `audio/ogg`, byte-identical | **60 of 60** |
+
+That last pair is the one that could have failed — `cutExt` is assigned for a ready-made
+candidate too, so a wrong branch there would have changed the bytes and not just the label. It
+did not. **Nothing was left to be discovered after the swap**, which is what the A/B buys over a
+timing probe.
+
+| Pre-registered | Observed | |
+|---|---|---|
+| hard-down ≈ 1 s | **1.321 s** — prev finished `10:56:15.563Z`, `listening` at `10:56:16.884Z` | ✅ |
+| `/version` 200 `5e9f255` throughout | **200** at every poll, 0 s–492 s | ✅ |
+| `POST /api/v1/have` 503, never 200 while `/healthz` was 503 | **503** at every poll | ✅ |
+| 4,085 songs, 4,080 distinct, `problems` null | **4,085 / 4,080 / 0**, null | ✅ |
+| index within 10% of the rehearsal's 495.4 s (446–545 s) | **507.85 s** (`8m27.85s`), **+2.5%** | ✅ |
+| **0 chart hashes moved, 0 package hashes moved** | **0 absent, 0 new, 0 moved** across 4,085 rows | ✅ |
+| 150 mp3 songs `audio/mpeg`, lengths unchanged | **150 / 150** both | ✅ |
+| 60 ogg controls still `audio/ogg`, lengths unchanged | **60 / 60** both | ✅ |
+| `/song/{hash}.sng` 200, `ETag` = package hash; `Range` 206 | **200**, ETag `8d4f9a30…` matches; **206** | ✅ |
+
+**The rehearsal predicted the index to 2.5%**, after predicting the ninth deployment's to 0%.
+Two runs is not a property of the method — the eighth deployment's local-cross-compile probe was
+1.4% out once and 9.4% out the next time, which is exactly how a method looks accurate before it
+isn't. But both accurate runs share what the method fix asked for: the CI image, the real
+`/songs` bind, a spare port. Quote it as an estimate with a sign, not a measurement.
+
+#### A finding on the live build that has nothing to do with MP3
+
+Sampling 20 of the 3,870 songs that are actually **cut** (no ready-made preview), three clips came
+back at 4,407 / 7,225 / 8,623 bytes against a median of 814,901. I called them suspiciously small
+and suspected the cutter. Parsing the 7,272-byte one page by page says the cut is correct:
+
+```
+8 pages, one serial, EOS set on the last, last granule 1,419,298 = 32.18 s at 44.1 kHz
+```
+
+Six audio pages of 537 bytes carrying 261,120 samples each — about 5.8 kbit/s. The clip is the
+right length and structurally valid; the **source stem is near-silent over that window**. These
+are RB-derived packages where `song.ogg` is a thin backing stem and the music lives in
+`guitar.ogg` / `drums_*.ogg`, while `stemPreference` prefers `song`. So ~15% of a 20-song sample
+previews something inaudible, the cutter is not at fault, and **stem selection is**. Not
+quantified across the library; recorded here so the next person does not re-suspect the cutter.
 
 ### Ninth deployment, 2026-11-03 — `3a9bf3c`, preview clips. DEPLOYED, invariants held
 

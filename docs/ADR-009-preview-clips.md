@@ -3,9 +3,9 @@
 **Status:** Accepted, implemented and **playing in the client** as of 2026-11-04.
 `internal/preview` cuts Ogg and Opus, `GET /song/{chart_hash}/preview.ogg` serves it, deployed on
 vault2 as `3a9bf3c`, and `RemoteSongEntry.LoadPreviewAudio` fetches it — verified by VLC and then
-by **BASS, the game's own decoder** (both below). **MP3 is cut too as of 2026-11-04**, which was not cosmetic: 150 of the 4,085 songs carry
-*only* `.mp3` stems and every one of them answered 415 and played nothing. Clips are still not
-cached on disk.
+by **BASS, the game's own decoder** (both below). **MP3 is cut too as of 2026-11-04** — see
+*"What the MP3 cutter actually fixed"* below, because the reason first written here was wrong:
+those 150 songs were never silent. Clips are still not cached on disk.
 
 **Context:** Jay, playing the fork with the server library browsing: *"the song preview does not
 load"*. Correct, and by design — `RemoteSongEntry.LoadPreviewAudio` returns `null`, because a song
@@ -215,6 +215,37 @@ the whole of it against somebody's ears.
   from a slow endpoint.
 
 ## MP3, added 2026-11-04
+
+### What the MP3 cutter actually fixed, and what this entry claimed first
+
+**The justification originally written here was false, and it was written without being checked
+against the running server.** It said 150 of the 4,085 songs carry only `.mp3` stems, answered
+415, and played nothing. The first half is right — 150 songs, measured from the catalogue's own
+`assets.stems`, and 0 songs carry a `.wav` stem, which is why no WAV cutter exists. The rest was
+an inference, and production contradicts it:
+
+```
+200  ct=audio/ogg  len=482304  magic=ff fb 94 64   Motorhead - (We Are) The Road Crew
+200  ct=audio/ogg  len=398735  magic=ff fb 90 64   Queens of the Stone Age - 3's & 7's
+200  ct=audio/ogg  len=338549  magic=ff fb 90 64   Foo Fighters - All My Life
+```
+
+`ff fb` is an MP3 frame header. All 150 ship a ready-made `preview.mp3`, `previewCandidates`
+puts a ready-made preview **first**, and `ReadyMade` deliberately skips the extension filter —
+so the 415 never happened. **215 of 4,085 songs carry their own preview file** (150 mp3, 63 ogg,
+2 opus), and the comment in `previewCandidates` asserting *"Nothing in the live library does -
+0 of 4,085"* was stale; it was read as a current measurement.
+
+So on this library the change delivers exactly one thing: those 150 responses stop being
+labelled `audio/ogg` when they are mpeg. **`CutMP3` runs on zero songs here**, because no song
+has an MP3 stem *and* no ready-made preview. It is correct, verified, and insurance for a
+library that has one — which is a smaller claim than the one it shipped under.
+
+The error was not in the measurement that was taken; it was in not taking the one that mattered.
+A stem extension says what the archive holds, not what the endpoint answers, and the endpoint is
+one HTTP request away.
+
+### How it works
 
 Same idea, different container: an MP3 is a row of self-contained frames, so a clip is a run of
 whole frames copied out. Frame length comes from the header's bitrate and sample rate, which is
