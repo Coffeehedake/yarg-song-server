@@ -28,6 +28,7 @@ Then, by subject:
 | `docs/ADR-004-remote-song-source.md` | Phase 3: what YARG.Core's code says about a remote song source, the three increments it implies, and what increment 1 actually shipped |
 | `docs/ADR-007-rar-ingest.md` | `.rar` ingest: the measured access-order numbers, multi-volume sets, why no fixture is committed, and the directory flag that only the writer noticed |
 | `docs/ADR-008-serve-while-indexing.md` | Why the start-up index is a data-loss problem rather than a speed one, and the one answer that must never be `200` |
+| `docs/ADR-009-preview-clips.md` | Preview clips: why there is no decoder, the 98%-Ogg measurement that ruled out range-serving, and the independent check the cutter must pass |
 | `docs/API.md` | The HTTP surface: every endpoint, what it promises, and what it does not claim |
 | `docs/research/chart-preparsing.md` | Track names, note maps and the false-positive traps, cited per claim. **Read before touching `internal/chart`** |
 | `docs/research/yarg-song-formats.md` | The `.sng` binary layout, song identity, stem naming. Marked as history at the top: parts of it were superseded, and it says which |
