@@ -40,6 +40,7 @@ it rather than incidental, so changing them breaks a shipped binary:
 | `POST` | `/api/v1/have` | Bulk "what am I missing". |
 | `POST` | `/api/v1/check` | Scan an uploaded archive and answer with the verdict. Off by default; keeps nothing. |
 | `GET` | `/song/{chart_hash}.sng` | The bytes. |
+| `GET` | `/song/{chart_hash}/preview.ogg` | About 30 seconds of the song's own audio, cut without decoding. |
 
 ## `GET /api/v1/library`
 
@@ -303,6 +304,44 @@ bytes, so re-zipping a library does not change what a client downloads.
   choosing would hand different clients different audio for the same request.
 - **404** when the hash is unknown, and also when the index points at a file that has since
   moved — with a message saying to rescan, because that is the fix.
+
+## `GET /song/{chart_hash}/preview.ogg`
+
+A short clip of the song's own audio, so a client can preview a song it does not hold. Roughly
+545 KB where the stem it came from is 47 MB.
+
+**Nothing here decodes audio.** The clip is whole Ogg pages copied out of a stem, which is why
+the server needs no ffmpeg and the image stays distroless-static. The reasoning, the measurement
+that forced it and the independent verification are in `docs/ADR-009-preview-clips.md`.
+
+- **The window** comes from `song.ini`: `preview_start_ms`, and `preview_end_ms` when it gives a
+  sensible length. Otherwise 30 seconds, capped at 45 — a `preview_end_time` of `9999999` is not
+  rare in the wild, and serving ten minutes as a "preview" would defeat the endpoint while
+  looking like it worked.
+- **Which audio.** The full mix (`song`) where there is one, which is 3,861 of the live
+  library's 4,085 songs. The rest fall through a preference order — guitar, rhythm, keys, bass,
+  vocals, drums, crowd — because a song with no full mix would otherwise get whichever file the
+  archive happened to list first, and for a drum chart that is a preview of nothing but drums.
+  Stems are never mixed together: mixing needs a decoder.
+- **A candidate that cannot be cut is skipped, not fatal.** A package whose `song.ogg` is corrupt
+  still gets a preview from its guitar stem. Each skip is logged with its reason; when every
+  candidate fails, so does the request.
+- `ETag` is the **package hash** plus the window, not the stem's own hash — which candidate wins
+  is decided after the header has to be sent, and any stem changing changes the package hash
+  anyway. The output is deterministic, so the tag is honest: two requests return identical bytes.
+- `Range` is supported, because the clip is buffered and served with a length.
+- **415** when the song's audio is a format this does not cut yet. MP3 frames and WAV offsets are
+  cuttable by the same reasoning and are not written; that is 449 of the library's 22,091 stem
+  files, and the response names the format rather than failing vaguely.
+- **404** when the hash is unknown, when the song has no audio at all, or when the catalogue
+  lists a stem the package does not hold — the last one says to rescan, because that is the fix.
+- **300 Multiple Choices** when the chart hash is shared by several packages, exactly as
+  `/song/{chart_hash}.sng` does, and `?package=<package_hash>` names one. The two endpoints share
+  the resolution code so they cannot drift into different answers for the same library.
+
+**Not cached on disk yet.** A clip is cut on every request the `ETag` does not satisfy. A
+performance gap rather than a correctness one, and recorded here so it is not discovered from a
+slow endpoint.
 
 ## `POST /api/v1/check`
 
