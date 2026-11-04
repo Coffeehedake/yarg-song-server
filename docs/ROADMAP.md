@@ -2776,22 +2776,52 @@ mechanism this project can reach has been eliminated by measurement.** The conta
 4,085; search finds 155 Nirvana at every one of the twelve sorts including `Artist_Album`, which
 is the sort that build was on; the merge logged no error; a server song played.
 
-**What is genuinely still untested**, and it is now a short list:
+**The mixed library was the last hypothesis, and `MixedLibraryProbe` killed it too.** It drives
+the real `RunRefresh` twice — once with the setting off, once on — so the scan, the merge, the
+sorters and `FillContainers` all run in production's order, and it reproduces Jay's library shape
+exactly:
 
-- **The mixed library.** Both probes run a server-only catalogue. The real library is 128 local
-  entries and 3,952 remote ones in one container, and `SetAllSongs` de-duplicates across them.
-  Nothing yet measures a search over both at once. This is the first thing to build next: a
-  probe that scans the real `ServerLibrary` folder and then merges, rather than merging alone.
-- **The exact query.** Every measurement here used an artist with 151 songs on the server. A
-  query that behaves differently — short, punctuated, diacritic-bearing, or one of the qualified
-  `artist:` / `source:` forms — has not been tried against a mixed library.
+```
+PROBE INFO: local-only library holds 133
+PROBE INFO: mixed library holds 4080 - 133 local, 3947 from the server
+PROBE INFO: sort Name holds 4080 - 133 local, 3947 remote
+PROBE INFO: "nirvana" at sort Name         returns 155 - 0 local, 155 remote
+PROBE INFO: "nirvana" at sort Artist_Album returns 155 - 0 local, 155 remote
+PROBE INFO: "artist:nirvana"               returns 153 - 0 local, 153 remote
+PROBE RESULT: PASS
+```
 
-**What to do next, in order.** First the mixed-library probe, because it needs nobody's time but
-a machine's. If that comes back green too, then one reproduction with the specifics written down:
-the query exactly as typed, the count the header showed, the count the list showed, and the log
-kept — from `%LOCALAPPDATA%Low\FatalException\YARG-FE\release\logs`, which is the folder this
-entry's correction exists because nobody knew about.
+It counts results as remote-or-local rather than totalling them, and that is the whole design:
+with 133 local songs a search that found ONLY those would still return something, so a total
+cannot tell a working search from the reported one. Every result is a server song.
 
+The local count is 133 rather than 128 because `RunRefresh` adds `PathHelper.ServerLibraryPath`
+and `ServerCachePath` to the scan itself, and the editor's `dev` tree holds five songs of its own.
+The game's own log line resolves from the other side and both numbers are right: 4,080 distinct
+charts less the 128 already on disk is 3,952 merged, and its "133 already local" was those 128
+plus the five duplicate catalogue rows. See the CLOSED entry above.
+
+**So every mechanism this project can reach is now eliminated by measurement**, in the
+configuration Jay's own settings file records. What remains is not a mechanism but an observation
+gap:
+
+- **The exact query.** Every measurement used an artist with 151 songs on the server. A short,
+  punctuated or diacritic-bearing query, or a qualified form other than `artist:`, has not been
+  tried.
+- **What was on screen versus what the list held.** No instrument here can see that, and the
+  report is the only evidence of it.
+
+**What to do next: one reproduction with the specifics written down** — the query exactly as
+typed, the count in the header, the count in the list, and the log kept, from
+`FatalException\YARG-FE\release\logs` under `%LOCALAPPDATA%Low`. That is the folder this entry's
+CORRECTION exists because nobody knew about, and it is where the answer will be if an exception is
+thrown at all.
+
+This entry stays **open and unexplained** rather than closed on a hypothesis. Six have now been
+eliminated and every one of them looked right at the time — the sort strings, the `server:`
+filter, the cached `_baseList`, the sorters, the ratings, the filters menu. The pattern across
+all six is that each was eliminated by running something, and each would have survived any amount
+of further reading.
 
 ## Blockers
 
