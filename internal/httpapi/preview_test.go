@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/coffeehedake/yarg-song-server/internal/catalog"
 )
 
 // oggCRCTable is Ogg's CRC-32: the crc32.IEEE polynomial, UNREFLECTED. Spelled out here rather
@@ -423,5 +425,93 @@ func TestPreviewPerStemMP3(t *testing.T) {
 	}
 	if !bytes.HasPrefix(body, []byte{0xFF, 0xFB}) {
 		t.Fatalf("not an MP3 frame: % x", body[:4])
+	}
+}
+
+// TestPreviewWindowFollowsYARG pins previewWindow to YARG.Core's PreviewContext rule.
+//
+// The case that matters most is `start=-1, end=0`: a negative preview_start_time is the "not
+// set" sentinel, and 800 of the 4,085 songs in the live library carry exactly this pairing. The
+// previous implementation produced a duration of ONE MILLISECOND for it - `0 - (-1)` - and the
+// endpoint reported no fault, because a one-page Ogg stream is a perfectly valid Ogg stream. If
+// this table is ever "simplified", that is the failure it is here to prevent.
+func TestPreviewWindowFollowsYARG(t *testing.T) {
+	const songLen = 244269 // Megadeth - Peace Sells (gh5dlc), the song that exposed this
+
+	for _, tc := range []struct {
+		name            string
+		start, end      int64
+		length          int64
+		wantStart, want int64
+	}{
+		// The regression. Both Peace Sells packages, side by side.
+		{"negative start, no end", -1, 0, songLen, defaultStartMS, defaultPreviewMS},
+		{"real start, no end", 8314, 0, 246750, 8314, defaultPreviewMS},
+
+		// Unset, on songs too short for the 20s-50s window.
+		{"unset, shorter than the default end", -1, 0, 40000, 5000, defaultPreviewMS},
+		{"unset, shorter than the default duration", -1, 0, 20000, 0, 20000},
+		{"unset, length unknown", -1, 0, 0, defaultStartMS, defaultPreviewMS},
+
+		// A start past the end of the audio is no more usable than a negative one.
+		{"start beyond the song", 999999, 0, songLen, defaultStartMS, defaultPreviewMS},
+
+		// Zero is a real answer, not a missing one: YARG previews from the top.
+		{"explicit zero start", 0, 0, songLen, 0, defaultPreviewMS},
+
+		// Only the end is usable, so work backwards from it.
+		{"end only", -1, 60000, songLen, 30000, defaultPreviewMS},
+
+		// The one deliberate difference from YARG: the cap survives.
+		{"absurd end is capped", 1000, 9999999, songLen, 1000, maxPreviewMS},
+		{"honours a real window", 10000, 25000, songLen, 10000, 15000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			song := &catalog.Song{
+				PreviewStartMS: tc.start,
+				PreviewEndMS:   tc.end,
+				SongLengthMS:   tc.length,
+			}
+			gotStart, gotDur := previewWindow(song)
+			if gotStart != tc.wantStart || gotDur != tc.want {
+				t.Errorf("previewWindow(start=%d end=%d len=%d) = (%d, %d), want (%d, %d)",
+					tc.start, tc.end, tc.length, gotStart, gotDur, tc.wantStart, tc.want)
+			}
+		})
+	}
+}
+
+// TestPreviewWindowSentinelNeverBecomesADuration is the blunt version of the table above.
+//
+// It covers only the shape that broke - a song.ini that gives NO usable window, which is the
+// 800-song case - and asserts the one thing that must hold across all of it: a sentinel is not
+// an instruction, so nothing in that family may produce a clip too short to hear.
+//
+// It deliberately does NOT assert a floor on an explicit window. A song.ini asking for
+// `preview_start_time = 1` / `preview_end_time = 500` is asking for half a second, YARG gives it
+// half a second, and a server that overrode that would be reinventing the client's rule all over
+// again - which is the mistake this whole change exists to undo.
+func TestPreviewWindowSentinelNeverBecomesADuration(t *testing.T) {
+	const floorMS = 1000
+
+	for _, start := range []int64{-9999, -1} {
+		for _, end := range []int64{-9999, -1, 0} {
+			for _, length := range []int64{0, 1000, 45000, 244269} {
+				song := &catalog.Song{
+					PreviewStartMS: start,
+					PreviewEndMS:   end,
+					SongLengthMS:   length,
+				}
+				gotStart, dur := previewWindow(song)
+				if dur < floorMS {
+					t.Errorf("start=%d end=%d len=%d gave a %d ms preview at %d ms",
+						start, end, length, dur, gotStart)
+				}
+				if length > 0 && gotStart+dur > length {
+					t.Errorf("start=%d end=%d len=%d ran past the audio: %d + %d",
+						start, end, length, gotStart, dur)
+				}
+			}
+		}
 	}
 }

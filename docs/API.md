@@ -315,10 +315,16 @@ of a stem, which is why the server needs no ffmpeg and the image stays distroles
 `Content-Type` follows the bytes (`audio/ogg` or `audio/mpeg`), not the `.ogg` in the path. The reasoning, the measurement
 that forced it and the independent verification are in `docs/ADR-009-preview-clips.md`.
 
-- **The window** comes from `song.ini`: `preview_start_ms`, and `preview_end_ms` when it gives a
-  sensible length. Otherwise 30 seconds, capped at 45 — a `preview_end_time` of `9999999` is not
-  rare in the wild, and serving ten minutes as a "preview" would defeat the endpoint while
-  looking like it worked.
+- **The window** is YARG's, not this server's. `previewWindow` reproduces YARG.Core's
+  `PreviewContext` rule: an explicit `preview_start_ms` is honoured, and a song that gives no
+  usable window is previewed from **20 s to 50 s** — shortened to a centred 30 seconds, or to the
+  whole song, when the audio is too short for that. The one deliberate difference is a cap of 45
+  seconds: a `preview_end_time` of `9999999` is not rare in the wild, and YARG answers it by
+  previewing the entire song, which over a network would defeat the endpoint.
+  **A negative `preview_start_time` means "not set"**, and 800 of the live library's 4,085 songs
+  carry it. Until 2026-11-05 the server read it as a position, clamped it to 0 and then computed
+  the duration as `end - start` — one millisecond — and served a valid single-page Ogg stream of
+  silence with a 200. Nothing reported a fault, because nothing was broken except the answer.
 - **Which audio.** The full mix (`song`) where there is one, which is 3,861 of the live
   library's 4,085 songs. The rest fall through a preference order — guitar, rhythm, keys, bass,
   vocals, drums, crowd — because a song with no full mix would otherwise get whichever file the

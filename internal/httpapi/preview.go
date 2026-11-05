@@ -187,18 +187,77 @@ func cuttableExt(ext string) bool {
 	return ext == ".ogg" || ext == ".opus" || ext == ".mp3"
 }
 
-// previewWindow is the clip's start and length in milliseconds, from song.ini where it is usable.
+// defaultStartMS and defaultEndMS are where YARG previews a song that does not say.
+//
+// They are YARG.Core's DEFAULT_START_TIME and DEFAULT_END_TIME (PreviewContext.cs), in
+// milliseconds. Twenty seconds in, not zero: the start of a track is an intro, a count-in or
+// silence far more often than it is the part worth hearing.
+const (
+	defaultStartMS int64 = 20000
+	defaultEndMS   int64 = 50000
+)
+
+// previewWindow is the clip's start and length in milliseconds.
+//
+// This REPRODUCES YARG.Core's PreviewContext rule and must keep doing so. The game is the
+// specification for a question like "where does a preview start", and this server answering it
+// differently is how 800 of 4,085 songs came to preview nothing at all.
+//
+// A negative preview_start_time means "not set" - it is the sentinel GH-derived charts use, and
+// 800 songs in the live library carry it. The previous version clamped that -1 to 0 and then
+// computed the duration as `end - start`, which for the overwhelmingly common pairing of
+// start=-1 and an absent end is `0 - (-1)` = ONE MILLISECOND. The endpoint answered 200 with a
+// valid Ogg stream containing a single page, so nothing anywhere reported a fault; it simply
+// played silence. Measured on Megadeth - Peace Sells (gh5dlc) on 2026-11-05: 4,407 bytes against
+// 793,264 for the copy of the same song whose song.ini gives a real start.
+//
+// The one deliberate difference from YARG: maxPreviewMS still caps the result. YARG clamps a
+// preview_end_time of 9999999 to the length of the audio and will happily preview a whole song;
+// this server serves clips over a network, and that is the cap's whole reason for existing.
 func previewWindow(song *catalog.Song) (startMS, durMS int64) {
-	startMS = song.PreviewStartMS
-	if startMS < 0 {
-		startMS = 0
+	lengthMS := song.SongLengthMS
+	start, end := song.PreviewStartMS, song.PreviewEndMS
+
+	// known reports whether the song's length is usable. YARG always has one - it measures the
+	// mixer it just built - but this server works from song.ini, which may not say.
+	known := lengthMS > 0
+
+	var endMS int64
+	switch {
+	// Neither end of the window is usable: YARG's own default window.
+	case (start < 0 || (known && start >= lengthMS)) && (end <= 0 || (known && end > lengthMS)):
+		switch {
+		case !known || defaultEndMS <= lengthMS:
+			startMS, endMS = defaultStartMS, defaultEndMS
+		case defaultPreviewMS <= lengthMS:
+			startMS = (lengthMS - defaultPreviewMS) / 2
+			endMS = startMS + defaultPreviewMS
+		default:
+			startMS, endMS = 0, lengthMS
+		}
+
+	// A usable start: honour it, and repair only the end.
+	case start >= 0 && (!known || start < lengthMS):
+		startMS, endMS = start, end
+		if endMS <= startMS {
+			endMS = startMS + defaultPreviewMS
+		}
+		if known && endMS > lengthMS {
+			endMS = lengthMS
+		}
+
+	// Only the end is usable: work backwards from it.
+	default:
+		endMS = end
+		startMS = endMS - defaultPreviewMS
+		if startMS < 0 {
+			startMS = 0
+		}
 	}
 
-	durMS = defaultPreviewMS
-	if song.PreviewEndMS > song.PreviewStartMS {
-		if d := song.PreviewEndMS - song.PreviewStartMS; d > 0 {
-			durMS = d
-		}
+	durMS = endMS - startMS
+	if durMS <= 0 {
+		durMS = defaultPreviewMS
 	}
 	if durMS > maxPreviewMS {
 		durMS = maxPreviewMS

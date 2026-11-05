@@ -6,6 +6,9 @@ vault2 as `3a9bf3c`, and `RemoteSongEntry.LoadPreviewAudio` fetches it — verif
 by **BASS, the game's own decoder** (both below). **MP3 is cut too as of 2026-11-04** — see
 *"What the MP3 cutter actually fixed"* below, because the reason first written here was wrong:
 those 150 songs were never silent. Clips are still not cached on disk.
+**The preview WINDOW was corrected on 2026-11-05** — see *"The window was ours, and it should
+never have been"* at the foot of this file. 800 of 4,085 songs had been served a one-millisecond
+clip, with a `200` and no fault anywhere.
 
 **Context:** Jay, playing the fork with the server library browsing: *"the song preview does not
 load"*. Correct, and by design — `RemoteSongEntry.LoadPreviewAudio` returns `null`, because a song
@@ -489,3 +492,48 @@ and the server can only pick one of them.
 So the fix does not achieve parity — it moves the server from *the one silent stem* to *the
 loudest single stem*, which is closer to what the game plays and audibly better than nothing.
 Anything claiming preview parity with the client for multi-stem packages is wrong.
+
+## The window was ours, and it should never have been (2026-11-05)
+
+Everything above is about *which bytes* to cut and *how*. It never questioned **where** to cut,
+and that turned out to be the part that was wrong.
+
+`previewWindow` read `song.ini` and invented its own fallback: clamp a negative start to zero,
+otherwise `end - start`, default 30 s, cap 45 s. It looks reasonable in isolation. It is not
+reasonable next to the client, because **a negative `preview_start_time` is the "not set"
+sentinel**, not a position — and the overwhelmingly common pairing is `start = -1` with no end at
+all, which the arithmetic turned into `0 - (-1)`: a **one-millisecond** preview.
+
+**800 of the live library's 4,085 songs carry that pairing** — measured across the whole
+catalogue on 2026-11-05, and every one of them is this exact shape; there were no other
+variants. The endpoint answered `200` with a structurally valid Ogg stream the whole time. A
+clip is cut on page boundaries, so a 1 ms request still yields one whole page, and a page of
+silence spans several seconds of audio for almost no bytes. Nothing had a fault to report.
+
+Measured on Megadeth — *Peace Sells* (`gh5dlc`, `05dde16a…`), against the `rb2` package of the
+same song whose `song.ini` gives a real start:
+
+| | `gh5dlc` (`preview_start_time = -1`) | `rb2` (`= 8314`) |
+|---|---|---|
+| guitar clip | **4,407 bytes** | 793,264 bytes |
+| whole clip | ~5.4 s, 0.9–6.2 kbit/s | 30.1 s, 152–237 kbit/s |
+
+And the audio was never the problem: walking the Ogg pages of that package's own `guitar.ogg`
+shows music from about 10 s and **159–185 kbit/s right through 20–50 s**. Cutting the same file
+at the new window with the real cutter gives **657,271 bytes** over 30.1 s.
+
+**YARG already answers this question**, in `PreviewContext.cs`: when the start is negative and
+the end is unset, it previews `DEFAULT_START_TIME` to `DEFAULT_END_TIME` — **20 s to 50 s** —
+falling back to a centred 30 seconds and then to the whole song as the audio gets shorter.
+`previewWindow` now reproduces that, with one deliberate difference recorded in the code: the
+45-second cap stays, because YARG clamps an absurd `preview_end_time` to the length of the audio
+and will cheerfully preview a whole song, which is free locally and is not free over a network.
+
+**Why this is worth a section rather than a line.** It is the same mistake as the stem-preference
+order this ADR already describes, reached from a different direction — the server answering a
+question the client answers. Both were invented in a place where no upstream counterpart was
+checked for, and both looked sensible until they were put next to YARG.Core. The multi-stem work
+did not cause this one; `previewWindow` is shared by `preview.ogg` and `preview/{stem}` and has
+been unchanged since `e416cf0`, the first preview commit. What the multi-stem work did was make
+it **visible**: once the log says *"mixed 8 of 8 stems"* and the result is still silent, the
+window is the only thing left.
