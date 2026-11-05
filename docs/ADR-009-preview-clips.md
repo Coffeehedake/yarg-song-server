@@ -7,7 +7,7 @@ by **BASS, the game's own decoder** (both below). **MP3 is cut too as of 2026-11
 *"What the MP3 cutter actually fixed"* below, because the reason first written here was wrong:
 those 150 songs were never silent. Clips are still not cached on disk.
 **The preview WINDOW was corrected on 2026-11-05** — see *"The window was ours, and it should
-never have been"* at the foot of this file. 800 of 4,085 songs had been served a one-millisecond
+never have been"* at the foot of this file. 606 of 4,085 songs had been served a one-millisecond
 clip, with a `200` and no fault anywhere.
 
 **Context:** Jay, playing the fork with the server library browsing: *"the song preview does not
@@ -509,6 +509,24 @@ catalogue on 2026-11-05, and every one of them is this exact shape; there were n
 variants. The endpoint answered `200` with a structurally valid Ogg stream the whole time. A
 clip is cut on page boundaries, so a 1 ms request still yields one whole page, and a page of
 silence spans several seconds of audio for almost no bytes. Nothing had a fault to report.
+
+**Of those 800, only 606 were ever damaged, and the first number published was 800.** The commit
+that fixed this, `7943bc5`, says 800 in its message, and so did the first version of this section
+and of `API.md`. It is wrong, and it is wrong in the direction that flatters the finding.
+`previewCandidates` puts a package's own shipped preview FIRST and `ReadyMade` copies that file
+whole — the window never touches it. **194 of the 800 ship one**, so they were fine throughout.
+Measured against the live build before the fix was deployed:
+
+```
+AFFECTED  Sportfreunde Stiller - '54,'74,'90,2010   ->   8,153 bytes
+AFFECTED  The Rolling Stones - (I Can't Get No)...  ->   4,407 bytes
+CONTROL   Motorhead - (We Are) The Road Crew        -> 482,304 bytes  (ships preview.mp3)
+```
+
+The Road Crew row is the one that caught it: it is a playtest control, it carries
+`preview_start_time = -1`, and it had been previewing perfectly well for days. A song in the
+affected set that is audibly fine is a measurement saying the set is wrong — the first count had
+simply asked the catalogue for a `song.ini` field and never asked what the handler does with it.
 
 Measured on Megadeth — *Peace Sells* (`gh5dlc`, `05dde16a…`), against the `rb2` package of the
 same song whose `song.ini` gives a real start:
