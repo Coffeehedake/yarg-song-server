@@ -10,10 +10,10 @@ and following it today breaks the service.
 
 ## Run it today — every argument read off the running container, 2026-11-01
 
-> **Live build as of 2026-11-04: `c9edba5` on digest `sha256:17058211…`** — the eleventh
+> **Live build as of 2026-11-05: `de7f76f` on digest `sha256:a7dabe1e…`** — the twelfth
 > deployment, immediately below. The arguments in this section are still the ones in use; the
-> ninth and tenth deployments both reproduced them from `docker inspect` of the running
-> container rather than from this document, and they matched both times.
+> ninth, tenth and twelfth deployments all reproduced them from `docker inspect` of the running
+> container rather than from this document, and they matched every time.
 >
 > **The image TAG is 8 characters and `/version` reports 7.** The tag is
 > `CI_COMMIT_SHORT_SHA` (`:5e9f255c`); `/version` comes from `git describe --always`
@@ -58,6 +58,102 @@ docker run -d --name yarg-song-server \
 `/usr/local/bin/yarg-song-server`, both from the image; neither needs stating on
 the command line. `Labels` is empty, which is the "not Unraid-managed" note
 further down, still true.
+
+### Twelfth deployment, 2026-11-05 — `de7f76f`, the preview window. DEPLOYED, invariants held
+
+**Live now:** `de7f76f` on index digest
+`sha256:a7dabe1ec6caf87d0ae9bb17d79a539e884887de1ddba056249e6f191d93d085`, 4,085 songs,
+`problems` null. Previous container kept as `yarg-song-server-prev-c9edba5`; rollback is
+`docker rm -f yarg-song-server && docker rename yarg-song-server-prev-c9edba5 yarg-song-server && docker start yarg-song-server`.
+
+```
+DEPLOY    :de7f76f5  sha256:a7dabe1ec6caf87d0ae9bb17d79a539e884887de1ddba056249e6f191d93d085
+ROLLBACK  :c9edba53  sha256:17058211ceb2e7cf782821602a533d144cf00cb5d018824a15397ecc8eb43a19
+```
+
+Fixes a window that served 606 songs a one-millisecond preview; see ADR-009. **The image tag is
+`de7f76f5`, not `7943bc54`** — the fix commit and the commit correcting its scope claim both
+landed before the image was built, so one pipeline covers both.
+
+#### The ETag made this verifiable in a way no byte count could
+
+The ETag carries the window — `…-preview-<stem>-<start>-<dur>` — so the defect is legible in a
+response header. Registered BEFORE the swap, on the running `c9edba5`:
+
+| Target | Before | Predicted | Observed |
+|---|---|---|---|
+| gh5 Peace Sells `/preview/guitar` | 4,407 B, `…-0-1` | ~657,271 B, `…-20000-30000` | **657,271 B**, `…-20000-30000` ✅ |
+| gh5 Peace Sells `/preview/song` | 4,407 B, `…-0-1` | ~96,910 B | **96,910 B** ✅ |
+| Rolling Stones — Satisfaction `preview.ogg` | 4,407 B, `…-0-1` | "large" | **10,021 B** — see below ⚠️ |
+| rb2 Peace Sells `/preview/guitar` | 793,264 B, `…-8314-30000` | byte-identical, tag unchanged | **identical**, tag unchanged ✅ |
+| Motorhead — Road Crew `preview.ogg` | 482,304 B, `…-0-1` | **identical bytes, CHANGED tag** | **identical**, `…-20000-30000` ✅ |
+
+The two predicted byte counts are **exactly** what a throwaway probe produced on ENG-2 before the
+deploy, cutting the same stems out of a downloaded `.sng` with `preview.CutOgg`. Two independent
+paths agreeing to the byte is a better check than either alone — the same argument the eleventh
+deployment made.
+
+**The Road Crew row is the one that carries the verification.** It ships its own `preview.mp3`,
+which `ReadyMade` copies whole, so its bytes must not move even though its window does. Identical
+bytes with an unchanged tag would have meant the build never deployed; changed bytes would have
+meant the ready-made path was broken. It is also the row that found the scope error: a song in
+the "affected" set that had been previewing perfectly for days.
+
+#### The one row that missed, and why it is not this build's fault
+
+Satisfaction came back at 10,021 bytes where "large" was predicted. That is not the window
+failing — it is `preview.ogg` picking the `song` stem first, and in a GH package that stem is the
+empty backing track. The same chart's other stems at the same window:
+
+```
+drums_1 591,445   drums_2 606,135   drums_3 600,887   drums_4  41,005
+guitar  658,545   rhythm  413,438   song     10,021   vocals  529,041
+```
+
+So the audio is there and the client's multi-stem path gets it; only the legacy single-clip
+endpoint looks thin, which is the 908-song limitation this ADR already records. **The prediction
+was wrong, not the build** — "large" was written without checking which stem that endpoint would
+choose.
+
+#### The index took 2.2× as long, and this is NOT explained
+
+```
+eleventh  2026-11-04  took=8m10.564s
+twelfth   2026-11-05  took=18m15.803s
+```
+
+Same library, same 4,085 songs, 4,080 distinct, `problems=0`. The change deployed touches a
+window calculation reached from two HTTP handlers and cannot influence indexing, and the
+container was observed working throughout (31–36% CPU, memory climbing). The obvious candidate is
+cold array disks after the 02:18Z reboot, and the obvious candidate is not a measurement.
+**Recorded as unexplained rather than attributed.** If the next deployment indexes near 8 minutes
+the reboot explains it; if it is near 18, something changed on the box and this line is where the
+search starts.
+
+| Pre-registered | Observed | |
+|---|---|---|
+| hard-down ≈ 1 s | **0.888 s** — prev finished `12:24:08.653Z`, `listening` at `12:24:09.541Z` | ✅ |
+| `/healthz` 503 `indexing`, `/version` 200 throughout | **503** then ready; **200** at every poll | ✅ |
+| 4,085 songs, 4,080 distinct, `problems` null | **4,085 / 4,080 / 0**, null | ✅ |
+| index near the previous 490.6 s | **1,095.8 s**, +123% | ❌ unexplained, above |
+| sentinel-start songs get a real clip | 4,407 B → 657,271 B | ✅ |
+| explicit-start songs byte-identical | 793,264 B → 793,264 B | ✅ |
+| ready-made previews byte-identical | 482,304 B → 482,304 B | ✅ |
+
+#### Housekeeping
+
+`yarg-song-server-prev-5e9f255` is now two deployments old and was **left in place** — the
+eleventh deployment removed its equivalent, but a delete on a live box is Jay's call and he was
+not asked. The fallback chain is two deep (`prev-c9edba5`, `prev-5e9f255`), plus four older
+stopped containers.
+
+**A measuring mistake worth recording, because it cost fifteen minutes and looked like an
+outage.** The first verification script polled `/healthz` inside `try { } catch { }`, and
+`Invoke-WebRequest` throws on 503 — so the empty catch swallowed every "still indexing" answer,
+the loop never reported readiness, and after exhausting its budget the script ran the whole
+verification table against a server that was still indexing. Five `503`s came back and read
+exactly like a failed deployment. **A readiness check that cannot report "not ready" is not a
+readiness check**, and a wait loop must refuse to run what follows it rather than fall through.
 
 ### Eleventh deployment, 2026-11-04 — `c9edba5`, per-stem previews. DEPLOYED, invariants held
 
