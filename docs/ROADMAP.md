@@ -1885,11 +1885,43 @@ its keep:
   `HttpListener` is managed and does not. The running game, not elevated, bound LAN fine. The wrong
   runtime was measured; the claim and the command were removed before anything was committed.
 
-**Still not verified:** the app on an actual phone — no iOS or Android build has been made, so the native
-HTTP stack, the cleartext exceptions, touch and layout on a real screen are all untried; what the game's
-own setlist *shows* (only that it says it is non-empty); playing a queued song, and so PlayNext while one is
-playing; the `voting is off` 404 (needs the setting flipped); and votes from real separate devices rather
-than loopback aliases.
+**Still not verified:** the app on an actual phone — ~~no iOS or Android build has been made, so~~ the
+native HTTP stack, the cleartext exceptions, touch and layout on a real screen are all untried;
+~~what the game's own setlist *shows* (only that it says it is non-empty);~~ playing a queued song, and so
+PlayNext while one is playing; the `voting is off` 404 (needs the setting flipped); and votes from real
+separate devices rather than loopback aliases.
+
+> **Two clauses above are struck, and the REST STILL STANDS — read which is which.** Corrected
+> 2026-11-20 against `yarg-remote`, whose own records are the authority here.
+>
+> **The build clause was false from 2026-10-31.** Both pipelines run green and are verified
+> against the vendors rather than against Codemagic's own green tick: `ios-testflight` build
+> `6ae63b08f61b13a16adad68e`, confirmed at App Store Connect as `1793473364`
+> `processingState=VALID`, minOS 15.0; `android` build `6ae64816c09f10adde340a86` producing a
+> 3,230,711-byte `app-release.apk` whose signature was checked by parsing the v2 signing block.
+> GitLab hook 52 builds every push, and since `ad95055` a build reaches the TestFlight Internal
+> group by itself. See `yarg-remote/docs/MOBILE-BUILD.md`.
+>
+> **But INSTALLABLE IS NOT INSTALLED, which is why the clause it sat in is not struck.** Nothing
+> records the app running on a handset; the nearest attempt, `4b148fd`, is an accepted invitation
+> showing an empty TestFlight. A build Apple calls valid and a build somebody launched are two
+> different facts, and this entry had collapsed them in the other direction.
+>
+> **The setlist clause is struck because `621e158` measured it**: against a real windowed game
+> with the real 4,080-song library, `POST /api/queue` returned 200 `target=pending` and
+> `GET /api/queue` returned both songs with full metadata. "A queued song appears in the setlist"
+> had been inference on both ends of the wire.
+>
+> **That run was curl, NOT the app** — its own commit message says so in as many words, and the
+> distinction is the whole point of this paragraph. The app's request building, its error handling
+> and `src/types.ts` against a live listener remain untried, so *"the phone app has never driven
+> the queue against a running game"* is still open and is not closed by `621e158`. Reorder has
+> never been seen to SUCCEED (409 until the music library screen is open, which is documented),
+> and the setlist and running-show targets were not exercised.
+>
+> One trap from that run, worth not paying twice: **the hashes come back UPPERCASE.** An
+> `[a-f0-9]{40}` pattern matches nothing, and the server then answers 400 *"a hash is required"*
+> to every mutating call — which reads as a broken body rather than a broken regex.
 
 ## The fork was brought current on upstream `dev` by MERGE, 2026-11-02
 
@@ -2283,6 +2315,16 @@ The decision lives in `ChooseEvictions`, pure and public, so it can be measured 
 server and no game — the same shape the setlist guard took the day before. The probe then drives
 the **real sweep against the real cache folder** on planted songs, because a correct chooser and a
 sweep that deletes the wrong folder would both pass every check above it.
+
+**STILL NOT VERIFIED, and this was recorded nowhere until 2026-11-20: the budget has never been
+exercised in a RUNNING GAME.** Everything above is headless — the pure chooser, red three ways,
+and the sweep against a real folder of planted songs. What that cannot reach is the path a player
+takes: `SettingsManager.Settings` needs an audio backend to exist, so a headless host cannot read
+the setting the way the game does, and nothing has yet watched the budget evict a song that was
+fetched because somebody played it. The gap is narrow and it is not a defect — the chooser is the
+part that could be wrong and it is measured — but *"verified"* unqualified would be wrong here,
+and an unverified claim that no document carries is one nobody can act on. It had survived as
+prose in a handoff chain for over two weeks, and the chain dropped it.
 
 #### A probe reported PASS while its own file would not compile
 
