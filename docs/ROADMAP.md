@@ -2501,10 +2501,38 @@ Rebuilt and run against the live 4,085-song server:
 | scan time | 0.12 s | 2.81 s (the catalogue fetch and merge) |
 | game survives startup | exited | runs |
 
-**A gap of five is not explained.** 3,952 merged plus 133 already local is 4,085, and the library
-reports 4,080. No `badsongs.txt` was written, so the scanner refused nothing. It may be duplicate
-chart hashes collapsing, or a filter; it has not been measured and is recorded here as open
-rather than guessed at. It is 0.12% and did not block anything.
+~~**A gap of five is not explained.**~~ 3,952 merged plus 133 already local is 4,085, and the
+library reports 4,080. No `badsongs.txt` was written, so the scanner refused nothing. It may be
+duplicate chart hashes collapsing, or a filter; ~~it has not been measured and is recorded here
+as open rather than guessed at.~~ It is 0.12% and did not block anything.
+
+> **EXPLAINED AND CLOSED, 2026-11-20. It is duplicate chart hashes collapsing — the first of the
+> two guesses — and nothing is lost.** The live server publishes the answer in its own
+> `GET /api/v1/library`, and has all along:
+>
+> ```json
+> "songs": 4085,  "distinct_charts": 4080,  "duplicate_packages": 0
+> ```
+>
+> Paged the whole catalogue (4,085 rows over 9 requests, the endpoint caps at 500) and grouped by
+> `chart_hash`: **4,080 distinct, exactly 5 hashes appearing twice, 5 extra rows.** Each pair is
+> the same song packaged twice — identical chart bytes, different `package_hash`:
+>
+> | chart hash | song | artist |
+> |---|---|---|
+> | `0f549d42b73045b5` | Bug Eyes | dredg |
+> | `25403f5f36e7bee5` | March of the Pigs | Nine Inch Nails |
+> | `6c3e8f8d79ff3765` | Black Dog (Live) | Led Zeppelin |
+> | `c58ea3832803d177` | GHWT Medley | Various |
+> | `de483629e5b6f8c8` | I Alone | Live |
+>
+> **So the client is right and the merge is right.** Song identity is `SHA1(chart file bytes)`
+> and nothing else — this repo's own rule — so two packages carrying the same chart ARE one song,
+> and a library of 4,080 is the correct count of a catalogue of 4,085 rows. No song is missing,
+> nothing is filtered, and `duplicate_packages: 0` says the packages themselves are distinct.
+>
+> **The measurement cost one HTTP call.** It sat open for over two weeks as "not measured",
+> while the number that settles it was in a field the server already served.
 
 **What this costs to believe.** The fix is verified by behaviour, not by inspection: a symbol
 search cannot tell an override from an inherited method, because the base class puts the name in
