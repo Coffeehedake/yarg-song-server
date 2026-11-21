@@ -2666,17 +2666,41 @@ the next paragraphs were written as "unmeasurable" when they were not.
 **What is left is the two things a headless probe cannot build:** a library holding local *and*
 remote entries at once, and the runtime toggle — `RescanForBrowse` calls `RunRefresh` and then
 `MusicLibraryMenu.SetReload(Full)`, and whether that reload is consumed while the library screen is
-already open has never been measured. Commit `4fa71518` is still unverified by use.
+already open had never been measured.
 
-**The decisive measurement, now much narrower than before.** Start the game with browse on and the
-library at 4,080, then search for an **artist the server has and this disk does not** — the
-catalogue's own top three are Nirvana (151), Dragonforce (93 of 91 rows) and Brand New (84). Report
-the **result count**, not whether it "worked":
+**VERIFIED BY USE, 2026-11-21 -- and it closed both of them in one test.** Jay ran the fork
+build at `C:\Users\ENG2\yarg-test\fork-build\`, which is the only build on this machine
+newer than `4fa71518`; the one under `%LOCALAPPDATA%\Programs\YARG` is the stock v0.15.0
+oracle, dated June, and testing that would have proved nothing. He toggled *Browse Server
+Library* with the game running:
 
-- a count in the dozens or hundreds → search is fine and the report was about something else
-- a count at or under the 128-song local library → the containers really are local-only at that
-  moment, and the only remaining suspect is the mixed-library or toggle path
-- nothing at all → an exception during search, which the log will name
+```
+browse ON  at startup    4,080 songs
+browse OFF                 140 songs     <- local only
+browse ON  again         4,080 songs     <- NO RESTART
+```
+
+So `RescanForBrowse` fires, `RunRefresh` reaches `MergeRemoteCatalog`, and the
+`MusicLibraryMenu.SetReload(Full)` **is** consumed with the library screen already open.
+`4fa71518` is verified. The mixed library is verified in the same stroke, since 140 local and
+3,940 remote entries are coexisting in one container to make that 4,080.
+
+**Two things fall out of the counts that are not the thing being tested.**
+
+- **The local mirror is 140 now, not the 128 the arithmetic below uses.** That is a later
+  measurement of a disk that has grown, not a correction to the closed entry. The TOTAL did not
+  move, which is what a local set wholly contained in the server catalogue looks like -- though
+  that containment is inferred, not measured: one local chart the server lacks would read 4,081.
+- **The game shows 4,080, which is the DISTINCT-CHART count and not the 4,085 package count.**
+  That is client-side confirmation of the entry below, arrived at independently: the five
+  duplicate packages collapse because identity is `SHA1(chart bytes)`, and YARG agrees with the
+  server about which five.
+
+~~**The decisive measurement, now much narrower than before.** Start the game with browse on,
+search for an artist the server has and this disk does not, and report the result count.~~
+**Superseded: the toggle test above answered it more directly and no search was needed.** The
+library count itself moved 140 → 4,080 → 140 → 4,080, which asks the same question of the
+whole container rather than of one artist.
 
 ### CLOSED: the five songs that were never missing
 
